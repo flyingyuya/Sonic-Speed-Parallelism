@@ -1,0 +1,44 @@
+# =============================================================================
+# Verible lint 规则配置（项目级）
+# -----------------------------------------------------------------------------
+# 本项目的 RTL 是 **Verilog-2001**（要求同时能被 iverilog -g2005 和 Vivado 接受），
+# 而 Verible 的默认规则集偏向 SystemVerilog。下面把 SV 专属的规则关掉，
+# 保留对 Verilog-2001 同样有价值的部分。
+#
+# 让 Neovim 的 verible LSP 生效：启动参数加 --rules_config_search
+# （它会在被分析文件所在目录向上寻找 .rules.verible_lint）
+# =============================================================================
+
+# --- 关闭：SystemVerilog 专属，Verilog-2001 里没有对应写法 ---------------
+
+# 建议把 unpacked 数组写成 [N] 而不是 [0:N-1]。
+# 但 [N] 是 SystemVerilog 语法，Verilog-2001 必须写 [0:N-1]。
+-unpacked-dimensions-range-ordering
+
+# 建议 always @* 改 always_comb。always_comb 是 SV 语法。
+-always-comb
+
+# 建议 function 显式声明 static/automatic 生命周期。automatic 是 SV 语法。
+-explicit-function-lifetime
+
+# --- 关闭：与本项目用法不符 ----------------------------------------------
+
+# 建议 $test$plusargs 改 $value$plusargs。
+# 我们只用它判断"某个开关是否出现"（如 +novcd），$test$plusargs 正是干这个的。
+-plusarg-assignment
+
+# --- 保留但调整参数 ------------------------------------------------------
+
+# Verible 默认要求 localparam 用 CamelCase，parameter 用 CamelCase|ALL_CAPS。
+# Verilog 社区惯例是全大写，这里放宽为两种都接受。
+parameter-name-style=localparam_style:ALL_CAPS|CamelCase
+
+# --- 关闭：Verilog-2001 里无解 --------------------------------------------
+
+# 要求 parameter/localparam 必须有"存储类型关键词"（int/integer/logic/bit）。
+# 实测 Verible **不认位宽声明**：`localparam [24:0] X` 也会警告。
+# 而 Verilog-2001 里带位宽的常量只能写成 `parameter [N:0]`（没有 logic/bit 可用），
+# 宽度超过 32 位的常量（如 48 位的 RND）又放不进 integer。
+# => 要么改用 SystemVerilog，要么关掉这条规则。当前选择后者。
+#    （迁移到 SystemVerilog 是阶段三的可选项，见 docs/04）
+-explicit-parameter-storage-type

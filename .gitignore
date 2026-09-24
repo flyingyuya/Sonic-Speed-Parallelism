@@ -1,0 +1,66 @@
+# Vivado / 仿真产物
+build/
+*.jou
+*.log
+*.str
+*.dcp
+*.bit
+*.ltx
+Xilinx*.txt
+vivado*.log
+xsim.dir/
+.sim/
+*.pb
+webtalk*.jou
+webtalk*.log
+usage_statistics_webtalk.*
+
+# iverilog
+*.vvp
+*.vcd
+
+# xsim
+sim/build/
+
+# Python
+__pycache__/
+*.pyc
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+
+# Vivado 临时文件
+.Xil/
+tight_setup_hold_pins.txt
+
+# 板卡手册和资料
+docs/璞致FPGA核心开发版/
+docs/WM8960模块/
+
+# ---------------------------------------------------------------------------
+# Vivado 工程模式产物
+# 如果要用 GUI 建工程，请把工程放在 build/vivado_prj/ 下（已被 build/ 忽略），
+# 或者放仓库外。下面这些兜底规则防止 `git add -A` 把几百 MB 扫进来。
+# ---------------------------------------------------------------------------
+*.xpr
+*.xpr.*
+*.cache/
+*.hw/
+*.ip_user_files/
+*.runs/
+*.srcs/
+*.gen/
+*.sim/
+*.jou
+*.str
+*.wdb
+*.wcfg
+*.ltx
+*.bin
+*.mcs
+*.prm
+*.rpt
+*.pb
+
