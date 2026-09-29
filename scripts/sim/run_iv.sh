@@ -128,6 +128,35 @@ fail=0
 skip=0
 
 #-----------------------------------------------------------------------------
+# 半路挂掉时也要说清楚【挂在哪一步】
+#-----------------------------------------------------------------------------
+# 本脚本开头是 `set -euo pipefail` —— 任何一条命令非零退出都会【立刻中止】。
+# 好处是不带病往下跑，坏处是：一旦中途挂了，末尾那段"仿真汇总"根本不执行，
+# 于是日志里只剩一堆输出，看不出是哪一步的问题（CI 上尤其难受）。
+#
+# 所以这里注册一个 EXIT trap：只在非零退出时打印"最后进入的步骤"。
+# 每进入一个阶段就更新 CUR_STEP，日志末尾就总能对上号。
+#-----------------------------------------------------------------------------
+CUR_STEP="(启动阶段：探测工具链)"
+FINISHED=0            # 全部测试跑完置 1；用来区分"跑完了"和"半路挂了"
+trap 'rc=$?; if [ "$rc" -ne 0 ]; then
+  if [ "$FINISHED" -eq 1 ]; then
+    # 正常跑完，只是有测试失败 —— 上面已经打印过失败清单，不用再喊
+    echo "（全部测试已跑完，见上方的失败清单）"
+  else
+    echo ""
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    echo " 提前中止（退出码 $rc）"
+    echo " 最后进入的步骤：$CUR_STEP"
+    echo ""
+    echo " set -euo pipefail 下【未被捕获的】命令失败会立刻中止，"
+    echo " 所以后面的测试和末尾的汇总都没跑到。"
+    echo " 详细日志在 sim/build/ 下（*.log / *.run.log）。"
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+  fi
+fi; true' EXIT
+
+#-----------------------------------------------------------------------------
 # Verilator 静态检查（比 iverilog 严，专门补它的盲区）
 #-----------------------------------------------------------------------------
 # 【为什么需要它】
@@ -157,40 +186,73 @@ skip=0
 #
 # 【如果这个检查报了错，先去读提示的位置，不要先关规则】
 #-----------------------------------------------------------------------------
-VLFLAGS="--lint-only -Wall -Wno-fatal \
-         -Wno-WIDTHEXPAND -Wno-WIDTHTRUNC -Wno-UNUSEDSIGNAL -Wno-UNUSEDPARAM \
-         -Wno-PROCASSINIT -Wno-DECLFILENAME -Wno-VARHIDDEN -Wno-SYNCASYNCNET \
-         -Wno-TIMESCALEMOD -Wno-PINCONNECTEMPTY \
-         +incdir+rtl/video +incdir+rtl/common"
+# 【为什么用"白名单过滤"而不是一串 -Wno-】
+#   不同 Verilator 版本的【警告名集合不一样】。传一个该版本不认识的名字，
+#   verilator 会直接 "Unknown warning specified" **报错退出** —— 不是设计有问题，
+#   而是命令行不兼容。本地是 5.052，CI 上跑的是 Ubuntu 仓库的版本，就撞了这条。
+#
+#   所以改成：照常跑 -Wall，把输出全部收下来，再按【类别白名单】过滤。
+#   白名单里是预期内的风格类警告；白名单【之外】的任何警告都算失败。
+#   这样和版本无关，也不依赖任何 -Wno- 名字。
+#
+# ⚠️ VL_ALLOW 必须写成【单行】：下面的 case 是 " $VL_ALLOW " 里找 " $c "，
+#    带换行的话行首/行尾的类名永远匹配不上。
+VL_ALLOW="WIDTHEXPAND WIDTHTRUNC UNUSEDSIGNAL UNUSEDPARAM PROCASSINIT DECLFILENAME VARHIDDEN SYNCASYNCNET TIMESCALEMOD PINCONNECTEMPTY"
+
+# 只保留【版本无关】的选项：-Wall 开全部检查，-Wno-fatal 让退出码只反映真 Error
+VLFLAGS="--lint-only -Wall -Wno-fatal +incdir+rtl/video +incdir+rtl/common"
 
 run_verilator_lint() {
     echo ""
+    CUR_STEP="Verilator 静态检查"
     echo ">>> Verilator 静态检查（补 iverilog 的盲区：多重驱动 / 组合环 / 锁存器）"
     if ! command -v verilator >/dev/null 2>&1; then
-        echo "  [跳过] 没装 verilator"
-        echo "         Arch 上装： sudo pacman -S verilator"
+        echo "  [跳过] 没装 verilator  ->  sudo pacman -S verilator"
         echo "         装了之后这项能抓住 multi-driven net 这类"
         echo "         iverilog 不报、但综合器会直接失败的错。"
         skip=$((skip + 1))
         return
     fi
+
+    echo "  版本: $(verilator --version 2>/dev/null | head -1)"
+
     # shellcheck disable=SC2086
-    if verilator $VLFLAGS --top-module top \
-            sim/tb/xilinx_stub.v $(ls rtl/*.v rtl/*/*.v) \
-            > "$OUT/verilator.log" 2>&1; then
-        n=$(grep -cE "^%Warning|^%Error" "$OUT/verilator.log" || true)
-        if [ "$n" -eq 0 ]; then
-            pass=$((pass + 1))
-            echo "  0 警告"
-        else
-            fail=$((fail + 1))
-            echo "  [有警告] $n 条："
-            grep -E "^%Warning|^%Error" "$OUT/verilator.log" | head -20
-        fi
-    else
+    verilator $VLFLAGS --top-module top \
+        sim/tb/xilinx_stub.v $(ls rtl/*.v rtl/*/*.v) \
+        > "$OUT/verilator.log" 2>&1
+    vl_rc=$?
+
+    # --- ① 真正的 Error（命令行不兼容、语法错误…）直接失败 ---
+    n_err=$(grep -cE "^%Error" "$OUT/verilator.log" || true)
+    if [ "${n_err:-0}" -gt 0 ] || [ "$vl_rc" -ne 0 ]; then
         fail=$((fail + 1))
-        echo "  [失败] 详情见 $OUT/verilator.log"
-        grep -E "^%Error|^%Warning" "$OUT/verilator.log" | head -20
+        echo "  [失败] verilator 返回 $vl_rc，有 $n_err 条 Error："
+        grep -E "^%Error" "$OUT/verilator.log" | head -10
+        return
+    fi
+
+    # --- ② 白名单之外的警告才算真问题 ---
+    cats=$(grep -oE "^%Warning-[A-Z0-9_]+" "$OUT/verilator.log" 2>/dev/null \
+           | sed 's/^%Warning-//' | sort -u | tr '\n' ' ' || true)
+    bad=""
+    for c in $cats; do
+        case " $VL_ALLOW " in
+            *" $c "*) ;;
+            *) bad="$bad $c" ;;
+        esac
+    done
+
+    n_warn=$(grep -cE "^%Warning" "$OUT/verilator.log" || true)
+    if [ -n "$bad" ]; then
+        fail=$((fail + 1))
+        echo "  [有警告] 白名单之外：$bad"
+        echo "  （共 $n_warn 条，完整输出见 $OUT/verilator.log）"
+        for c in $bad; do
+            grep -A3 "^%Warning-$c" "$OUT/verilator.log" | head -8
+        done
+    else
+        pass=$((pass + 1))
+        echo "  0 个意外警告（共 $n_warn 条，类别全部在白名单内：$cats）"
     fi
 }
 
@@ -215,6 +277,7 @@ run_async_fifo() {
             flags="$flags -Ptb_async_fifo.${kv}"
         done
         echo ""
+        CUR_STEP="async_fifo [$name]"
         echo ">>> 仿真 async_fifo  [$name]"
         # shellcheck disable=SC2086
         if "$IVERILOG" $IVERILOG_LIBFLAGS $IVFLAGS $flags \
@@ -245,6 +308,7 @@ run_async_fifo() {
 #-----------------------------------------------------------------------------
 run_top_smoke() {
     echo ""
+    CUR_STEP="top 整机冒烟"
     echo ">>> 仿真 top（整机冒烟，约需 1~2 分钟）"
     if "$IVERILOG" $IVERILOG_LIBFLAGS $IVFLAGS -s tb_top \
             -o "$OUT/tb_top.vvp" \
@@ -287,6 +351,7 @@ for tb in $ALL_TB; do
     fi
 
     echo ""
+    CUR_STEP="TB: $tb"
     echo ">>> 仿真 $tb"
     if "$IVERILOG" $IVERILOG_LIBFLAGS $IVFLAGS -o "$OUT/tb_${tb}.vvp" \
             $RTL $TBEXTRA "sim/tb/tb_${tb}.v" 2>"$OUT/${tb}.log"; then
@@ -309,6 +374,7 @@ for tb in $ALL_TB; do
 done
 
 echo ""
+FINISHED=1
 echo "==================== 仿真汇总 ===================="
 echo " 通过 $pass  失败 $fail  跳过 $skip"
 [ "$fail" -eq 0 ]

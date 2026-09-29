@@ -38,18 +38,26 @@ jobs:
           verilator --version
 
       - name: 跑 run_iv.sh（Verilator 检查 + 21 个 testbench）
-        run: bash scripts/sim/run_iv.sh
+        # tee 一份到文件，失败那一步才能把完整输出贴出来。
+        # GHA 默认 pipefail，所以管道不会把 run_iv.sh 的退出码吞掉。
+        run: bash scripts/sim/run_iv.sh 2>&1 | tee /tmp/run.log
 
       - name: 失败时打印详细日志
         if: failure()
         run: |
-          echo "=================== Verilator 日志 ==================="
-          head -80 sim/build/verilator.log 2>/dev/null || echo "(无)"
+          echo "=================== run_iv.sh 输出末尾 ==================="
+          tail -60 /tmp/run.log 2>/dev/null || echo "(无)"
           echo
+          echo "=================== Verilator 日志 ==================="
+          head -60 sim/build/verilator.log 2>/dev/null || echo "(无)"
+          echo
+          echo "=================== 各 testbench 的 [ERR] ==================="
           for f in sim/build/*.log; do
             if grep -qE '\[ERR\]|\*\*\* FAIL' "$f" 2>/dev/null; then
-              echo "=================== $f ==================="
-              grep -E '\[ERR\]|\*\*\* FAIL' "$f" | head -20
+              echo "--- $f ---"
+              # 同样避开 pipefail：先落盘再 head
+              grep -E '\[ERR\]|\*\*\* FAIL' "$f" > /tmp/errs.txt 2>/dev/null || true
+              head -20 /tmp/errs.txt
             fi
           done
           exit 0
