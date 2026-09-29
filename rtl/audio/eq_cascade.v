@@ -101,7 +101,7 @@ module eq_cascade #(
     //-------------------------------------------------------------------------
     // 状态机
     //-------------------------------------------------------------------------
-    always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk) begin
         if (!rst_n) begin
             state   <= IDLE;
             sect    <= {SAW{1'b0}};

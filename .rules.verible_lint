@@ -18,8 +18,10 @@
 # 建议 always @* 改 always_comb。always_comb 是 SV 语法。
 -always-comb
 
-# 建议 function 显式声明 static/automatic 生命周期。automatic 是 SV 语法。
+# 建议 function/task 显式声明 static/automatic 生命周期。
+# 这是 SystemVerilog 语法，Verilog-2001 里没有。
 -explicit-function-lifetime
+-explicit-task-lifetime
 
 # --- 关闭：与本项目用法不符 ----------------------------------------------
 
@@ -42,3 +44,12 @@ parameter-name-style=localparam_style:ALL_CAPS|CamelCase
 # => 要么改用 SystemVerilog，要么关掉这条规则。当前选择后者。
 #    （迁移到 SystemVerilog 是阶段三的可选项，见 docs/04）
 -explicit-parameter-storage-type
+
+# --- 关闭：对"原语模型集合"文件不适用 ------------------------------------
+
+# 要求文件名与【第一个模块名】一致。
+# 但 sim/tb/xilinx_stub.v 是一个**原语模型集合**，里面装了 IBUFDS / BUFG /
+# MMCME2_BASE 三个 Xilinx 原语的最小行为模型 —— 拆成三个文件反而更难找。
+# （Xilinx 自己的 unisims_V 也是这种"一个文件多个原语"的组织方式，
+#   而且这个文件压根不进 Vivado 工程，只给 iverilog 用。）
+-module-filename

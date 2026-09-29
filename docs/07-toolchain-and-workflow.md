@@ -392,3 +392,79 @@ EOF
 > `build/` 是可随时删除的产物；`docs/` 是决策记录。**
 >
 > 只要 `rtl/` + `constrs/` + `scripts/` 在，换台电脑三条命令就能重建整个项目。
+
+---
+
+## 附：「零警告」到底该怎么做到
+
+本工程要求构建过程**零警告**。但这件事有个陷阱：**"看不见警告"和"没有警告"是两回事**。
+
+正确的做法分三类，**先分类，再逐个处理**：
+
+| 类别 | 判断标准 | 处理方式 | 本工程实例 |
+| --- | --- | --- | --- |
+| **① 真实缺陷** | 警告描述的现象会**实际发生** | **改设计** —— 这是唯一正确的选择 | 异步复位（账本 45/46）、`DRIVE` 写在输入端口（44） |
+| **② 前提不成立的建议** | 警告的**推理前提**在你这个设计里为假 | **写清判据后豁免**（waive） | `DPIP-1`/`DPOP-1`/`DPOP-2`（账本 47） |
+| **③ 环境/流程信息** | 与设计本身无关 | 忽略，或修流程 | `NSTD-1`/`UCIO-1`（管脚未填时自动降级） |
+
+### 怎么区分 ① 和 ② —— 问三个问题
+
+1. **警告描述的坏事会发生吗？**
+   `REQP-1839` 说"复位期间 RAM 内容可能损坏"，而我们的复位是**域内同步**的，
+   且 RAM 内容本来就不需要复位 → 不会发生 ✅ 但注意：
+   这条最后我们**改设计了**（不再复位 RAM 内容），因为改写更简单也更正确。
+
+2. **消掉警告的代价是什么？**
+   `DPIP-1` 建议给 DSP 打拍。但我们所有 DSP 通路都有**逐位对拍的黄金模型**，
+   插寄存器会改变数值行为，需要全量重验，而**功能收益为零** → 代价不合理 ✗
+
+3. **有量化证据吗？**
+   "时序已经够了"不能靠感觉说。本工程的证据是 post-route 报告：
+   `clk_sys` WNS = **+1.548 ns**，`clk_pix` WNS = **+41.573 ns**，
+   且最差路径（FFT 工作存储器回写，逻辑级数 32）**根本不是 DSP**。
+
+### 豁免怎么落地（可审计，不隐藏）
+
+```tcl
+# scripts/vivado/drc_waivers.tcl —— 由 build.tcl 在 report_drc 之前 source
+create_waiver -type DRC -id DPIP-1 -description "……量化理由……"
+```
+
+`build.tcl` 里的调用：
+
+```tcl
+set _waiver_tcl [file join [file dirname [info script]] drc_waivers.tcl]
+if {[file exists $_waiver_tcl]} { source $_waiver_tcl }
+report_drc -file [file join $OUT post_route_drc.rpt]
+```
+
+**关键：豁免项不会从报告里消失**，而是单独计数：
+
+```
+             Violations found: 0
+             Violations waived: 50
+```
+
+任何人拿到 `post_route_drc.rpt` 都能看到"有 50 条被豁免了"，
+然后去 `drc_waivers.tcl` 里读理由 —— **这是可审计的**，
+和"把警告过滤掉"有本质区别。
+
+### 配套脚本
+
+| 脚本 | 用途 |
+| --- | --- |
+| `scripts/vivado/build.tcl` | 综合 → 实现 → 比特流（整机） |
+| `scripts/vivado/synth_check.tcl` | 单模块 OOC 综合 + DRC + CDC |
+| `scripts/vivado/program.tcl` | 烧板（`-tclargs detect` 只探测） |
+| `scripts/vivado/drc_waivers.tcl` | DRC 豁免判据（被上面两个 tcl source） |
+| `scripts/sim/run_iv.sh` | iverilog 全量回归（20 个 TB） |
+| `scripts/uart_term.py` | UART 命令通道终端 / 协议自检 |
+
+### ⚠️ 什么时候必须回来重看豁免
+
+**如果以后出现时序违例，第一件事就是把 `drc_waivers.tcl` 的豁免去掉，
+重新看这 50 条** —— 因为那时的前提（"时序够了"）已经不成立了。
+
+> **一句话**：零警告不是"让工具闭嘴"，而是"每一条警告都被读过、理解过、
+> 并且做出了有据可依的处置"。真正该改的一定要改（①），
+> 确实不适用的要写清为什么（②），而且**留下的记录要能让别人复核**。

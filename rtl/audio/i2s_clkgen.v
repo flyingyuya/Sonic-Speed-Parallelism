@@ -59,7 +59,7 @@ module i2s_clkgen #(
 
     wire [5:0]  bcnt_nxt   = (bcnt == NLAST) ? 6'd0 : bcnt + 6'd1;
 
-    always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk) begin
         if (!rst_n) begin
             divcnt      <= 16'd0;
             bclk        <= 1'b0;

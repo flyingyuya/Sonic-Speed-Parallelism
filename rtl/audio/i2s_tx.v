@@ -42,7 +42,7 @@ module i2s_tx #(
     wire [5:0]        idx_nxt = frame_start ? 6'd0 : (bit_idx + 6'd1);
     wire [NFRAME-1:0] sr_nxt  = (frame_start && data_en) ? tx_frame : sr;
 
-    always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk) begin
         if (!rst_n) begin
             sr    <= {NFRAME{1'b0}};
             sdout <= 1'b0;

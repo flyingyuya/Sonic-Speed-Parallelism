@@ -27,11 +27,34 @@ module tb_audio_top;
     localparam [24:0] GAIN_PACK = 25'd4663536;
 
     reg clk = 1'b0;
-    always #5 clk = ~clk;                // 100 MHz（真实是 12.288MHz，时序等价）
+    always #5 clk = ~clk;                // 100 MHz（真实是 clk_sys 48MHz；本 TB 只验证逻辑）
 
     reg rst_n = 1'b0;
 
-    wire bclk, lrclk, sdin_w, sdout_w;
+    //-------------------------------------------------------------------------
+    // I2S 主模式行为模型（模拟 WM8960 提供 BCLK / LRCLK）
+    //   BCLK 半周期取 26 ns -> 周期 52 ns = 5.2 个 clk，**故意不是整数倍**，
+    //   这样采样相位会持续漂移，能把从模式时序恢复的边界情况扫出来。
+    //-------------------------------------------------------------------------
+    localparam real BCLK_HALF = 26.0;
+    localparam integer NFRAME2 = 2 * SLOT;
+
+    reg     bclk  = 1'b0;
+    reg     lrclk = 1'b0;
+    integer mb    = 0;
+
+    initial begin
+        forever begin
+            #BCLK_HALF;
+            bclk = 1'b1;                          // 上升沿
+            #BCLK_HALF;
+            bclk = 1'b0;                          // 下降沿：LRCLK 在此翻转
+            mb   = (mb == NFRAME2 - 1) ? 0 : mb + 1;
+            lrclk = (mb >= SLOT);
+        end
+    end
+
+    wire sdin_w, sdout_w;
     wire bclk_rise, bclk_fall, frame_start, half_start, sample_stb;
     wire [5:0] bit_idx;
 
@@ -41,7 +64,7 @@ module tb_audio_top;
 
     audio_top #(
         .DW(DW), .CW(18), .CF(16), .AW(48), .NSECT(5),
-        .SLOT(SLOT), .DIV(DIV)
+        .SLOT(SLOT)
     ) dut (
         .clk(clk), .rst_n(rst_n),
         .bclk(bclk), .lrclk(lrclk), .sdin(sdin_w), .sdout(sdout_w),

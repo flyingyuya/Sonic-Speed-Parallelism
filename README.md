@@ -1,85 +1,149 @@
 # 音速并行 Sonic-Speed-Parallelism
 
-基于 Artix-7 (XC7A100T) 的实时音视频协同处理系统 —— **纯 RTL 实现，不依赖 HLS / PYNQ**。
+基于 Artix-7 (XC7A100T) 的**音频一体化系统** —— **纯 RTL 实现，不依赖 HLS / PYNQ / 软核**。
+
+> **定位**：把「采集 → 均衡 → 频谱分析 → 可视化 → 交互调参」这条链做深做透，
+> 而不是横向铺功能。**不含视频输入**；**HDMI 输出保留**，作为解耦的第二路展示大屏
+> （为什么这样取舍，见 [docs/01](docs/01-architecture.md) §8）。
+
+---
 
 ## 一句话架构
 
-> 12.288 MHz 音频域跑完整音频链路（I2S → 低延迟均衡 → I2S），74.25 MHz 视频域跑 1080p 视频链路与频谱 Overlay，
-> 两个域通过双口 BRAM 交换频谱数据，控制域用 UART 实时调参。
+> 单一时钟域 `clk_sys = 48 MHz` 跑完整音频链路（I2S 从模式 → 5 段均衡 → I2S），
+> 同一域内做 1024 点 FFT → 60 根柱高；`clk_pix = 12.5 MHz` 驱动 480×272 液晶，
+> **扫描到哪算到哪**（无 framebuffer、无渲染状态机），三个视图同屏：
+> 极坐标频谱 + 波形 + 柱状频谱。按键和 UART 汇到同一个配置寄存器组。
+>
+> **双路显示（规划）**：渲染核心是 `(x,y,W,H) → RGB` 的纯组合函数，
+> 参数化后实例化两份 —— LCD 480×272 当交互界面，HDMI 720p 当展示大屏，设置自动同步。
+
+---
 
 ## 目录结构
 
 ```
-rtl/common/     通用逻辑（CDC 同步器、复位同步器、饱和/舍入工具）
-rtl/audio/      音频链路（I2S 收发、时钟生成、双二阶均衡器、FFT 频谱）
-rtl/video/      视频链路（HDMI 收发、Overlay 绘制）—— 阶段二
-sim/tb/         仿真测试平台（iverilog / xsim 双流程）
-sim/vectors/    仿真向量（由 Python 黄金模型生成）
-scripts/golden/ Python 定点黄金模型（numpy，无 scipy 依赖）
-scripts/vivado/ Vivado 命令行流程（非工程模式 Tcl）
-scripts/sim/    仿真脚本
-constrs/        约束文件（管脚 / 时序）
-docs/           设计文档
+rtl/top.v               整机顶层
+rtl/common/             通用：CDC/复位同步、FIFO、按键消抖
+rtl/audio/              I2S（从模式）、5 段双二阶均衡、FFT、频谱分组
+rtl/fft/                FFT 蝶形 / 地址发生器 / 旋转因子 ROM
+rtl/video/              液晶时序、极坐标变换、波形缓冲、背景、合成
+rtl/control/            ui_ctrl 配置寄存器组、UART 收发、命令解析
+rtl/wm8960/             WM8960 上电配置（I2C）
+constrs/                管脚与时序约束
+scripts/golden/         Python 定点黄金模型 + 代码/表生成器
+scripts/sim/            iverilog / xsim 仿真流程
+scripts/vivado/         综合、实现、单模块检查
+sim/tb/                 测试平台
+docs/                   设计文档（01~13）
 ```
 
-## 快速开始
+---
 
-> 完整工具链说明、命令速查、故障排查见
-> [docs/07-toolchain-and-workflow.md](docs/07-toolchain-and-workflow.md)。
-> 仿真脚本自带工具定位，**不依赖你的 PATH**；自检用 `bash scripts/sim/run_iv.sh tools`。
+## 核心设计取舍
+
+| 取舍 | 选择 | 为什么 |
+| --- | --- | --- |
+| FFT 结构 | **单蝶形时分复用** | 全并行需 2048 个 DSP，器件只有 240。时分复用后只要 4 个（**1/500**），而 FFT 只占 1.05% 帧时间 |
+| 均衡器 | **IIR 双二阶级联**，不用 STFT | STFT 频域均衡的**算法固有延迟 = 窗长 = 21.3 ms**，与"实时"直接矛盾。这是数学问题不是实现问题 |
+| 显示 | **扫描到哪算到哪**，无 framebuffer | 参考工程用 400 行渲染状态机是因为背景图来自 SD 卡必须流式取；我们背景用组合逻辑算，不需要 |
+| I2S | **FPGA 当从机** | WM8960 手册 P56：数字音频接口也从 SYSCLK 派生，MCLK 必须与 BCLK/LRCLK 同源 |
+| BCLK | **过采样恢复**，不当时钟域 | 少一个时钟域、少一个 BUFG；48 MHz / 3.072 MHz = 15.6 倍，余量充足 |
+| HDMI | **只做 TMDS = DVI 输出** | 板上是差分对直连（无发送芯片）→ 自己做编码；不要 CEC/音频/HDCP 大幅简化 |
+| 定点格式 | 数据 Q1.23，系数 **Q2.16** | Q1.17 装不下二阶高架的 `b0 = 2.12`，实测频响误差 7 dB |
+| 交互 | **按键/触摸/UART 汇到一个寄存器组** | 显示链完全不知道是谁改的；加新输入源不用动显示逻辑 |
+
+---
+
+## 已完成
+
+| 子系统 | 状态 | 实测 |
+| --- | --- | --- |
+| 音频链路（I2S 从 + 5 段均衡） | ✅ | 端到端与 Python 黄金模型**逐位一致** |
+| I2S 从模式时钟恢复 | ✅ | 300 帧、相位全程漂移，**收发双向 0 误码** |
+| FFT 频谱分析 | ✅ | 1024 点，2048 个频点**逐位一致**，1004 LUT / 2 BRAM / 4 DSP |
+| 频谱柱高 | ✅ | 60 根柱，穷举 512 个 bin 验证分组，dB 压缩 + 峰值衰减 |
+| 液晶时序 | ✅ | 480×272，七项守恒检查全过 |
+| 极坐标变换 | ✅ | 64 扇区，扫遍 49920 像素与 `$atan2` 逐点一致 |
+| 波形缓冲 | ✅ | 双时钟 BRAM + 格雷码，10 帧无撕裂 |
+| 三个视图合成 | ✅ | **130560 个像素逐点比对一致** |
+| 按键交互 | ✅ | 消抖 + 视图预设轮转 |
+| UART 命令通道 | ✅ | ASCII 命令改任意配置，回执可查 |
+| WM8960 I2C 配置 | ✅ | 20 条寄存器，PLL 锁定余量 9.6 ms |
+| **整机实现** | ✅ | **clk_sys WNS +1.548 ns** / 5648 LUT (8.91%) / 3 BRAM / 16 DSP / **DRC 0** |
+| **上板验证** | ⏳ | 等音频模块到货 |
+| **HDMI 输出** | 🚧 | 规划中，先 800×600 再冲 720p（见 [13](docs/13-todo.md) P1-3） |
+
+---
+
+## 验证方式
+
+**所有模块都用 Python 定点黄金模型逐位对拍**，而不是"看着波形差不多"：
 
 ```bash
-# 1. 生成黄金向量 + 系数 ROM
-python3 scripts/golden/gen_all.py
-
-# 2. 跑仿真（iverilog，秒级）
-bash scripts/sim/run_iv.sh
-
-# 3. Vivado 综合实现（需要先确认 PART）
-vivado -mode batch -source scripts/vivado/build.tcl -tclargs <PART>
+bash scripts/sim/run_iv.sh          # 全量回归（20 项，约 40 秒）
+bash scripts/sim/run_iv.sh fft_core # 单项
+bash scripts/sim/run_iv.sh tools    # 只查工具链
 ```
 
-## 文档索引
+| 专项手法 | 用在哪 |
+| --- | --- |
+| **穷举** | 512 个 bin 的分组映射、5132 组地址发生器、49920 个极坐标像素 |
+| **真值对照** | 用 `numpy.fft` / `$atan2` / `$sqrt` 当独立真值，不用同一套公式自证 |
+| **总量守恒** | 液晶时序用"一帧 150150 拍、130560 个有效像素"来卡 |
+| **相位漂移** | 两个时钟故意取非整数比，让采样相位持续滑过所有可能值 |
+| **另起参照实现** | 显示链在 TB 里再搭一份完整像素生成链，逐点比对 |
+| **I2C 从机模型** | 把总线上的字节解回来，逐条核对寄存器值 |
+
+**整机冒烟**（`tb_top`）用一个行为级 WM8960（会 ACK 的 I2C 从机 + I2S 主机）
+跑完整上电时序 → 数据通路 → 跨域 → 显示 → 按键 → UART ✓
+
+---
+
+## 当前资源
+
+器件 **XC7A100T-2FGG484**（240 DSP / 135 BRAM36 / 63400 LUT / 126800 FF）
+
+| 项 | 实测 | 占比 |
+| --- | --- | --- |
+| Slice LUTs | 5648 | **8.91%** |
+| Slice Registers | 3629 | 2.86% |
+| Block RAM | 3 | 2.22% |
+| DSP48 | 16 | 6.67% |
+| **WNS** | **+1.548 ns**（clk_sys 48 MHz）/ **+41.573 ns**（clk_pix）| 分域实测 |
+| 比特流 | ~1258 KB | |
+
+余量充足 —— 后续的 UI 框架、背景图、触摸屏都放得下。
+
+---
+
+## 文档
 
 | 文档 | 内容 |
 | --- | --- |
-| [docs/01-architecture.md](docs/01-architecture.md) | 系统架构、时钟域规划、定点格式、延迟预算 |
-| [docs/02-roadmap.md](docs/02-roadmap.md) | 六周三阶段任务分解与验收标准 |
-| [docs/03-verification.md](docs/03-verification.md) | 验证策略、黄金模型对拍流程、板级测试方法 |
-| [docs/04-design-notes.md](docs/04-design-notes.md) | 关键设计决策与踩坑记录 |
-| [docs/05-synthesis-report.md](docs/05-synthesis-report.md) | 综合实现实测数据（时钟方案 / 时序 / 资源 / DRC） |
-| [docs/06-board-resources.md](docs/06-board-resources.md) | PA-Starlite 板级资源清单与管脚规划 |
-| [docs/07-toolchain-and-workflow.md](docs/07-toolchain-and-workflow.md) | 工具链、命令速查、GUI 工程共存方案 |
-| [docs/08-skills-index.md](docs/08-skills-index.md) | **开发经验沉淀 Skills 索引 + 问题账本** |
-| [docs/09-wm8960-module.md](docs/09-wm8960-module.md) | WM8960 音频模块分析（接口 / MCLK 冲突 / 管脚规划） |
-| [docs/10-top-design.md](docs/10-top-design.md) | **顶层设计与接口契约（模块划分 / 端口表 / 开发顺序）** |
+| [01 系统架构](docs/01-architecture.md) | 数据流、时钟域、定点格式、关键取舍、**为什么放弃视频流** |
+| [02 路线图](docs/02-roadmap.md) | 分阶段计划与进度 |
+| [03 验证方法](docs/03-verification.md) | 黄金模型、对拍策略 |
+| [06 板级资源](docs/06-board-resources.md) | 52 条管脚映射、液晶、音频模块、扩展口 |
+| [08 问题账本](docs/08-skills-index.md) | **43 条**：现象 / 根因 / 修复 / 量化改善 |
+| [09 WM8960](docs/09-wm8960-module.md) | 模块接口、PLL 配置、验证过的寄存器表 |
+| [10 顶层设计](docs/10-top-design.md) | 接口契约、开发依赖图、整机结果 |
+| [11 FFT 设计](docs/11-fft-design.md) | 算法推导、地址发生器原理、5 个实施踩坑 |
+| [12 显示链设计](docs/12-display-design.md) | 三视图合成、极坐标近似、波形缓冲、交互 |
+| [13 待做清单](docs/13-todo.md) | 按优先级排的 TODO + 明确不做的事 |
 
-## 开发经验 Skills
+**问题账本**是这个项目最有价值的积累：43 条里**只有不到 10 条是仿真能发现的**，
+其余分别靠综合报错、DRC、资源报告、时序报告、CDC 报告、以及"先看清楚工具到底在算什么"。
 
-本项目的踩坑经验、流程规范、验证方法已封装为 3 个可按需加载的 Skills（`.pi/skills/`）：
+---
 
-| Skill | 职责 |
-| --- | --- |
-| `fpga-rtl-flow` | 纯 RTL 无 GUI 开发流程（iverilog + Vivado batch + 报告解读 + MMCM 时钟规划） |
-| `fixed-point-dsp` | 定点 DSP 位宽预算与结构选择（Q 格式、舍入饱和、条件数分析） |
-| `rtl-verification` | 与 Python 定点黄金模型逐位对拍、协议行为模型、TB 时序陷阱 |
+## 工具链
 
-详见 [docs/08-skills-index.md](docs/08-skills-index.md)（含 13 条问题的完整账本：
-现象 / 根因 / 修复 / 量化改善）。
+```bash
+bash scripts/sim/run_iv.sh              # iverilog 全量回归（20 项 / 40 秒）
+bash scripts/sim/run_xsim.sh <tb>       # 需要 Xilinx 原语的用 xsim
+bash scripts/vivado/build.tcl ...       # 综合 → 布局布线 → 比特流
+bash scripts/vivado/synth_check.tcl ... # 单模块 OOC 检查（资源 + DRC + CDC）
+```
 
-## 当前进度
-
-- [x] 仓库骨架 / 文档 / 工具链脚本
-- [x] `i2s_clkgen` / `i2s_rx` / `i2s_tx`（I2S 主模式，32bit 槽，48 kHz）
-- [x] `eq_cascade` 5 段双二阶均衡器（时分复用 MAC，6 周期/样本）
-- [x] 定点黄金模型 + 仿真对拍通过
-- [x] Vivado 综合 + 布局布线 + 比特流全流程跑通：LUT 3.97% / DSP 10个 / Fmax≈50MHz（需求 12.288MHz，4 倍余量）
-- [ ] FFT 频谱分析（1024 点，存储式时分复用蝶形）
-- [ ] 频谱 → 视频 Overlay
-- [ ] HDMI 输入 / 输出链路
-- [ ] 板级联调与性能实测
-- [x] 确认器件：`xc7a100tfgg484-2`（XC7A100T-2FGG484I）
-- [x] 确认时钟方案：200 MHz 差分 → MMCM 精确出 12.288 / 74.25 / 371.25 MHz（Vivado 已验证）
-- [x] 板级约束 `constrs/pa_starlite.xdc`（52 条管脚已用 Vivado 器件数据库核对）
-- [x] bring-up 顶层 `rtl/top.v`：MMCM + 复位同步 + LED，**已上板验证通过**
-      WNS +17.1ns / DRC 0 违例 / 比特流 382KB
+工具路径由脚本自带定位，不依赖 PATH ✓

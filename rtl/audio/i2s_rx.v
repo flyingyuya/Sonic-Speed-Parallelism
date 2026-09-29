@@ -45,7 +45,7 @@ module i2s_rx #(
         if (UP == 0) begin : g_same
             wire signed [DW-1:0] l_val = l_raw;
             wire signed [DW-1:0] r_val = r_raw;
-            always @(posedge clk or negedge rst_n) begin
+            always @(posedge clk) begin
                 if (!rst_n) begin
                     sr           <= {NFRAME{1'b0}};
                     l_data       <= {DW{1'b0}};
@@ -66,7 +66,7 @@ module i2s_rx #(
         end else begin : g_up
             wire signed [DW-1:0] l_val = {{UP{1'b0}}, l_raw} <<< UP;
             wire signed [DW-1:0] r_val = {{UP{1'b0}}, r_raw} <<< UP;
-            always @(posedge clk or negedge rst_n) begin
+            always @(posedge clk) begin
                 if (!rst_n) begin
                     sr           <= {NFRAME{1'b0}};
                     l_data       <= {DW{1'b0}};

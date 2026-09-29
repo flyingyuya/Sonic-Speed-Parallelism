@@ -45,17 +45,33 @@ if {[llength $rootfiles] > 0} {
     puts "  读入 rtl/       : [llength $rootfiles] 个文件"
     read_verilog $rootfiles
 }
-# 各子目录
-foreach d {common audio video} {
-    set files [glob -nocomplain [file join $ROOT rtl $d *.v]]
+# 各子目录（自动扫描，新增模块目录不用再改脚本）
+foreach d [lsort [glob -nocomplain -type d [file join $ROOT rtl *]]] {
+    set files [lsort [glob -nocomplain [file join $d *.v]]]
     if {[llength $files] > 0} {
-        puts "  读入 rtl/$d: [llength $files] 个文件"
+        puts "  读入 rtl/[file tail $d]: [llength $files] 个文件"
         read_verilog $files
     }
 }
 
-if {$XDC ne "" && [file exists [file join $ROOT $XDC]]} {
-    read_xdc [file join $ROOT $XDC]
+# 约束文件：支持三种形式
+#   <空>        不读约束（只做逻辑综合验证）
+#   目录        读入目录下所有 .xdc（本工程用这个：-tclargs ... constrs）
+#   文件        只读这一个
+if {$XDC ne ""} {
+    set _xdcpath [file join $ROOT $XDC]
+    if {[file isdirectory $_xdcpath]} {
+        set _files [lsort [glob -nocomplain [file join $_xdcpath *.xdc]]]
+        foreach f $_files {
+            puts "  读入约束: [file tail $f]"
+            read_xdc $f
+        }
+    } elseif {[file exists $_xdcpath]} {
+        puts "  读入约束: [file tail $_xdcpath]"
+        read_xdc $_xdcpath
+    } else {
+        puts "  警告：找不到约束 '$XDC'"
+    }
 } else {
     puts "  警告：未提供约束文件，只做逻辑综合验证（时序不完整）"
 }
@@ -63,6 +79,9 @@ if {$XDC ne "" && [file exists [file join $ROOT $XDC]]} {
 # ---------------------------------------------------------------------------
 # 综合
 # ---------------------------------------------------------------------------
+# 头文件搜索路径（rtl/video/disp_cfg.vh 等）
+set_property include_dirs [list [file join $ROOT rtl video] [file join $ROOT rtl common]] [current_fileset]
+
 synth_design -top $TOP -part $PART -flatten_hierarchy none
 write_checkpoint -force [file join $OUT post_synth.dcp]
 report_utilization    -file [file join $OUT post_synth_util.rpt]
@@ -81,6 +100,19 @@ write_checkpoint -force [file join $OUT post_route.dcp]
 report_utilization    -file [file join $OUT post_route_util.rpt]
 report_timing_summary -file [file join $OUT post_route_timing.rpt] \
                       -delay_type max -max_paths 20 -report_unconstrained
+
+# ---------------------------------------------------------------------------
+# DRC 豁免（有据可依，不是藏警告）
+# ---------------------------------------------------------------------------
+# 豁免项以 "Waived" 形式出现在报告里，不是消失。理由写在文件头部。
+set _waiver_tcl [file join [file dirname [info script]] drc_waivers.tcl]
+if {[file exists $_waiver_tcl]} {
+    puts "-- 应用 DRC 豁免：$_waiver_tcl"
+    source $_waiver_tcl
+} else {
+    puts "-- 未找到 drc_waivers.tcl，跳过"
+}
+
 report_drc            -file [file join $OUT post_route_drc.rpt]
 report_clock_utilization -file [file join $OUT clock_util.rpt]
 

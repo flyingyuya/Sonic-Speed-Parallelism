@@ -103,21 +103,111 @@ fi
 #-----------------------------------------------------------------------------
 # 源文件清单
 #-----------------------------------------------------------------------------
-IVFLAGS="-g2005 -Wall -Wno-timescale -I rtl/common -I rtl/audio"
+IVFLAGS="-g2005 -Wall -Wno-timescale -I rtl/common -I rtl/audio -I rtl/video"
 TBEXTRA="sim/tb/codec_model.v"
-RTL="rtl/common/cdc_sync.v rtl/common/rst_sync.v rtl/audio/i2s_clkgen.v \
-     rtl/audio/i2s_rx.v rtl/audio/i2s_tx.v rtl/audio/audio_fifo.v \
-     rtl/audio/eq_cascade.v rtl/audio/eq_coeff_rom.v rtl/audio/audio_top.v"
+RTL="rtl/fft/fft_addr_gen.v rtl/fft/fft_twiddle_rom.v rtl/fft/fft_butterfly.v rtl/fft/fft_core.v \
+     rtl/common/cdc_sync.v rtl/common/rst_sync.v rtl/common/audio_fifo.v \
+     rtl/common/async_fifo.v rtl/common/key_debounce.v \
+     rtl/control/ui_ctrl.v \
+     rtl/control/uart_rx.v rtl/control/uart_tx.v rtl/control/cmd_proc.v \
+     rtl/audio/i2s_clkgen.v rtl/audio/i2s_rx.v rtl/audio/i2s_tx.v \
+     rtl/audio/i2s_slave_clk.v \
+     rtl/audio/eq_cascade.v rtl/audio/eq_coeff_rom.v rtl/audio/audio_top.v \
+     rtl/audio/spectrum.v rtl/audio/spectrum_map.v \
+     rtl/wm8960/WM8960_init.v rtl/wm8960/WM8960_init_table.v \
+     rtl/wm8960/i2c_control.v rtl/wm8960/i2c_bit_shift.v \
+     rtl/video/lcd_timing.v rtl/video/spec_sync.v rtl/video/bg_src.v \
+     rtl/video/disp_mix.v rtl/video/disp_top.v rtl/video/rainbow_rom.v \
+     rtl/video/polar_map.v rtl/video/wave_buf.v"
 
-ALL_TB="eq_cascade i2s_loopback audio_top"
+ALL_TB="eq_cascade i2s_loopback audio_top fft_addr_gen fft_butterfly fft_core wm8960_init lcd_timing spectrum disp_top i2s_slave polar_map wave_buf ui_ctrl uart_cmd"
 WANT="${1:-all}"
 
 pass=0
 fail=0
 skip=0
 
+#-----------------------------------------------------------------------------
+# 异步 FIFO：单个 testbench，但要用 4 组不同的时钟比跑
+#   -P 是 iverilog 的【编译期】参数，所以每组都要重新编译一次
+#   4 组覆盖：写远慢于读 / 写远快于读 / 接近同速（非整数比） / 极端失衡
+#-----------------------------------------------------------------------------
+ASYNC_SCEN="写慢读快_3M→48M:WPER=25.0,RPER=2.0,WR_PCT=80,RD_PCT=90 \
+            写快读慢_48M→12.5M:WPER=7.4,RPER=28.0,WR_PCT=85,RD_PCT=60 \
+            接近同速_非整数比:WPER=7.3,RPER=11.7,WR_PCT=70,RD_PCT=70 \
+            极端失衡_1比10:WPER=3.0,RPER=31.0,WR_PCT=95,RD_PCT=80"
+
+run_async_fifo() {
+    local scen name params flags
+    for scen in $ASYNC_SCEN; do
+        name="${scen%%:*}"
+        params="${scen#*:}"
+        flags=""
+        local kv
+        for kv in ${params//,/ }; do
+            flags="$flags -Ptb_async_fifo.${kv}"
+        done
+        echo ""
+        echo ">>> 仿真 async_fifo  [$name]"
+        # shellcheck disable=SC2086
+        if "$IVERILOG" $IVERILOG_LIBFLAGS $IVFLAGS $flags \
+                -o "$OUT/tb_async_fifo.vvp" \
+                $RTL $TBEXTRA "sim/tb/tb_async_fifo.v" 2>"$OUT/async_fifo.log"; then
+            :
+        else
+            echo "  [编译失败]"; cat "$OUT/async_fifo.log"; fail=$((fail + 1)); continue
+        fi
+        grep -i "warning" "$OUT/async_fifo.log" | head -20 || true
+        # ⚠️ 不能只看 vvp 的退出码 —— $finish 永远返回 0，
+        #    必须检查输出里的 PASS/FAIL 文本。这个坑曾经让一个失败的
+        #    testbench 被统计成"通过"。
+        if ( cd "$ROOT" && "$VVP" $VVP_LIBFLAGS "$OUT/tb_async_fifo.vvp" +novcd ) \
+                | tee "$OUT/async_fifo.run.log" | grep -q "\*\*\* PASS"; then
+            pass=$((pass + 1))
+        else
+            echo "  [测试失败]"; grep -E "\[ERR\]|FAIL" "$OUT/async_fifo.run.log" | head -10
+            fail=$((fail + 1))
+        fi
+    done
+}
+
+#-----------------------------------------------------------------------------
+# 整机冒烟：需要 Xilinx 原语的行为模型（iverilog 没有 unisims），
+#   而且要跑约 30 ms 仿真时间（上电 1 ms + I2C + 2 帧 FFT + 3 帧显示），
+#   所以单独处理，默认也跑（它是唯一验证"模块之间接对了"的测试）。
+#-----------------------------------------------------------------------------
+run_top_smoke() {
+    echo ""
+    echo ">>> 仿真 top（整机冒烟，约需 1~2 分钟）"
+    if "$IVERILOG" $IVERILOG_LIBFLAGS $IVFLAGS -s tb_top \
+            -o "$OUT/tb_top.vvp" \
+            sim/tb/xilinx_stub.v \
+            $(ls rtl/*.v rtl/*/*.v 2>/dev/null) \
+            "sim/tb/tb_top.v" 2>"$OUT/top.log"; then
+        :
+    else
+        echo "  [编译失败]"; cat "$OUT/top.log"; fail=$((fail + 1)); return
+    fi
+    grep -i "warning" "$OUT/top.log" | head -20 || true
+    if ( cd "$ROOT" && "$VVP" $VVP_LIBFLAGS "$OUT/tb_top.vvp" +novcd ) \
+            | tee "$OUT/top.run.log" | grep -q "\*\*\* PASS"; then
+        pass=$((pass + 1))
+    else
+        echo "  [测试失败]"; grep -E "\[ERR\]|FAIL" "$OUT/top.run.log" | head -10
+        fail=$((fail + 1))
+    fi
+}
+
 echo "iverilog : $IVERILOG"
 echo "           $IV_VERSION"
+
+if [ "$WANT" = "all" ] || [ "$WANT" = "async_fifo" ]; then
+    run_async_fifo
+fi
+
+if [ "$WANT" = "all" ] || [ "$WANT" = "top" ]; then
+    run_top_smoke
+fi
 
 for tb in $ALL_TB; do
     if [ "$WANT" != "all" ] && [ "$WANT" != "$tb" ]; then continue; fi
@@ -139,9 +229,12 @@ for tb in $ALL_TB; do
 
     # 默认加 +novcd 关波形；WAVE=1 时不加，波形落在 sim/build/ 下
     if [ -n "${WAVE:-}" ]; then VVPARG=""; else VVPARG="+novcd"; fi
-    if ( cd "$ROOT" && "$VVP" $VVP_LIBFLAGS "$OUT/tb_${tb}.vvp" $VVPARG ); then
+    # 同上：必须检查输出文本，不能只看退出码
+    if ( cd "$ROOT" && "$VVP" $VVP_LIBFLAGS "$OUT/tb_${tb}.vvp" $VVPARG ) \
+            | tee "$OUT/${tb}.run.log" | grep -q "\*\*\* PASS"; then
         pass=$((pass + 1))
     else
+        echo "  [测试失败]"; grep -E "\[ERR\]|FAIL" "$OUT/${tb}.run.log" | head -10
         fail=$((fail + 1))
     fi
 done

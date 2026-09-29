@@ -21,19 +21,25 @@ top（板级顶层：管脚、IBUFDS、MMCM）
 │   ├── uart_rx / uart_tx        🚧  CH340E，调参 + 数据回传
 │   ├── cmd_proc                 🚧  命令解析 → 配置寄存器
 │   ├── i2c_master               🚧  通用 I2C 主机
-│   ├── wm8960_init              🚧  上电配置序列（I2C）
+│   ├── wm8960_init              ✅  上电配置序列（I2C，20 条寄存器）
 │   ├── audio_top                ✅  I2S 收发 + 5 段均衡（阶段一完成）
-│   │   ├── i2s_slave_clk        🚧  **替代 i2s_clkgen**（从模式恢复时序）
+│   │   ├── i2s_slave_clk        ✅  **替代 i2s_clkgen**（从模式恢复时序）
 │   │   ├── i2s_rx / i2s_tx      ✅  接口不变，直接复用
 │   │   ├── eq_cascade ×2        ✅
 │   │   ├── eq_coeff_rom         ✅
 │   │   └── audio_fifo ×2        ✅
-│   ├── fft_core                 🚧  1024 点实数 FFT
-│   └── spectrum                 🚧  幅度谱 → 32 根柱高
+│   ├── fft_core                 ✅  1024 点实数 FFT（1004 LUT + 2 BRAM）
+│   ├── spectrum                 ✅  512 bin -> 32 柱高（473 LUT）
+│   └── spectrum_map             ✅  频率分组表（脚本生成）
 │
 ├── 【显示域 clk_pix = 12.5 MHz】
-│   ├── lcd_timing               🚧  480×272 时序发生器
-│   └── overlay                  🚧  频谱条叠加
+│   ├── lcd_timing               ✅  480x272 时序（56 LUT / 47 FF）
+│   ├── spec_sync                ✅  跨域快照（复用 async_fifo）
+│   ├── bg_src                   ✅  背景生成（扩展点①）
+│   ├── disp_mix                 ✅  背景 + 频谱柱合成
+│   ├── rainbow_rom              ✅  128 级彩虹表（脚本生成）
+│   ├── polar_map                ✅  极坐标变换（64 扇区）
+│   └── wave_buf                 ✅  波形缓冲（双时钟 BRAM）
 │
 └── 跨时钟域
     └── spec_dpram               🚧  双口 BRAM：音频域写 / 显示域读
@@ -425,36 +431,41 @@ module audio_top #(...) (
 
 ---
 
-### 4.8 `fft_core` 🚧
+### 4.8 `fft_core` ✅ **已实现并验证**
 
 ```verilog
-module fft_core #(parameter integer N  = 1024,
-                  parameter integer DW = 16) (
-    input  wire                clk, rst_n,
-    input  wire                start,        // 启动一帧
-    input  wire signed [DW-1:0] x_in,
-    input  wire                x_valid,      // 每拍一个实数样本
-    output wire                x_ready,
-    output reg                 busy,
-    // 输出：512 个复数点
-    output reg  [8:0]          y_index,      // 0 ~ N/2-1
-    output reg  signed [DW:0]  y_re,
-    output reg  signed [DW:0]  y_im,
-    output reg                 y_valid
+module fft_core #(
+    parameter integer N          = 1024,
+    parameter integer LOG2N      = 10,
+    parameter integer DW         = 24,       // 数据 Q1.23
+    parameter integer TW         = 16,       // 旋转因子 Q1.15
+    parameter integer FIFO_DEPTH = 64        // 内部输入 FIFO
+) (
+    input  wire                  clk, rst_n, // clk_sys = 48 MHz
+    input  wire signed [DW-1:0]  x_in,       // 实数样本
+    input  wire                  x_valid,
+    output reg  [LOG2N-2:0]      y_index,    // 0 ~ N/2-1
+    output reg  [DW:0]           y_mag,      // 幅度（近似）
+    output reg                   y_valid,
+    output wire                  busy,
+    output reg  [7:0]            drop_cnt    // FIFO 溢出计数（诊断用，应恒为 0）
 );
 ```
 
 | 项 | 规格 |
 | --- | --- |
-| 点数 | 1024 实数 → 512 复数 |
-| 结构 | 基 2 DIT，单蝶形时分复用，in-place，双口 BRAM |
-| 定点 | 输入 Q1.15，每级 1/2 缩放（10 级共 1/1024）防溢出 |
-| 旋转因子 | ROM，Python 离线生成（Q1.15，512 点） |
-| 周期 | 512 × 10 = 5120 蝶形 × 约 5 clk ≈ 28000 clk ≈ 2.3 ms |
-| 资源 | ≈ 4 DSP48 + 2 BRAM36 |
-| 验证 | 与 `numpy.fft.rfft` 逐点比对（误差 < 1%） |
+| 结构 | 基 2 DIT，**单蝶形时分复用**，in-place，真双口 BRAM |
+| 定点 | 数据 Q1.23，旋转因子 Q1.15，每级 ÷2 缩放（共 ÷N） |
+| 幅度 | `max + 0.4375·min` 近似（不开方），最大误差 **+0.75 dB**（永远偏高） |
+| 实测耗时 | **10,756 clk / 帧**（RUN 10,240 + OUT 513）→ 占帧时间 **1.05%** |
+| 实测资源 | **1004 LUT / 126 FF / 2 BRAM36 / 4 DSP48** |
+| 时序 | WNS **+2.54 ns** / WHS +0.06 ns @ 48 MHz（路径 17.83 ns，32 级逻辑） |
+| 验证 | 4 组测试 x 512 频点 = **2048 个输出逐位一致** |
 
-**时序预算**：一帧 1024 样本 @48 kHz = 21.3 ms；FFT 只用 2.3 ms → 占用率 11% ✅
+**内部已包含输入 FIFO** —— 因为 RUN+OUT 期间 BRAM 被独占，
+约 11 个样本进不来，需要 FIFO 兜住（详见 [11-fft-design.md](11-fft-design.md) §7）。
+
+> 详细设计推导、地址发生器原理、实施踩坑见 [11-fft-design.md](11-fft-design.md)。
 
 ---
 
@@ -501,24 +512,42 @@ module spec_dpram (
 
 ---
 
-### 4.11 `lcd_timing` 🚧
+### 4.11 `lcd_timing` ✅ **已实现并验证**
 
 ```verilog
 module lcd_timing #(
     parameter integer H_SYNC=41, H_BACK=2, H_DISP=480, H_FRONT=2,
-    parameter integer V_SYNC=10, V_BACK=2, V_DISP=272, V_FRONT=2
+    parameter integer V_SYNC=10, V_BACK=2, V_DISP=272, V_FRONT=2,
+    // 计数器位宽必须写在参数表里 —— 端口位宽要在解析模块头时就确定，
+    // 而 localparam 在它后面。Verilog-2001 允许后面的 parameter 引用前面的。
+    parameter integer HW = $clog2(H_SYNC+H_BACK+H_DISP+H_FRONT),
+    parameter integer VW = $clog2(V_SYNC+V_BACK+V_DISP+V_FRONT)
 ) (
-    input  wire        clk, rst_n,           // clk_pix
-    output reg         lcd_clk,              // 直连 clk_pix（或经 ODDR）
-    output reg         lcd_hs, lcd_vs,
-    output wire [10:0] xpos, ypos,
-    output wire        de,                   // 有效像素区
-    output wire        frame_start, line_start
+    input  wire             clk, rst_n,      // clk_pix = 12.5 MHz
+    input  wire [23:0]      rgb_in,          // 调用方按【当拍】x/y 算出的颜色
+    output reg  [23:0]      rgb_out,         // 与 hsync/vsync/de 严格同拍
+    output reg              hsync, vsync,    // 低有效
+    output reg              de,              // 有效像素区（不引出到管脚）
+    output wire [HW-1:0]    x,               // 当前扫描位置（组合输出）
+    output wire [VW-1:0]    y,
+    output reg              sof              // 帧起始，1 拍脉冲
 );
 ```
 
-> **不需要生成 DE 输出** —— 子卡把 `LCD_DE` 硬件拉高了（见 [06](06-board-resources.md) §9.5）。
-> `de` 只作为内部"当前像素有效"的信号给 overlay 用。
+> **不需要 DE 输出脚** —— 子卡把 `LCD_DE` 用 0 欧姆电阻硬件拉高了
+> （见 [06](06-board-resources.md) §9.5）。`de` 只作为内部"当前像素有效"的信号给上层用。
+
+**⚠️ 时序契约（写上层逻辑时必须记住）**
+
+```
+周期 T   : x / y = 当前扫描位置（组合），调用方据此算 rgb_in
+周期 T+1 : de / hsync / vsync / rgb_out 一起寄存输出
+           rgb_out = rgb_in(T)，即【上一拍 x/y 对应的颜色】
+```
+
+也就是 **`de` 与 `x` 天然差一拍** —— 这是刻意的：调用方需要当拍的 x/y
+才来得及算颜色，而送到屏幕的一组信号必须互相严格对齐。对应关系是
+`de`(T+1) ↔ `x`(T) ↔ `rgb_out`(T+1)，**不是** `de` ↔ `x`。
 
 ---
 
@@ -638,3 +667,50 @@ module overlay (
 - [ ] Vivado 综合无 `LUTLP-1`（组合环）
 - [ ] 资源占用与 §6 预算量级一致
 - [ ] 接口若与本文档不符，先改文档再改代码
+
+
+---
+
+## 整机集成结果（已跑完整实现 ✅）
+
+```bash
+vivado -mode batch -source scripts/vivado/build.tcl -tclargs xc7a100tfgg484-2 top constrs
+```
+
+| 项 | 实测 |
+| --- | --- |
+| **WNS** | **+0.581 ns** |
+| **WHS** | **+0.082 ns** |
+| WPWS | +1.100 ns |
+| TNS | 0（无失败端点） |
+| Slice LUTs | **4211 / 63400（6.64%）** |
+| Slice Registers | 3159 / 126800（2.49%） |
+| Block RAM | 2 / 135（1.48%） |
+| DSP48 | 14 / 240（5.83%） |
+| MMCM / BUFG | 1 / 2 |
+| Bonded IOB | 38 / 285 |
+| 比特流 | `build/vivado/top.bit`（1230 KB） |
+| CDC | 183 + 3 端点，**Safe 全部安全、Unsafe = 0、缺 ASYNC_REG = 0** |
+
+**资源占用非常宽裕**（LUT 不到 7%），留给极坐标视图、按键交互、背景图绰绰有余。
+
+### ⚠️ 整机集成暴露的两件事
+
+**① 缺异步时钟组声明 → 假的时序违例**
+
+第一次实现报 `WNS = -1.497 ns / TNS = -249 ns`，
+但那条"关键路径"的 `Requirement` 只有 **0.833 ns** ——
+因为 XDC 里没有 `set_clock_groups -asynchronous`，
+Vivado 把 clk_sys↔clk_pix 的跨域路径按同步关系硬算。
+
+补上 `constrs/clocks.xdc` 后：**WNS -1.497 → +0.581 ns，TNS -249 → 0** ✓
+
+> 这条路径本来就不需要算 —— 跨域全靠 `async_fifo` 的格雷码指针保证。
+> **和第 26 条同类：先看清工具到底在算什么。**
+
+**② `eq_cascade` 的异步复位阻止 DSP 寄存器合并（DPOR-1 × 180）**
+
+DSP48 内部的输出寄存器只有同步复位能力，带异步复位的下游寄存器无法并入，
+白占 LUT/FF 且恶化时序。这与 `fft_core` / `audio_fifo` 踩过的是**同一个根因**。
+
+当前时序已收敛，属于优化项，暂不改。

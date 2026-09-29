@@ -21,7 +21,7 @@ module cdc_sync #(
     (* ASYNC_REG = "TRUE" *) reg [WIDTH-1:0] sync_q [0:STAGES-1];
     integer i;
 
-    always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk) begin
         if (!rst_n) begin
             for (i = 0; i < STAGES; i = i + 1)
                 sync_q[i] <= RESET_VAL;
@@ -57,7 +57,7 @@ module cdc_edge #(
         .clk(clk), .rst_n(rst_n), .din(din), .dout(d)
     );
 
-    always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk) begin
         if (!rst_n) d_d <= 1'b0;
         else        d_d <= d;
     end

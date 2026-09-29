@@ -56,10 +56,13 @@ set_property -dict {PACKAGE_PIN W22 IOSTANDARD LVCMOS33}   [get_ports {led[0]}]
 set_property -dict {PACKAGE_PIN Y22 IOSTANDARD LVCMOS33}   [get_ports {led[1]}]
 
 #-----------------------------------------------------------------------------
-# 4. 说明
+# 用户按键（来自 docs/06 §3）
 #-----------------------------------------------------------------------------
-# 未使用的板载资源（HDMI / MIPI / SD / UART / I2C / 40P 扩展口）暂不约束，
-# 等对应模块做出来再往这里加。
-#
-# 如果之后要接 LCD，直接把官方例程 PZ_LCD.srcs/constrs_1/new/LCD.xdc 里
-# 那 27 条 set_property 追加到本文件末尾即可（已核对，见 docs/06 §9.4）。
+set_property -dict {PACKAGE_PIN W21 IOSTANDARD LVCMOS33} [get_ports key1_n]
+set_property -dict {PACKAGE_PIN Y21 IOSTANDARD LVCMOS33} [get_ports key2_n]
+
+#-----------------------------------------------------------------------------
+# UART（板载 CH340E，来自 docs/06 §4）
+#-----------------------------------------------------------------------------
+set_property -dict {PACKAGE_PIN P14 IOSTANDARD LVCMOS33} [get_ports uart_rx_pin]
+set_property -dict {PACKAGE_PIN P15 IOSTANDARD LVCMOS33} [get_ports uart_tx_pin]

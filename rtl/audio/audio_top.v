@@ -1,27 +1,28 @@
 //=============================================================================
 // audio_top.v - 音频链路顶层（I2S → 低延迟均衡 → I2S）
 //-----------------------------------------------------------------------------
-// 单一时钟域（clk = 12.288 MHz = 48kHz x 256），无跨时钟域风险。
+// 【从模式】WM8960 是本工程的 I2S 主（手册 P56：数字音频接口也从 SYSCLK 派生，
+// MCLK 必须与 BCLK/LRCLK 同源），所以 bclk / lrclk 在这里是**输入**。
+// 时序恢复由 i2s_slave_clk 完成，输出契约与原来的 i2s_clkgen 完全一致，
+// 所以 i2s_rx / i2s_tx / eq_cascade / audio_fifo 一个字都没改。
 //
 //                           ┌──────────────┐
 //   sdin ─▶ i2s_rx ─▶ fifo ─▶ eq_cascade L ─┐
 //                           └▶ eq_cascade R ─┴─▶ fifo ─▶ i2s_tx ─▶ sdout
 //                ▲                                              │
-//                └──────────── i2s_clkgen (bclk/lrclk) ─────────┘
+//                └──── i2s_slave_clk（从 bclk/lrclk 恢复时序）────┘
+//
+// 单一时钟域：clk = clk_sys = 48 MHz。在从模式下本模块不再需要
+// "BCLK = clk/4" 这种整数关系 —— i2s_slave_clk 靠过采样恢复边沿，
+// 只要 clk 明显快于 BCLK 即可（48 MHz / 3.072 MHz = 15.6 倍）。
 //
 // 系数由 eq_coeff_rom 提供：5 个频段 x 21 个增益档，每个频段独立选档。
 // 换挡时本地 FSM 把 25 个系数重新灌进两个声道的 eq_cascade。
 //
 // 为什么收发两侧都要加 FIFO：
-//   RX 在帧尾（bit_idx=2*SLOT-1）才吐出样本，而 TX 必须在下一帧起点装载，
-//   中间只有 2 个 BCLK 周期（DIV=2 时 4 个 clk）余量；EQ 又要 6 个 clk。
-//   FIFO 把"帧节拍"和"处理节拍"解耦，同时吸收系数装载期间的样本堆积。
-//
-// 延迟预算（clk 周期）：
-//   rx 拼帧末 -> 写 fifo        1
-//   eq  6 周期/样本             6
-//   写 fifo + tx 装载           2
-//   合计                        ~9 clk = 0.73 us @12.288MHz
+//   RX 在帧尾（bit_idx=2*SLOT-1）才吐出样本，而 TX 必须在下一帧起点装载。
+//   EQ 又要 6 个 clk。FIFO 把"帧节拍"和"处理节拍"解耦，
+//   同时吸收系数装载期间的样本堆积。
 //=============================================================================
 `timescale 1ns/1ps
 
@@ -32,18 +33,17 @@ module audio_top #(
     parameter integer AW      = 48,
     parameter integer NSECT   = 5,
     parameter integer SLOT    = 32,
-    parameter integer DIV     = 2,
     parameter integer NGAIN   = 21,
     parameter integer NROMW   = 10     // 总表项 5*21*5 = 525 -> 需 10bit 地址
 ) (
-    input  wire clk,            // clk_audio = 12.288 MHz
+    input  wire clk,            // clk_sys = 48 MHz
     input  wire rst_n,
 
-    // ---- I2S 物理接口 ----
-    output wire bclk,
-    output wire lrclk,
-    input  wire sdin,
-    output wire sdout,
+    // ---- I2S 物理接口（从模式：bclk/lrclk 由 WM8960 提供）----
+    input  wire bclk,
+    input  wire lrclk,
+    input  wire sdin,           // WM8960 ADCDAT → FPGA
+    output wire sdout,          // FPGA → WM8960 DACDAT
 
     // ---- 控制（必须已同步到 clk 域）----
     input  wire [NSECT*5-1:0] band_gain,   // 每频段 5bit 增益档位：0..20 -> -10..+10 dB
@@ -52,13 +52,18 @@ module audio_top #(
     output wire               cfg_busy,
     output wire               running,     // 系数装载完成、正在处理样本
 
-    // ---- 调试观测（ILA / testbench 用，不参与逻辑）----
+    // ---- 调试 / 下游观测 ----
     output wire               dbg_bclk_rise,
     output wire               dbg_bclk_fall,
     output wire               dbg_frame_start,
     output wire               dbg_half_start,
     output wire [5:0]         dbg_bit_idx,
-    output wire               dbg_sample_stb
+    output wire               dbg_sample_stb,
+
+    // 接收到的样本（去 EQ 之前），送给 FFT 做频谱分析
+    output wire signed [DW-1:0] dbg_rx_l,
+    output wire signed [DW-1:0] dbg_rx_r,
+    output wire                 dbg_rx_valid
 );
 
     localparam integer NCOE = NSECT * 5;
@@ -93,9 +98,9 @@ module audio_top #(
     wire            tx_load;
 
     //-------------------------------------------------------------------------
-    // I2S 时钟与位计数
+    // I2S 时序恢复（从模式）
     //-------------------------------------------------------------------------
-    i2s_clkgen #(.DIV(DIV), .SLOT(SLOT)) u_clkgen (
+    i2s_slave_clk #(.SLOT(SLOT)) u_clkgen (
         .clk(clk), .rst_n(rst_n),
         .bclk(bclk), .lrclk(lrclk),
         .bclk_rise(bclk_rise), .bclk_fall(bclk_fall),
@@ -132,7 +137,7 @@ module audio_top #(
 
     eq_coeff_rom u_rom (.addr(rom_addr), .dout(rom_dout));
 
-    always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk) begin
         if (!rst_n) begin
             st        <= ST_IDLE;
             ld_cnt    <= 5'd0;
@@ -258,5 +263,9 @@ module audio_top #(
     assign dbg_half_start = half_start;
     assign dbg_bit_idx    = bit_idx;
     assign dbg_sample_stb = sample_stb;
+
+    assign dbg_rx_l     = rx_l;
+    assign dbg_rx_r     = rx_r;
+    assign dbg_rx_valid = rx_valid;
 
 endmodule

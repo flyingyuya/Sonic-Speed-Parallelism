@@ -46,7 +46,15 @@ module audio_fifo #(
 
     assign dout = mem[rptr[AW-1:0]];
 
-    always @(posedge clk or negedge rst_n) begin
+    //-------------------------------------------------------------------------
+    // 复位用【同步】风格（always @(posedge clk) + if (!rst_n)），不用
+    // `or negedge rst_n`。原因：本 FIFO 的 empty/full 会一路传到
+    // fft_core 里 BRAM 的 WEBWE 使能脚。带异步复位的寄存器在复位有效时
+    // 会在两个时钟沿之间异步跳变，时钟沿落到跳变中就可能在非法时刻使能
+    // BRAM 写 —— 默认静态时序分析不覆盖这条路径，Vivado 报 REQP-1839。
+    // 前提：复位期间 clk 必须一直跑（本工程由 MMCM + rst_sync 保证）。
+    //-------------------------------------------------------------------------
+    always @(posedge clk) begin
         if (!rst_n) begin
             wptr <= {(AW+1){1'b0}};
             rptr <= {(AW+1){1'b0}};
