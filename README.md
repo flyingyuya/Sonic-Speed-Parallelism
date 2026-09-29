@@ -1,6 +1,14 @@
 # 音速并行 Sonic-Speed-Parallelism
 
+[![RTL CI](https://github.com/flyingyuya/Sonic-Speed-Parallelism/actions/workflows/rtl-ci.yml/badge.svg)](https://github.com/flyingyuya/Sonic-Speed-Parallelism/actions/workflows/rtl-ci.yml)
+
 基于 Artix-7 (XC7A100T) 的**音频一体化系统** —— **纯 RTL 实现，不依赖 HLS / PYNQ / 软核**。
+
+![显示效果](docs/images/disp_frame.png)
+
+> 上图是 `tb_disp_top` 逐像素比对（130560 个像素）通过后导出的显示帧：
+> **三个视图同屏** —— 极坐标频谱（上）+ 波形（中）+ 柱状频谱（下）。
+> （目前是仿真渲染；上板实测已确认同一画面，只差一张板子照片。）
 
 > **定位**：把「采集 → 均衡 → 频谱分析 → 可视化 → 交互调参」这条链做深做透，
 > 而不是横向铺功能。**不含视频输入**；**HDMI 输出保留**，作为解耦的第二路展示大屏

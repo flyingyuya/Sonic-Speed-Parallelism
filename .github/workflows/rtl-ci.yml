@@ -1,0 +1,51 @@
+name: RTL CI
+
+# 每次 push / PR 自动跑 rtl/sim 的静态检查与全量回归。
+#
+# 【为什么只跑这些】
+#   iverilog + verilator 在 Ubuntu 上 apt 就能装，2 分钟跑完。
+#   Vivado 综合**不在 CI 里** —— GitHub 的 runner 上没有 license。
+#   所以分工是：
+#     CI      : 功能对不对（22 项逐位对拍 + 静态检查）
+#     本地    : 综合/实现/时序/DRC（需 Vivado）
+#   但已经够挡住绝大多数 PR 会引入的问题了。
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:        # 也允许手动点一下跑
+
+jobs:
+  sim:
+    name: 静态检查 + 全量回归
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装工具链
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends iverilog verilator
+          echo "--- 版本 ---"
+          iverilog -V | head -1
+          verilator --version
+
+      - name: 跑 run_iv.sh（Verilator 检查 + 21 个 testbench）
+        run: bash scripts/sim/run_iv.sh
+
+      - name: 失败时打印详细日志
+        if: failure()
+        run: |
+          echo "=================== Verilator 日志 ==================="
+          cat sim/build/verilator.log 2>/dev/null | head -80 || echo "(无)"
+          echo
+          for f in sim/build/*.log; do
+            if grep -qE '\[ERR\]|\*\*\* FAIL' "$f" 2>/dev/null; then
+              echo "=================== $f ==================="
+              grep -E '\[ERR\]|\*\*\* FAIL' "$f" | head -20
+            fi
+          done
