@@ -47,6 +47,7 @@ module tb_ui_ctrl;
     reg        next_view = 0;
 
     wire [7:0] cfg_view, cfg_style, cfg_hue_spd, cfg_wave_gain, cfg_bg_mode, cfg_auto;
+    wire [7:0] cfg_demo;
     wire [3:0] view_idx;
 
     ui_ctrl #(.AUTO_PERIOD(1000)) u_ui (
@@ -55,7 +56,7 @@ module tb_ui_ctrl;
         .next_view(next_view),
         .cfg_view(cfg_view), .cfg_style(cfg_style), .cfg_hue_spd(cfg_hue_spd),
         .cfg_wave_gain(cfg_wave_gain), .cfg_bg_mode(cfg_bg_mode),
-        .cfg_auto(cfg_auto), .view_idx(view_idx)
+        .cfg_auto(cfg_auto), .cfg_demo(cfg_demo), .view_idx(view_idx)
     );
 
     //=========================================================================
@@ -153,13 +154,14 @@ module tb_ui_ctrl;
         // ③ 复位后的默认值
         //---------------------------------------------------------------------
         $display("");
-        if (cfg_view !== 8'b0000_0111 || cfg_hue_spd !== 8'd2 ||
-            cfg_style !== 8'd0 || cfg_bg_mode !== 8'd0 || cfg_auto !== 8'd0) begin
+        if (cfg_view !== 8'b0000_0111 || cfg_hue_spd !== 8'd6 ||
+            cfg_style !== 8'd0 || cfg_bg_mode !== 8'd0 || cfg_auto !== 8'd0 ||
+            cfg_demo !== 8'd0) begin
             n_err = n_err + 1;
-            $display("  [ERR] 默认值不符：view=%08b style=%0d huespd=%0d bg=%0d auto=%0d",
-                     cfg_view, cfg_style, cfg_hue_spd, cfg_bg_mode, cfg_auto);
+            $display("  [ERR] 默认值不符：view=%08b style=%0d huespd=%0d bg=%0d auto=%0d demo=%0d",
+                     cfg_view, cfg_style, cfg_hue_spd, cfg_bg_mode, cfg_auto, cfg_demo);
         end else
-            $display("  [ok ] ③ 上电默认值正确（三视图全开 / 色相速度 2 / 不自动）");
+            $display("  [ok ] ③ 上电默认值正确（三视图全开 / 色相速度 6 / 不自动 / 演示关）");
 
         //---------------------------------------------------------------------
         // ④ 统一写端口
@@ -170,14 +172,16 @@ module tb_ui_ctrl;
         do_write(4'h3, 8'd5);
         do_write(4'h4, 8'd2);
         do_write(4'h5, 8'd0);
+        do_write(4'h6, 8'd2);           // 演示图案 = 棋盘
         do_write(4'hF, 8'hAA);          // 未定义地址，应被忽略
         if (cfg_view !== 8'b0000_0001 || cfg_style !== 8'd1 || cfg_hue_spd !== 8'd4 ||
-            cfg_wave_gain !== 8'd5 || cfg_bg_mode !== 8'd2 || cfg_auto !== 8'd0) begin
+            cfg_wave_gain !== 8'd5 || cfg_bg_mode !== 8'd2 || cfg_auto !== 8'd0 ||
+            cfg_demo !== 8'd2) begin
             n_err = n_err + 1;
-            $display("  [ERR] 写端口结果不符：view=%08b style=%0d huespd=%0d wg=%0d bg=%0d",
-                     cfg_view, cfg_style, cfg_hue_spd, cfg_wave_gain, cfg_bg_mode);
+            $display("  [ERR] 写端口结果不符：view=%08b style=%0d huespd=%0d wg=%0d bg=%0d demo=%0d",
+                     cfg_view, cfg_style, cfg_hue_spd, cfg_wave_gain, cfg_bg_mode, cfg_demo);
         end else
-            $display("  [ok ] ④ 统一写端口 6 个地址全部正确，未定义地址被忽略");
+            $display("  [ok ] ④ 统一写端口 7 个地址全部正确，未定义地址被忽略");
 
         //---------------------------------------------------------------------
         // ⑤ 视图轮转（含回绕）

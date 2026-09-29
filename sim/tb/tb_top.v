@@ -449,6 +449,55 @@ module tb_top;
                 n_err = n_err + 1;
                 $display("  [ERR] '?' 只回了 %0d 字节（应 >= 20）", n_pc_rx);
             end
+
+            //-------------------------------------------------------------
+            // T01（演示/自检图案）端到端：UART -> cmd_proc -> ui_ctrl
+            //   -> top 里的 mux -> 显示链
+            //
+            // 这是新增的接线，必须验证它真的通。检查点选在
+            // 【mux 之后、送给 disp_top 的那根线】上：
+            //   T01 是斜坡，bar[i] 必须恰好是 i*8。
+            //   音频通路的柱高不可能刚好长成 0,8,16,...,472，
+            //   所以这个图案能确实区分“选到 demo 了”还是“还走音频”。
+            //-------------------------------------------------------------
+            begin : demo_test
+                reg [8:0] b0, b59;
+                reg [8:0] a0, a59;
+
+                // 先记住关掉 demo 时的值（音频通路）
+                a0  = dut.spec_bars_sel[0*9 +: 9];
+                a59 = dut.spec_bars_sel[59*9 +: 9];
+
+                pc_put("T"); pc_put("0"); pc_put("1");   // 开斜坡图案
+                // 斜坡要等一个 tick（2^17 拍）才刷新，多等一会儿
+                repeat (200000) @(posedge clk_sys);
+
+                if (dut.ui_demo !== 8'h01) begin
+                    n_err = n_err + 1;
+                    $display("  [ERR] 串口发 'T01' 后 ui_demo = %0d（期望 1）", dut.ui_demo);
+                end else
+                    $display("  [ok ] 串口发 'T01'：ui_demo = 1");
+
+                b0  = dut.spec_bars_sel[0*9 +: 9];
+                b59 = dut.spec_bars_sel[59*9 +: 9];
+                if (b0 !== 9'd0 || b59 !== 9'd472) begin
+                    n_err = n_err + 1;
+                    $display("  [ERR] T01 后柱高 bar[0]=%0d bar[59]=%0d（期望 0 与 472）",
+                             b0, b59);
+                    $display("        （音频通路当时是 %0d 与 %0d）", a0, a59);
+                end else
+                    $display("  [ok ] T01 后柱高变成斜坡 0..472（mux 切到 demo 成功）");
+
+                // 关掉，确认能切回音频通路
+                pc_put("T"); pc_put("0"); pc_put("0");
+                repeat (200000) @(posedge clk_sys);
+                if (dut.spec_bars_sel[0*9 +: 9] === b0 &&
+                    dut.spec_bars_sel[59*9 +: 9] === b59) begin
+                    n_err = n_err + 1;
+                    $display("  [ERR] T00 后柱高没变，mux 可能没切回音频通路");
+                end else
+                    $display("  [ok ] T00 后切回音频通路（柱高不再等于斜坡）");
+            end
         end
 
         $display("");

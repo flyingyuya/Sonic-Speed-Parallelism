@@ -87,6 +87,10 @@ module cmd_proc #(
                 "G", "g": cmdidx = 4'h3;
                 "B", "b": cmdidx = 4'h4;
                 "A", "a": cmdidx = 4'h5;
+                // T = 演示/自检图案（rtl/video/demo_src.v）
+                //   之所以要这个命令：没有音频模块时，柱状/极坐标/波形
+                //   全是空的，S/H/G 你看不出有没有生效。开个内置图案就能看了。
+                "T", "t": cmdidx = 4'h6;
                 default : cmdidx = 4'hF;
             endcase
         end

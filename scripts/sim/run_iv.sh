@@ -118,14 +118,81 @@ RTL="rtl/fft/fft_addr_gen.v rtl/fft/fft_twiddle_rom.v rtl/fft/fft_butterfly.v rt
      rtl/wm8960/i2c_control.v rtl/wm8960/i2c_bit_shift.v \
      rtl/video/lcd_timing.v rtl/video/spec_sync.v rtl/video/bg_src.v \
      rtl/video/disp_mix.v rtl/video/disp_top.v rtl/video/rainbow_rom.v \
-     rtl/video/polar_map.v rtl/video/wave_buf.v"
+     rtl/video/polar_map.v rtl/video/wave_buf.v rtl/video/demo_src.v"
 
-ALL_TB="eq_cascade i2s_loopback audio_top fft_addr_gen fft_butterfly fft_core wm8960_init lcd_timing spectrum disp_top i2s_slave polar_map wave_buf ui_ctrl uart_cmd"
+ALL_TB="eq_cascade i2s_loopback audio_top fft_addr_gen fft_butterfly fft_core wm8960_init lcd_timing spectrum disp_top i2s_slave polar_map wave_buf ui_ctrl uart_cmd demo_src"
 WANT="${1:-all}"
 
 pass=0
 fail=0
 skip=0
+
+#-----------------------------------------------------------------------------
+# Verilator 静态检查（比 iverilog 严，专门补它的盲区）
+#-----------------------------------------------------------------------------
+# 【为什么需要它】
+#   iverilog 会**默默接受多重驱动** —— 连 -Wall 都不报（实测）。Verible 也不报。
+#   而综合器会直接报 [Synth 8-6859] multi-driven net 并让 opt_design 失败。
+#   结果就是：本脚本报"21/21 PASS"，设计却根本综合不过去。
+#   真实案例见 docs/08-skills-index.md 第 52 条。
+#
+#   Verilator 的 MULTIDRIVENPROC 正好堵这个洞，另外还能抓组合环
+#   (UNOPTFLAT)、意外锁存器 (LATCH) 等等 —— 都是"仿真看不出来、
+#   只有综合器会报"的那一类。
+#
+# 【为什么关掉一批警告】
+#   下面 -Wno- 关掉的全是【风格类】，不是正确性问题：
+#     WIDTHEXPAND / WIDTHTRUNC  位宽隐式扩展/截断。本工程大量
+#                               `(a << 3) + b` 这类写法，行为是明确的
+#                               （无符号补零 / 有意截断），全部都经过逐位对拍。
+#     UNUSEDSIGNAL / UNUSEDPARAM 调试口、预留口、上游没用的输出。
+#     PINCONNECTEMPTY           `.dbg_xxx()` 这种刻意留空的端口连接。
+#     SYNCASYNCNET              rst_sync 的"异步置位、同步释放"就是【故意】
+#                               同时有同步和异步用法，这是它存在的意义。
+#     PROCASSINIT               xilinx_stub.v 的初值 + always #延时，
+#                               那是仿真模型，不是综合目标。
+#     DECLFILENAME / VARHIDDEN / TIMESCALEMOD  命名/文件风格。
+#   关掉它们不是"藏警告"，是"这类检查的前提在本工程不成立"
+#   —— 判据同 docs/07「零警告该怎么做到」那一节。
+#
+# 【如果这个检查报了错，先去读提示的位置，不要先关规则】
+#-----------------------------------------------------------------------------
+VLFLAGS="--lint-only -Wall -Wno-fatal \
+         -Wno-WIDTHEXPAND -Wno-WIDTHTRUNC -Wno-UNUSEDSIGNAL -Wno-UNUSEDPARAM \
+         -Wno-PROCASSINIT -Wno-DECLFILENAME -Wno-VARHIDDEN -Wno-SYNCASYNCNET \
+         -Wno-TIMESCALEMOD -Wno-PINCONNECTEMPTY \
+         +incdir+rtl/video +incdir+rtl/common"
+
+run_verilator_lint() {
+    echo ""
+    echo ">>> Verilator 静态检查（补 iverilog 的盲区：多重驱动 / 组合环 / 锁存器）"
+    if ! command -v verilator >/dev/null 2>&1; then
+        echo "  [跳过] 没装 verilator"
+        echo "         Arch 上装： sudo pacman -S verilator"
+        echo "         装了之后这项能抓住 multi-driven net 这类"
+        echo "         iverilog 不报、但综合器会直接失败的错。"
+        skip=$((skip + 1))
+        return
+    fi
+    # shellcheck disable=SC2086
+    if verilator $VLFLAGS --top-module top \
+            sim/tb/xilinx_stub.v $(ls rtl/*.v rtl/*/*.v) \
+            > "$OUT/verilator.log" 2>&1; then
+        n=$(grep -cE "^%Warning|^%Error" "$OUT/verilator.log" || true)
+        if [ "$n" -eq 0 ]; then
+            pass=$((pass + 1))
+            echo "  0 警告"
+        else
+            fail=$((fail + 1))
+            echo "  [有警告] $n 条："
+            grep -E "^%Warning|^%Error" "$OUT/verilator.log" | head -20
+        fi
+    else
+        fail=$((fail + 1))
+        echo "  [失败] 详情见 $OUT/verilator.log"
+        grep -E "^%Error|^%Warning" "$OUT/verilator.log" | head -20
+    fi
+}
 
 #-----------------------------------------------------------------------------
 # 异步 FIFO：单个 testbench，但要用 4 组不同的时钟比跑
@@ -200,6 +267,8 @@ run_top_smoke() {
 
 echo "iverilog : $IVERILOG"
 echo "           $IV_VERSION"
+
+run_verilator_lint
 
 if [ "$WANT" = "all" ] || [ "$WANT" = "async_fifo" ]; then
     run_async_fifo

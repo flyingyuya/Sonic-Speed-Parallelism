@@ -16,7 +16,8 @@
 //                                    │   ui_mode        hue_off（帧计数）    │
 //                                    └───────────────────────────────────────┘
 //
-// 【色相滚动】每 SCROLL_DIV 帧把 hue_off 加 1，128 帧走完一整圈彩虹。
+// 【色相滚动】每 N 帧把 hue_off 加 1，128 帧走完一整圈彩虹。
+//   N 由 ui_hue_spd（H 命令）决定，**H 越大越快**，H=0 完全停住。
 //   参考工程 Music-Spectrum 是"每扫 5 列加 1"，这里用帧计数更简单，
 //   视觉上都是"彩虹沿着横轴缓慢流动"。
 //
@@ -104,10 +105,33 @@ module disp_top #(
     reg [7:0] frame_cnt;
     reg [6:0] hue_off;
 
-    // 色相滚动节拍：spd 取 0..5，0 = 不滚动，其余每 2^spd 帧滚一级
-    wire [2:0] hue_spd = (ui_hue_spd == 8'd0) ? 3'd0
-                       : (ui_hue_spd > 8'd5)  ? 3'd5 : ui_hue_spd[2:0];
-    wire [7:0] tick_mask = (hue_spd == 3'd0) ? 8'hFF : ((8'd1 << hue_spd) - 8'd1);
+    //-------------------------------------------------------------------------
+    // 滚动节拍：**H 越大越快**，H=0 停住
+    //
+    //   旧实现（上板后被反馈"H08 比 H03 还慢"）：
+    //       tick_mask = (1 << H) - 1          ->  H 越大【越慢】
+    //       而且 H=0 的 mask 是 0xFF，变成"每 256 帧"—— 【根本不是停住】，
+    //       是全场最慢（文档还写反了）。
+    //       又因为 hue_spd 只有 3 位并钳在 5，H06~H15 效果完全一样。
+    //
+    //   现在：H = 速度档，1..7 有效，越大越快；H=0 停住；>7 当 7（最快）。
+    //       roll_period = 2^(8-H) 帧
+    //         H=1 -> 每 128 帧 (1.54 s)   H=5 -> 每  8 帧 ( 96 ms)
+    //         H=2 -> 每  64 帧            H=6 -> 每  4 帧 ( 48 ms)  <= 默认
+    //         H=3 -> 每  32 帧 (384 ms)   H=7 -> 每  2 帧 ( 24 ms)  最快
+    //         H=4 -> 每  16 帧 (192 ms)
+    //
+    //   默认值从 2 改成 **6**：因为 "H=6 -> 每 4 帧" 恰好等于旧 H=2 的
+    //   "每 2^2 = 4 帧"，上电动画速度与之前完全一致，只是坐标换成了
+    //   "越大越快"的直觉方向。
+    //
+    //   实现上仍用可变掩码（Verilog 不允许可变宽度位选 frame_cnt[H-1:0]，
+    //   见账本）：mask = (1 << (8-H)) - 1，低位全 1 时触发。
+    //   H=0 时 8-H=8，1<<8 溢出成 0，mask 变成 0xFF，但那时被 hue_run 挡住。
+    //-------------------------------------------------------------------------
+    wire [3:0] hue_spd   = (ui_hue_spd > 8'd7) ? 4'd7 : ui_hue_spd[3:0];
+    wire       hue_run   = (hue_spd != 4'd0);
+    wire [7:0] tick_mask = (8'd1 << (4'd8 - hue_spd)) - 8'd1;
 
     always @(posedge clk_pix) begin
         if (!rst_pix_n) begin
@@ -115,12 +139,9 @@ module disp_top #(
             hue_off   <= 7'd0;
         end else if (sof) begin
             frame_cnt <= frame_cnt + 1'b1;
-            // 滚动速度由 ui_ctrl 决定：每 2^spd 帧把色相加 1（spd=0 表示不滚动）
-            //   ⚠️ Verilog 不允许可变宽度的位选（frame_cnt[spd-1:0] 是非法的），
-            //      所以改用"可变掩码"：mask = (1<<spd)-1，低位全 1 时触发。
             // ⚠️ 必须写成 (cnt & mask) == mask，不能写成 cnt == mask ——
             //    后者 256 帧才命中一次（frame_cnt 是 8 位），色相几乎不动。
-            if ((frame_cnt & tick_mask) == tick_mask) begin
+            if (hue_run && ((frame_cnt & tick_mask) == tick_mask)) begin
                 hue_off <= hue_off + 1'b1;
             end
         end

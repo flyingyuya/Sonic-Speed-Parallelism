@@ -79,7 +79,8 @@ module tb_disp_top;
     // 视图使能：[0]柱状 [1]极坐标 [2]波形。主测量用全开，
     //           之后会临时关掉几个做"开关真的生效"的抽查。
     reg [2:0] view_en  = 3'b111;
-    reg [7:0] hue_spd  = 8'd2;      // 与 ui_ctrl 的默认值一致：每 4 帧滚一级
+    reg [7:0] hue_spd  = 8'd6;      // 与 ui_ctrl 的默认值一致
+                                    //   H 越大越快：H=6 -> 每 2^(8-6)=4 帧滚一级
     integer           wdiv = 0, wph = 0;
 
     always @(posedge clk_sys) begin

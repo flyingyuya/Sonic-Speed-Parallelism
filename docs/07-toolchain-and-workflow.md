@@ -457,8 +457,27 @@ report_drc -file [file join $OUT post_route_drc.rpt]
 | `scripts/vivado/synth_check.tcl` | 单模块 OOC 综合 + DRC + CDC |
 | `scripts/vivado/program.tcl` | 烧板（`-tclargs detect` 只探测） |
 | `scripts/vivado/drc_waivers.tcl` | DRC 豁免判据（被上面两个 tcl source） |
-| `scripts/sim/run_iv.sh` | iverilog 全量回归（20 个 TB） |
+| `scripts/sim/run_iv.sh` | iverilog 全量回归（21 个 TB + **Verilator 静态检查**） |
 | `scripts/uart_term.py` | UART 命令通道终端 / 协议自检 |
+
+### 三层检查，各管一段
+
+| 层 | 工具 | 能抓什么 | 抓不到什么 |
+| --- | --- | --- | --- |
+| 1 | **iverilog** TB | 功能对不对（逐位对拍）| **多重驱动**（连 `-Wall` 都沉默）✗ |
+| 2 | **Verible** lint | 编码风格 | 同上 ✗ |
+| 3 | **Verilator** `-Wall` | **多重驱动**（`MULTIDRIVENPROC`）、组合环（`UNOPTFLAT`）、意外锁存器（`LATCH`）| 时序、资源 |
+| 4 | **Vivado** 综合 | 上面全部 + 时序 + DRC | 慢（分钟级）|
+
+> **账本第 52 条就是被第 1、2 层漏掉、靠第 4 层才抓到的。**
+> 加第 3 层的目的就是把这类错误**提前到秒级**。
+>
+> ⚠️ Verilator 只有在 **`-Wall`** 下才启用 `MULTIDRIVENPROC` ——
+> 不加 `-Wall` 时它同样沉默。这一条是实测确认的。
+
+Verilator 那一步关掉了一批**风格类**警告（位宽隐式扩展、未用信号、
+空端口连接、`rst_sync` 的同步+异步混用等），判据写在
+`scripts/sim/run_iv.sh` 的注释里 —— 和下面「零警告」那一节是同一套方法。
 
 ### ⚠️ 什么时候必须回来重看豁免
 

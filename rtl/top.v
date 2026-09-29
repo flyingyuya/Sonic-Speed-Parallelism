@@ -277,7 +277,7 @@ module top #(
     wire [7:0] uart_wr_data;
 
     // ui_ctrl 的配置输出（声明必须在使用之前 —— Verilog 不允许先用后声明）
-    wire [7:0] ui_view, ui_style, ui_hue_spd, ui_wave_gain, ui_bg_mode, ui_auto;
+    wire [7:0] ui_view, ui_style, ui_hue_spd, ui_wave_gain, ui_bg_mode, ui_auto, ui_demo;
     wire [3:0] ui_view_idx;
 
     cmd_proc u_cmd (
@@ -322,8 +322,47 @@ module top #(
         .cfg_wave_gain (ui_wave_gain),
         .cfg_bg_mode   (ui_bg_mode),
         .cfg_auto      (ui_auto),
+        .cfg_demo      (ui_demo),
         .view_idx      (ui_view_idx)
     );
+
+    //=========================================================================
+    // 6d. 演示 / 自检图案（P1-4）
+    //     为什么需要：没有音频模块时，柱状/极坐标/波形全是空的，
+    //     连“S / H / G 三条命令有没有生效”都判断不了，显示链在硬件上
+    //     一直是零观察。这个模块合成一路假数据顶上。
+    //
+    //     T00（上电默认）时它被【完全旁路】—— 两个 mux 都选真实通路，
+    //     对音频链路零影响。
+    //
+    //     两条通路各挂一个 2:1 mux，而不是去改 spectrum / audio_top：
+    //       频谱：spectrum.bar_flat / .frame_done   vs  demo.bar_flat / .bar_wr
+    //       波形：audio_top.rx_l / .rx_valid          vs  demo.wave_din / .wave_we
+    //     这样【真实模块一行不改】，不会因为加了个测试功能把主链路弄坏。
+    //=========================================================================
+    wire [539:0]       demo_bars;
+    wire               demo_wr;
+    wire signed [23:0] demo_wave;
+    wire               demo_wave_we;
+
+    wire demo_on = (ui_demo[1:0] != 2'd0);
+
+    demo_src #(
+        .NBARS(60), .HW(9), .DW(24)
+    ) u_demo (
+        .clk      (clk_sys),
+        .rst_n    (rst_sys_n),
+        .mode     (ui_demo[1:0]),
+        .bar_flat (demo_bars),
+        .bar_wr   (demo_wr),
+        .wave_din (demo_wave),
+        .wave_we  (demo_wave_we)
+    );
+
+    wire [539:0]       spec_bars_sel = demo_on ? demo_bars    : spec_bars;
+    wire               spec_wr_sel   = demo_on ? demo_wr      : spec_frame_done;
+    wire signed [23:0] wave_din_sel  = demo_on ? demo_wave    : rx_l;
+    wire               wave_we_sel   = demo_on ? demo_wave_we : rx_valid;
 
     //=========================================================================
     // 7. 显示（含跨时钟域快照）
@@ -331,16 +370,16 @@ module top #(
     disp_top u_disp (
         .clk_sys    (clk_sys),
         .rst_sys_n  (rst_sys_n),
-        .spec_wr    (spec_frame_done),
-        .spec_din   (spec_bars),
+        .spec_wr    (spec_wr_sel),
+        .spec_din   (spec_bars_sel),
         .clk_pix    (clk_pix),
         .rst_pix_n  (rst_pix_n),
         .ui_mode    (ui_bg_mode[3:0]),      // 来自 ui_ctrl
         .ui_style   (ui_style[3:0]),
         .ui_view    (ui_view[2:0]),
         .ui_hue_spd (ui_hue_spd),
-        .wave_din   (rx_l),                 // 波形显示左声道
-        .wave_we    (rx_valid),
+        .wave_din   (wave_din_sel),         // 波形显示左声道（或自检图案）
+        .wave_we    (wave_we_sel),
         .lcd_rgb    (lcd_rgb),
         .lcd_hs     (lcd_hs),
         .lcd_vs     (lcd_vs),

@@ -15,10 +15,14 @@
 // 【寄存器映射】
 //   0x0 VIEW     [2:0] 视图使能   bit0=柱状 bit1=极坐标 bit2=波形
 //   0x1 STYLE    [3:0] 柱体风格   0=实心 1=半透明
-//   0x2 HUESPD   [7:0] 色相滚动   每 N 帧色相 +1，0 = 不滚动
+//   0x2 HUESPD   [7:0] 色相滚动速度
+//                        H=0 停住，1..7 有效【越大越快】，>7 当 7
+//                        实际周期 = 2^(8-H) 帧 -> H=6（默认）每 4 帧滚一级
 //   0x3 WAVEG    [3:0] 波形增益   0..7，越大越敏感
 //   0x4 BGMODE   [3:0] 背景模式
 //   0x5 AUTO     [0]   自动循环视图
+//   0x6 DEMO     [1:0] 演示/自检图案（见 rtl/video/demo_src.v）
+//                        0=关（用真实音频） 1=斜坡 2=棋盘 3=移动包络
 //
 // 【视图预设】
 //   next_view 脉冲会在下面 PRESET 表里轮转，把常见组合串起来，
@@ -50,6 +54,7 @@ module ui_ctrl #(
     output reg  [7:0]  cfg_wave_gain,
     output reg  [7:0]  cfg_bg_mode,
     output reg  [7:0]  cfg_auto,
+    output reg  [7:0]  cfg_demo,        // 演示/自检图案选择
     output reg  [3:0]  view_idx         // 当前预设编号（观测用）
 );
 
@@ -96,10 +101,12 @@ module ui_ctrl #(
         if (!rst_n) begin
             cfg_view      <= 8'b0000_0111;      // 上电三个视图全开
             cfg_style     <= 8'd0;
-            cfg_hue_spd   <= 8'd2;              // 每 2^2 = 4 帧滚一级
+            cfg_hue_spd   <= 8'd6;              // 每 2^(8-6) = 4 帧滚一级
+                                                // （等价于旧映射的 H=2，见 disp_top.v）
             cfg_wave_gain <= 8'd3;
             cfg_bg_mode   <= 8'd0;
             cfg_auto      <= 8'd0;
+            cfg_demo      <= 8'd0;              // 上电关（走真实音频）
             view_idx      <= 4'd2;              // 对应 preset[2]（全开）
         end else if (wr_en) begin
             case (wr_addr)
@@ -109,6 +116,7 @@ module ui_ctrl #(
                 4'h3: cfg_wave_gain <= wr_data;
                 4'h4: cfg_bg_mode   <= wr_data;
                 4'h5: cfg_auto      <= wr_data;
+                4'h6: cfg_demo      <= wr_data;
                 default: ;                      // 未定义的地址忽略
             endcase
             // 直接写 VIEW 时让预设编号跟着对齐（否则下一次按键会跳）
