@@ -31,7 +31,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends iverilog verilator
           echo "--- 版本 ---"
-          iverilog -V | head -1
+          # ⚠️ GitHub Actions 默认 `bash -eo pipefail`，
+          #    `iverilog -V | head -1` 会因为 head 提前退出、iverilog 收到 SIGPIPE
+          #    而被判成失败。要么不用管道，要么显式吃掉退出码。
+          iverilog -V || true
           verilator --version
 
       - name: 跑 run_iv.sh（Verilator 检查 + 21 个 testbench）
@@ -41,7 +44,7 @@ jobs:
         if: failure()
         run: |
           echo "=================== Verilator 日志 ==================="
-          cat sim/build/verilator.log 2>/dev/null | head -80 || echo "(无)"
+          head -80 sim/build/verilator.log 2>/dev/null || echo "(无)"
           echo
           for f in sim/build/*.log; do
             if grep -qE '\[ERR\]|\*\*\* FAIL' "$f" 2>/dev/null; then
@@ -49,3 +52,4 @@ jobs:
               grep -E '\[ERR\]|\*\*\* FAIL' "$f" | head -20
             fi
           done
+          exit 0
