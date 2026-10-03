@@ -18,10 +18,13 @@
 module bg_src #(
     parameter integer HDISP = 480,
     parameter integer VDISP = 272,
-    parameter integer GRID  = 32         // 网格间距（像素）
+    parameter integer GRID  = 32,        // 网格间距（像素）
+    // 坐标位宽（P1-3a）：默认 10/9 对应 480x272，与原写死的 [9:0]/[8:0] 一致
+    parameter integer XW    = 10,
+    parameter integer YW    = 9
 ) (
-    input  wire [9:0]   x,
-    input  wire [8:0]   y,
+    input  wire [XW-1:0] x,
+    input  wire [YW-1:0] y,
     input  wire [3:0]   mode,
     output reg  [23:0]  rgb              // {R[7:0], G[7:0], B[7:0]}
 );

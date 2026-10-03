@@ -44,7 +44,31 @@ module disp_top #(
     parameter integer WAVE_CY    = `DISP_WAVE_CY,
     parameter integer WAVE_AMP   = `DISP_WAVE_AMP,
     parameter integer WAVE_TH    = `DISP_WAVE_TH,
-    parameter integer SCROLL_DIV = 5        // 每多少帧色相滚动一级
+    parameter integer SCROLL_DIV = 5,       // 每多少帧色相滚动一级
+
+    //-------------------------------------------------------------------------
+    // 时序（P1-3a：从例化处提到参数表，双输出时每路一套）
+    //-------------------------------------------------------------------------
+    parameter integer H_SYNC     = 41,
+    parameter integer H_BACK     = 2,
+    parameter integer H_FRONT    = 2,
+    parameter integer V_SYNC     = 10,
+    parameter integer V_BACK     = 2,
+    parameter integer V_FRONT    = 2,
+
+    //-------------------------------------------------------------------------
+    // 坐标位宽
+    //-----------------------------------------------------------------------------
+    // 必须写在【参数表里】（而不是模块体内的 localparam）：端口声明的位宽要在
+    // 解析模块头时就确定，而 localparam 在它后面 —— 这是账本第 24 条踩过的坑。
+    // Verilog-2001 允许后面的 parameter 引用前面的，所以可以这样算。
+    //
+    // 宽度按【含消隐期的总周期】算（和 lcd_timing 内部一致），
+    // 因为 x/y 是从 hcnt/vcnt 减出来的，位宽必须装得下计数器。
+    //   480x272: $clog2(41+2+480+2)=10 、 $clog2(10+2+272+2)=9
+    //   —— 恰好是原来写死的 [9:0] / [8:0]，所以本次重构对现有布局【逐位不变】
+    parameter integer XW = $clog2(H_SYNC + H_BACK + HDISP + H_FRONT),
+    parameter integer YW = $clog2(V_SYNC + V_BACK + VDISP + V_FRONT)
 ) (
     //--------------------- 音频域（clk_sys）---------------------
     input  wire                  clk_sys,
@@ -74,15 +98,17 @@ module disp_top #(
     //=========================================================================
     // 1. 时序发生器
     //=========================================================================
-    wire [9:0]  x;
-    wire [8:0]  y;
+    wire [XW-1:0] x;
+    wire [YW-1:0] y;
     wire        de;
     wire        sof;
     wire [23:0] rgb_in;                        // 由 disp_mix 组合算出
 
     lcd_timing #(
-        .H_SYNC(41), .H_BACK(2), .H_DISP(HDISP), .H_FRONT(2),
-        .V_SYNC(10), .V_BACK(2), .V_DISP(VDISP), .V_FRONT(2)
+        .H_SYNC(H_SYNC), .H_BACK(H_BACK), .H_DISP(HDISP), .H_FRONT(H_FRONT),
+        .V_SYNC(V_SYNC), .V_BACK(V_BACK), .V_DISP(VDISP), .V_FRONT(V_FRONT),
+        // 显式传入，避免和 lcd_timing 内部的公式各自算一遍而错开
+        .HW(XW), .VW(YW)
     ) u_timing (
         .clk     (clk_pix),
         .rst_n   (rst_pix_n),
@@ -169,7 +195,7 @@ module disp_top #(
     //=========================================================================
     wire [23:0] bg_rgb;
 
-    bg_src #(.HDISP(HDISP), .VDISP(VDISP)) u_bg (
+    bg_src #(.HDISP(HDISP), .VDISP(VDISP), .XW(XW), .YW(YW)) u_bg (
         .x    (x),
         .y    (y),
         .mode (ui_mode),
@@ -181,7 +207,7 @@ module disp_top #(
     //=========================================================================
     wire signed [23:0] wave_sample;
 
-    wave_buf #(.DW(24), .AW(10), .SPAN(HDISP)) u_wave (
+    wave_buf #(.DW(24), .AW(10), .SPAN(HDISP), .XW(XW)) u_wave (
         .wclk   (clk_sys),
         .wrst_n (rst_sys_n),
         .we     (wave_we),
@@ -198,6 +224,7 @@ module disp_top #(
     //=========================================================================
     disp_mix #(
         .HDISP(HDISP), .VDISP(VDISP), .NBARS(NBARS), .HW(HW),
+        .XW(XW), .YW(YW),
         .BARS_Y0(BARS_Y0), .BAR_GAP(BAR_GAP),
         .POL_CX(POL_CX), .POL_CY(POL_CY), .POL_RIN(POL_RIN), .POL_RMAX(POL_RMAX),
         .WAVE_CY(WAVE_CY), .WAVE_AMP(WAVE_AMP), .WAVE_TH(WAVE_TH)

@@ -42,7 +42,10 @@
 module wave_buf #(
     parameter integer DW   = 24,        // 采样位宽
     parameter integer AW   = 10,        // 地址位宽（深度 = 2^AW）
-    parameter integer SPAN = 480        // 每帧显示的采样点数
+    parameter integer SPAN = 480,       // 每帧显示的采样点数
+    // 列坐标位宽（P1-3a）。默认 10 对应 480 宽。
+    // ⚠️ AW 必须 >= $clog2(SPAN)，否则 x 的高位会被截掉。
+    parameter integer XW   = 10
 ) (
     //----------------------- 写侧：clk_sys -----------------------
     input  wire                  wclk,
@@ -54,7 +57,7 @@ module wave_buf #(
     input  wire                  rclk,
     input  wire                  rrst_n,
     input  wire                  sof,     // 帧起始，锁存新的显示窗口
-    input  wire [9:0]            x,       // 当前列（0..479）
+    input  wire [XW-1:0]         x,       // 当前列（0..SPAN-1）
     output reg  signed [DW-1:0]  dout
 );
 

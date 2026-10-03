@@ -34,6 +34,23 @@ module disp_mix #(
     parameter integer NBARS    = `DISP_NBARS,
     parameter integer HW       = 9,
 
+    //-------------------------------------------------------------------------
+    // 坐标位宽（P1-3a）
+    //   x/y 从时序计数器的 hcnt/vcnt 减出来，位宽要和那边一致。
+    //   默认 10/9 对应 480x272（= 原来写死的 [9:0] / [8:0]），本次重构逐位不变。
+    //-------------------------------------------------------------------------
+    parameter integer XW       = 10,
+    parameter integer YW       = 9,
+
+    //-------------------------------------------------------------------------
+    // 每根柱占多少像素 = 2^BAR_SH
+    //   原来写死 `x[8:3]`（8 px/柱，因 480/60 = 8 恰好是 2 的幂）—— 零成本。
+    //   但 1280/60 = 21.33 不是整数，也不是 2 的幂，所以换分辨率时
+    //   【不能只改参数就算完】，必须重新考虑柱映射（改柱数或用小 ROM 除法）。
+    //   这里把移位量提出来，至少让当前这套能参数化。
+    //-------------------------------------------------------------------------
+    parameter integer BAR_SH   = 3,
+
     // ---- 柱状频谱区 ----
     parameter integer BARS_Y0  = `DISP_BARS_Y0,
     parameter integer BAR_GAP  = `DISP_BAR_GAP,
@@ -49,8 +66,8 @@ module disp_mix #(
     parameter integer WAVE_AMP = `DISP_WAVE_AMP,
     parameter integer WAVE_TH  = `DISP_WAVE_TH
 ) (
-    input  wire [9:0]           x,
-    input  wire [8:0]           y,
+    input  wire [XW-1:0]        x,
+    input  wire [YW-1:0]        y,
     input  wire [23:0]          bg_rgb,
     input  wire [NBARS*HW-1:0]  bars,
     input  wire [6:0]           hue_off,  // 色相滚动偏移（0..127 循环）
@@ -61,21 +78,30 @@ module disp_mix #(
 );
 
     localparam integer BARS_H = VDISP - BARS_Y0;     // 96
+    localparam integer AW     = $clog2(NBARS);       // 柱号位宽（60 -> 6）
+
+    // 常量做成长度匹配的字面值，避免各处写死位宽
+    localparam [YW-1:0] VDISP_L = VDISP;
+    localparam [YW-1:0] CY_L    = WAVE_CY;
+    localparam [YW-1:0] Y0_L    = BARS_Y0;
+    localparam [YW-1:0] TH_L    = WAVE_TH;
 
     //=========================================================================
     // 1. 柱状频谱
     //=========================================================================
-    wire [5:0]    bbar = {1'b0, x[8:3]};             // 480/60 = 8
+    wire [AW-1:0] bbar = x[BAR_SH+AW-1 : BAR_SH];    // 每根柱 2^BAR_SH 像素
     wire [HW-1:0] bbh  = bars[bbar*HW +: HW];
 
-    // 柱高 0..511 -> 像素 0..96： h = bh * 3 / 16
-    wire [10:0]   bmul = (bbh << 1) + bbh;           // bh * 3
-    wire [6:0]    bhpx = bmul[10:4];                 // / 16 -> 0..95
+    // 柱高 0..511 -> 像素 0..95： h = bh * 3 / 16
+    //   ⚠️ 这个 3/16 是按【当前布局】算出来的：BARS_H=96 像素、bh 满量程 512
+    //      （96*16/3 ≈ 512）。换布局必须重算，不能只改参数。
+    wire [HW+1:0] bmul = (bbh << 1) + bbh;           // bh * 3
+    wire [YW-1:0] bhpx = bmul[HW+1 : 4];             // /16 -> 0..95
 
-    wire [8:0]    b_from_bot = VDISP[8:0] - 9'd1 - y;
-    wire          b_area     = (y >= BARS_Y0[8:0]);
-    wire          b_col      = (x[2:0] >= BAR_GAP[2:0]);   // 每根柱 8 px，看低 3 位
-    wire          b_hit      = b_area && (b_from_bot < {2'b00, bhpx}) && b_col;
+    wire [YW-1:0] b_from_bot = VDISP_L - 1'b1 - y;
+    wire          b_area     = (y >= Y0_L);
+    wire          b_col      = (x[BAR_SH-1:0] >= BAR_GAP[BAR_SH-1:0]);  // 柱内左侧空隙
+    wire          b_hit      = b_area && (b_from_bot < bhpx) && b_col;
     wire          b_lit      = b_hit && view_en[0];
 
     //=========================================================================
@@ -112,14 +138,14 @@ module disp_mix #(
     wire [24:0] wabs = wave[23] ? ({1'b0, ~wave} + 1'b1) : {1'b0, wave};
     wire [5:0]  wraw = wabs[23:18];                  // 0..31
     wire [5:0]  wamp = (wraw > WAVE_AMP[5:0]) ? WAVE_AMP[5:0] : wraw;
-    wire [8:0]  w_y  = wave[23] ? (WAVE_CY[8:0] - {3'b000, wamp})
-                                : (WAVE_CY[8:0] + {3'b000, wamp});
+    wire [YW-1:0] wamp_y = wamp;                     // 零扩展到位宽
+    wire [YW-1:0] w_y  = wave[23] ? (CY_L - wamp_y) : (CY_L + wamp_y);
 
     // 线宽：|y - w_y| <= WAVE_TH
-    wire [8:0]  w_dy   = (y > w_y) ? (y - w_y) : (w_y - y);
-    wire        w_line = view_en[2] && (w_dy <= WAVE_TH[8:0]);
+    wire [YW-1:0] w_dy = (y > w_y) ? (y - w_y) : (w_y - y);
+    wire        w_line = view_en[2] && (w_dy <= TH_L);
     // 波形关掉时，画一条很淡的中线提示"这里本来是波形区"
-    wire        w_axis = !view_en[2] && (y == WAVE_CY[8:0]);
+    wire        w_axis = !view_en[2] && (y == CY_L);
 
     //=========================================================================
     // 4. 颜色
