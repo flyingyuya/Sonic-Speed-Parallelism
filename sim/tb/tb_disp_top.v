@@ -80,6 +80,7 @@ module tb_disp_top;
     //           之后会临时关掉几个做"开关真的生效"的抽查。
     reg [2:0] view_en  = 3'b111;
     reg [7:0] hue_spd  = 8'd6;      // 与 ui_ctrl 的默认值一致
+    reg [7:0] wave_gain = 8'd8;     // G 命令：8 = 1.0 倍（与 ui_ctrl 默认一致）
                                     //   H 越大越快：H=6 -> 每 2^(8-6)=4 帧滚一级
     integer           wdiv = 0, wph = 0;
 
@@ -115,6 +116,7 @@ module tb_disp_top;
         .ui_style  (4'd0),
         .ui_view   (view_en),
         .ui_hue_spd(hue_spd),
+        .ui_wave_gain(wave_gain),
         .wave_din  (wave_din),
         .wave_we   (wave_we),
         .lcd_rgb   (lcd_rgb),
@@ -445,6 +447,84 @@ module tb_disp_top;
         end
 
         //---------------------------------------------------------------------
+        //---------------------------------------------------------------------
+        //---------------------------------------------------------------------
+        // [3b] 波形增益（G 命令）—— 它以前是个【死控件】，这里专门守住
+        //---------------------------------------------------------------------
+        // ⚠️ 这里【不能】把 dut.wave_adj / dut.wave_sample 当成有符号数比较。
+        //   Verilog-2001 的层次引用（dut.xxx）不带 signed 属性，iverilog 会
+        //   按无符号解释 —— 于是 -6291456 被读成 10485760，判据全错，
+        //   看上去像"输出变成了 -采样"（其实 DUT 是好的，是 TB 读错了）。
+        //   所以下面一律【只看位】：用 bit[23] 判符号，自己算绝对值。
+        //
+        // 【判据】（不做"扫帧抓峰值"——那要扫满 150150 拍一帧，TB 会超时）
+        //   · G=8 和 G=0 都必须是精确 1.0 倍：|wave_adj| 逐拍 == |wave_sample|
+        //   · G=8 时符号位也必须逐拍相同
+        //   · G=4 的绝对值 <= G=8 的（真在衰减）
+        //   · G=12/15 的绝对值 >= G=8 的（真在放大）
+        //---------------------------------------------------------------------
+        $display("");
+        $display(" [3b] 波形增益（G 命令）");
+        begin : gain_test
+            integer g, j;
+            integer n_mag, n_sgn, n_dir;
+            reg [23:0] ma, ms;
+
+            // ---- 判据①：G=0/G=8 精确 1.0 倍（比绝对值 + 比符号位）----
+            n_mag = 0; n_sgn = 0;
+            for (g = 0; g < 2; g = g + 1) begin
+                wave_gain = (g == 0) ? 8'd0 : 8'd8;
+                repeat (3) @(posedge clk_pix);
+                for (j = 0; j < 6000; j = j + 1) begin
+                    @(posedge clk_pix);
+                    ma = dut.wave_adj[23]    ? (~dut.wave_adj[23:0] + 1'b1)
+                                             : dut.wave_adj[23:0];
+                    ms = dut.wave_sample[23] ? (~dut.wave_sample[23:0] + 1'b1)
+                                             : dut.wave_sample[23:0];
+                    if (ma !== ms) n_mag = n_mag + 1;
+                    if (ma !== 24'd0 && (dut.wave_adj[23] !== dut.wave_sample[23]))
+                        n_sgn = n_sgn + 1;
+                end
+            end
+            if (n_mag != 0) begin
+                n_err = n_err + 1;
+                $display("  [ERR] G=0/G=8 的幅度不是精确 1.0 倍（%0d 拍不符）", n_mag);
+            end else
+                $display("  [ok ] G=0 与 G=8 幅度精确等于 1.0 倍（逐拍 12000 次比对）");
+            if (n_sgn != 0) begin
+                n_err = n_err + 1;
+                $display("  [ERR] G=8 时符号翻转了 %0d 拍（饱和逻辑有问题）", n_sgn);
+            end else
+                $display("  [ok ] G=8 无符号翻转");
+
+            // ---- 判据②：衰减/放大方向 ----
+            n_dir = 0;
+            for (g = 0; g < 3; g = g + 1) begin
+                wave_gain = (g == 0) ? 8'd4 : ((g == 1) ? 8'd12 : 8'd15);
+                repeat (3) @(posedge clk_pix);
+                for (j = 0; j < 6000; j = j + 1) begin
+                    @(posedge clk_pix);
+                    ma = dut.wave_adj[23]    ? (~dut.wave_adj[23:0] + 1'b1)
+                                             : dut.wave_adj[23:0];
+                    ms = dut.wave_sample[23] ? (~dut.wave_sample[23:0] + 1'b1)
+                                             : dut.wave_sample[23:0];
+                    if (g == 0) begin
+                        if (ma > ms) n_dir = n_dir + 1;      // 0.5 倍不该更大
+                    end else begin
+                        if (ma < ms) n_dir = n_dir + 1;      // 放大不该更小
+                    end
+                end
+            end
+            if (n_dir != 0) begin
+                n_err = n_err + 1;
+                $display("  [ERR] 增益方向不对（%0d 拍）—— 这正是 G 当死控件时的老毛病",
+                         n_dir);
+            end else
+                $display("  [ok ] 增益方向正确：G4 衰减、G12/G15 放大");
+
+            wave_gain = 8'd8;      // 还原
+        end
+
         // [4] 视图开关抽查：切到"只柱状"，验证极坐标/波形真的被关掉
         //---------------------------------------------------------------------
         $display("");

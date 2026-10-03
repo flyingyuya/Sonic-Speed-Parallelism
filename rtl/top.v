@@ -378,6 +378,7 @@ module top #(
         .ui_style   (ui_style[3:0]),
         .ui_view    (ui_view[2:0]),
         .ui_hue_spd (ui_hue_spd),
+        .ui_wave_gain(ui_wave_gain),        // G 命令：波形增益（以前是死控件）
         .wave_din   (wave_din_sel),         // 波形显示左声道（或自检图案）
         .wave_we    (wave_we_sel),
         .lcd_rgb    (lcd_rgb),

@@ -18,7 +18,9 @@
 //   0x2 HUESPD   [7:0] 色相滚动速度
 //                        H=0 停住，1..7 有效【越大越快】，>7 当 7
 //                        实际周期 = 2^(8-H) 帧 -> H=6（默认）每 4 帧滚一级
-//   0x3 WAVEG    [3:0] 波形增益   0..7，越大越敏感
+//   0x3 WAVEG    [3:0] 波形增益
+//                        G=8 是 1.0 倍（默认），1..15 有效，0 当 8
+//                        实现是带饱和的 wave*G/8，见 disp_top.v
 //   0x4 BGMODE   [3:0] 背景模式
 //   0x5 AUTO     [0]   自动循环视图
 //   0x6 DEMO     [1:0] 演示/自检图案（见 rtl/video/demo_src.v）
@@ -103,7 +105,8 @@ module ui_ctrl #(
             cfg_style     <= 8'd0;
             cfg_hue_spd   <= 8'd6;              // 每 2^(8-6) = 4 帧滚一级
                                                 // （等价于旧映射的 H=2，见 disp_top.v）
-            cfg_wave_gain <= 8'd3;
+            cfg_wave_gain <= 8'd8;              // 8 = 1.0 倍（G 原来是死控件，
+                                                // 所以改成 8 不会改变画面）
             cfg_bg_mode   <= 8'd0;
             cfg_auto      <= 8'd0;
             cfg_demo      <= 8'd0;              // 上电关（走真实音频）
