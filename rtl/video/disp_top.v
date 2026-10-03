@@ -68,7 +68,18 @@ module disp_top #(
     //   480x272: $clog2(41+2+480+2)=10 、 $clog2(10+2+272+2)=9
     //   —— 恰好是原来写死的 [9:0] / [8:0]，所以本次重构对现有布局【逐位不变】
     parameter integer XW = $clog2(H_SYNC + H_BACK + HDISP + H_FRONT),
-    parameter integer YW = $clog2(V_SYNC + V_BACK + VDISP + V_FRONT)
+    parameter integer YW = $clog2(V_SYNC + V_BACK + VDISP + V_FRONT),
+
+    //-------------------------------------------------------------------------
+    // 属性插值器的满值 / 每帧步进（P1-1）
+    //   FULL=128 -> 显示侧除以 128 就是右移 7 位，零成本。
+    //   过渡时长 = FULL/STEP 帧。
+    //   暴露成参数是为了测试：TB 里把 STEP 设成 FULL，一帧就到位，
+    //   否则逐像素比对的参照模型要等 32 帧才和 DUT 一致（一帧 150150 拍，
+    //   32 帧就是 480 万拍，仿真跑不动）。
+    //-------------------------------------------------------------------------
+    parameter integer ANIM_FULL = 128,
+    parameter integer ANIM_STEP = 4
 ) (
     //--------------------- 音频域（clk_sys）---------------------
     input  wire                  clk_sys,
@@ -127,7 +138,38 @@ module disp_top #(
     assign lcd_clk = clk_pix;
 
     //=========================================================================
-    // 2. 色相滚动
+    // 2b. 配置位的跨时钟域同步（补历史遗漏）
+    //-----------------------------------------------------------------------------
+    // ui_mode / ui_style / ui_view / ui_hue_spd 都是 ui_ctrl 在 **clk_sys** 里
+    // 的寄存器，却在 clk_pix 域被直接使用 —— 中间没有任何同步器。
+    //   · 这是【既有】问题，不是 ui_anim 引入的；
+    //   · 但它们是人手改的慢变量，同步风险很低，所以一直没暴露；
+    //   · 而且 ui_anim 现在要在 sof 那一拍拿它当目标，采样点变了，
+    //     更应该先同步再喂进去。
+    //
+    // ⚠️ 注意：cdc_sync 对【多比特】总线只能保证单比特稳定，
+    //    多位同时翻转时仍可能采到中间态 —— 典型后果是“一帧里切到错视图”，
+    //    下一帧就恢复，属于视觉上的极短暂闪动。
+    //    之所以可接受：ui_anim 只在帧起始采样一次（每 12 ms 一次），
+    //    而亚稳态窗口只有几十纳秒，命中概率完全可以忽略。
+    //    真正需要无损传递的多比特数据（柱高）走的是 spec_sync / 异步 FIFO。
+    //=========================================================================
+    wire [3:0] ui_mode_s, ui_style_s;
+    wire [2:0] ui_view_s;
+    wire [7:0] ui_hue_spd_s;
+
+    cdc_sync #(.WIDTH(4), .RESET_VAL(4'd0)) u_sync_mode (
+        .clk(clk_pix), .rst_n(rst_pix_n), .din(ui_mode), .dout(ui_mode_s));
+    cdc_sync #(.WIDTH(4), .RESET_VAL(4'd0)) u_sync_style (
+        .clk(clk_pix), .rst_n(rst_pix_n), .din(ui_style), .dout(ui_style_s));
+    // 复位值取 ui_ctrl 的上电默认（三视图全开），免得第一帧闪成“什么都没有”
+    cdc_sync #(.WIDTH(3), .RESET_VAL(3'b111)) u_sync_view (
+        .clk(clk_pix), .rst_n(rst_pix_n), .din(ui_view), .dout(ui_view_s));
+    cdc_sync #(.WIDTH(8), .RESET_VAL(8'd6)) u_sync_hue (
+        .clk(clk_pix), .rst_n(rst_pix_n), .din(ui_hue_spd), .dout(ui_hue_spd_s));
+
+    //=========================================================================
+    // 3. 色相滚动
     //=========================================================================
     reg [7:0] frame_cnt;
     reg [6:0] hue_off;
@@ -156,7 +198,7 @@ module disp_top #(
     //   见账本）：mask = (1 << (8-H)) - 1，低位全 1 时触发。
     //   H=0 时 8-H=8，1<<8 溢出成 0，mask 变成 0xFF，但那时被 hue_run 挡住。
     //-------------------------------------------------------------------------
-    wire [3:0] hue_spd   = (ui_hue_spd > 8'd7) ? 4'd7 : ui_hue_spd[3:0];
+    wire [3:0] hue_spd   = (ui_hue_spd_s > 8'd7) ? 4'd7 : ui_hue_spd_s[3:0];
     wire       hue_run   = (hue_spd != 4'd0);
     wire [7:0] tick_mask = (8'd1 << (4'd8 - hue_spd)) - 8'd1;
 
@@ -192,6 +234,32 @@ module disp_top #(
     );
 
     //=========================================================================
+    // 3b. 属性插值器：三个视图各自的“存在度”（0..128）
+    //-----------------------------------------------------------------------------
+    //   按 KEY1 切视图预设时，disp_mix 里那些显示开关是【硬跳】的 ——
+    //   极坐标“咕”地出现 / 消失，在 12 ms 一帧的液晶上很生硬。
+    //   这里给每个视图一个每帧走一小步的 level，显示侧把几何量乘以
+    //   level/128，画面就是平滑地【长出来 / 缩回去】。
+    //
+    //   选 128 而不是 256：因为显示侧要算 x*level/FULL，FULL=128 时
+    //   除以 128 就是右移 7 位，零成本。
+    //   过渡时长 = FULL/STEP 帧 = 32 帧 ≈ 32 x 12.01 ms ≈ 384 ms。
+    //=========================================================================
+    wire [3*8-1:0] ui_level;
+
+    ui_anim #(.NCH(3), .FULL(ANIM_FULL), .STEP(ANIM_STEP)) u_anim (
+        .clk    (clk_pix),
+        .rst_n  (rst_pix_n),
+        .frame  (sof),          // 帧起始，每帧只走一步
+        .target (ui_view_s),    // 已同步到 clk_pix
+        .level  (ui_level)
+    );
+
+    wire [7:0] pres_bar = ui_level[0*8 +: 8];   // 柱状
+    wire [7:0] pres_pol = ui_level[1*8 +: 8];   // 极坐标
+    wire [7:0] pres_wav = ui_level[2*8 +: 8];   // 波形
+
+    //=========================================================================
     // 4. 背景生成
     //=========================================================================
     wire [23:0] bg_rgb;
@@ -199,7 +267,7 @@ module disp_top #(
     bg_src #(.HDISP(HDISP), .VDISP(VDISP), .XW(XW), .YW(YW)) u_bg (
         .x    (x),
         .y    (y),
-        .mode (ui_mode),
+        .mode (ui_mode_s),
         .rgb  (bg_rgb)
     );
 
@@ -280,8 +348,11 @@ module disp_top #(
         .bars    (bars),
         .hue_off (hue_off),
         .wave    (wave_adj),
-        .view_en (ui_view),
-        .mode    (ui_style),
+        .view_en (ui_view_s),
+        .mode    (ui_style_s),
+        .pres_bar(pres_bar),
+        .pres_pol(pres_pol),
+        .pres_wav(pres_wav),
         .rgb     (rgb_in)
     );
 

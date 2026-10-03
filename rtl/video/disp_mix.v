@@ -74,6 +74,18 @@ module disp_mix #(
     input  wire signed [23:0]   wave,     // 本列对应的音频采样
     input  wire [2:0]           view_en,  // [0]柱状 [1]极坐标 [2]波形
     input  wire [3:0]           mode,     // 柱体风格（0=实心 1=半透明）
+
+    //-------------------------------------------------------------------------
+    // 视图“存在度”（来自 ui_anim，0..128）
+    //-----------------------------------------------------------------------------
+    //   128 = 完全展开。显示侧把几何量乘以 pres/128（就是右移 7 位）。
+    //   这样切换视图预设时是“长出来 / 缩回去”，而不是硬跳。
+    //   保留 view_en 作为“该视图要不要显示”的粗开关：pres 还会跟着它收敛，
+    //   但两者不同步的中间帧靠 pres 保证平滑。
+    //-------------------------------------------------------------------------
+    input  wire [7:0]           pres_bar,
+    input  wire [7:0]           pres_pol,
+    input  wire [7:0]           pres_wav,
     output reg  [23:0]          rgb
 );
 
@@ -92,10 +104,14 @@ module disp_mix #(
     wire [AW-1:0] bbar = x[BAR_SH+AW-1 : BAR_SH];    // 每根柱 2^BAR_SH 像素
     wire [HW-1:0] bbh  = bars[bbar*HW +: HW];
 
+    // 柱高 × pres_bar/128（右移 7 位，零成本）—— 切换视图时柱子在“长/缩”
+    wire [HW+7:0] bbh_s = bbh * pres_bar;            // 9+8 = 17 位，最大 511*128
+    wire [HW-1:0] bbh_a = bbh_s[HW+6 : 7];           // /128
+
     // 柱高 0..511 -> 像素 0..95： h = bh * 3 / 16
     //   ⚠️ 这个 3/16 是按【当前布局】算出来的：BARS_H=96 像素、bh 满量程 512
     //      （96*16/3 ≈ 512）。换布局必须重算，不能只改参数。
-    wire [HW+1:0] bmul = (bbh << 1) + bbh;           // bh * 3
+    wire [HW+1:0] bmul = (bbh_a << 1) + bbh_a;       // bh * 3
     wire [YW-1:0] bhpx = bmul[HW+1 : 4];             // /16 -> 0..95
 
     wire [YW-1:0] b_from_bot = VDISP_L - 1'b1 - y;
@@ -113,7 +129,8 @@ module disp_mix #(
 
     polar_map #(
         .NBARS(NBARS), .HW(HW),
-        .CX(POL_CX), .CY(POL_CY), .R_IN(POL_RIN), .R_MAX(POL_RMAX)
+        .CX(POL_CX), .CY(POL_CY), .R_IN(POL_RIN), .R_MAX(POL_RMAX),
+        .XW(XW), .YW(YW)
     ) u_polar (
         .x       (x),
         .y       (y),
@@ -121,7 +138,8 @@ module disp_mix #(
         .in_disc (p_in_disc),
         .lit     (p_lit),
         .bar_idx (p_bar),
-        .r_out   (p_r)
+        .r_out   (p_r),
+        .pres    (pres_pol)          // 圆盘整体缩放
     );
 
     // 内圆画一圈淡环，让"圆心"可见（与参考图一致的观感）
@@ -137,7 +155,12 @@ module disp_mix #(
     //      移位量要按"满量程映射到 WAVE_AMP"来算，不能凭感觉。
     wire [24:0] wabs = wave[23] ? ({1'b0, ~wave} + 1'b1) : {1'b0, wave};
     wire [5:0]  wraw = wabs[23:18];                  // 0..31
-    wire [5:0]  wamp = (wraw > WAVE_AMP[5:0]) ? WAVE_AMP[5:0] : wraw;
+    wire [5:0]  wclamp = (wraw > WAVE_AMP[5:0]) ? WAVE_AMP[5:0] : wraw;
+
+    // × pres_wav/128（右移 7 位）—— 切换波形视图时振幅平滑地长出来
+    wire [12:0] wamp_s = wclamp * pres_wav;          // 6+8 = 14? 实际最大 22*128=2816
+    wire [5:0]  wamp   = wamp_s[12:7];               // /128
+
     wire [YW-1:0] wamp_y = wamp;                     // 零扩展到位宽
     wire [YW-1:0] w_y  = wave[23] ? (CY_L - wamp_y) : (CY_L + wamp_y);
 

@@ -78,7 +78,18 @@ module polar_map #(
     output wire                 in_disc,    // 该像素落在圆盘内
     output wire                 lit,        // 该像素应点亮
     output wire [5:0]           bar_idx,    // 属于哪根柱（NBARS 最多 64）
-    output wire [7:0]           r_out       // 到圆心的近似半径（调试用）
+    output wire [7:0]           r_out,      // 到圆心的近似半径（调试用）
+
+    //-------------------------------------------------------------------------
+    // 存在度（来自 ui_anim，0..128）。圆盘【整体】按它缩放：
+    //   128 = 满尺寸，0 = 完全不显示。切换视图时圆盘平滑地长出来 / 缩回去。
+    //
+    // ⚠️ 它必须是【运行时输入】，不能当 parameter：
+    //    一开始写成 parameter，结果 disp_mix 传 pres_pol（一根 wire）进去就报
+    //    "A reference to a net or variable is not allowed in a constant expression"。
+    //    参数是【编译期】常量，而存在度是每帧变的。
+    //-------------------------------------------------------------------------
+    input  wire [7:0]           pres
 );
 
     localparam integer AW = $clog2(NBARS);
@@ -86,8 +97,17 @@ module polar_map #(
     // 常量做成长度匹配的字面值，避免各处写死位宽
     localparam signed [CW-1:0] CX_L = CX;
     localparam signed [CW-1:0] CY_L = CY;
-    localparam        [RADW-1:0] RIN_L  = R_IN;
-    localparam        [RADW-1:0] RMAX_L = R_MAX;
+
+    // 按 pres/128 缩放后的实际半径（128 -> 原值，0 -> 0）
+    //   同时缩 R_IN 和 R_MAX，所以是【整体缩放】而不是“只缩短辐条”。
+    //   缩到 0 时 rmax2 = 0，d2 < 0 永远不成立 -> 整个圆盘不显示，符合预期。
+    localparam [RADW-1:0] RIN_C  = R_IN;
+    localparam [RADW-1:0] RMAX_C = R_MAX;
+
+    wire [RADW+7:0] rin_s  = RIN_C  * pres;          // <= 62*128 = 7936
+    wire [RADW+7:0] rmax_s = RMAX_C * pres;
+    wire [RADW-1:0] RIN_L  = rin_s [RADW+6 : 7];     // /128
+    wire [RADW-1:0] RMAX_L = rmax_s[RADW+6 : 7];
 
     //=========================================================================
     // 1. 相对圆心的有符号偏移

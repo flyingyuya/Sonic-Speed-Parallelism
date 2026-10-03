@@ -105,7 +105,13 @@ module tb_disp_top;
     wire [23:0] lcd_rgb;
     wire        lcd_hs, lcd_vs, lcd_clk;
 
-    disp_top dut (
+    disp_top #(
+        // 让插值器一帧到位。
+        // 参照模型算的是【稳态】（pres = view_en ? 128 : 0），
+        // 而默认 STEP=4 要 32 帧（32 x 150150 拍 ≈ 480 万拍）才收敛，
+        // 那样 TB 根本跑不动，中间帧也必然对不上。
+        .ANIM_STEP(128)
+    ) dut (
         .clk_sys   (clk_sys),
         .rst_sys_n (rst_sys_n),
         .spec_wr   (spec_wr),
@@ -166,7 +172,12 @@ module tb_disp_top;
         .CX(POL_CX), .CY(POL_CY), .R_IN(POL_RIN), .R_MAX(POL_RMAX)
     ) u_pol_ref (
         .x(x_d), .y(y_d), .bars(bars_d),
-        .in_disc(e_p_in), .lit(e_p_lit), .bar_idx(e_p_bar), .r_out(e_p_r)
+        .in_disc(e_p_in), .lit(e_p_lit), .bar_idx(e_p_bar), .r_out(e_p_r),
+        // ⚠️ 必须和 DUT 一致：ANIM_STEP=FULL 时 pres 是稳态值，
+        //   view_en[1]=1 -> 128、=0 -> 0。
+        //   写死 8'd128 的话，视图关掉的那几段 DUT 算出空圆盘、
+        //   参照还在画圆盘，整整报 36010 处不符。
+        .pres(view_en[1] ? 8'd128 : 8'd0)
     );
     wire e_p_core = view_en[1] && e_p_in && (e_p_r >= POL_RIN - 3) && (e_p_r < POL_RIN);
     wire e_p_litg = view_en[1] && e_p_lit;
@@ -524,6 +535,21 @@ module tb_disp_top;
 
             wave_gain = 8'd8;      // 还原
         end
+
+        //---------------------------------------------------------------------
+        // 关于"插值器接线"的覆盖说明（这里【故意不测】）
+        //---------------------------------------------------------------------
+        // 曾经想加一段 [3c]：改 view_en 后读 dut.ui_level，确认三路通道各自
+        // 接到了对应视图。但它每改一次都要等一个完整帧（150150 拍 = 12 ms），
+        // 三次就把 TB 顶过了 80 ms 超时线，而且【是冗余的】：
+        //
+        //   · 插值逻辑本身由 tb_ui_anim 单独穷举（单调/上下限/帧门控/反向）；
+        //   · 接线是否生效，上面的逐像素比对已经证明了 —— ANIM_STEP 设成 FULL 时
+        //     pres 是稳态值（view_en[1] ? 128 : 0），两种取值都参与比对；
+        //     当初参考模型写死 pres=128 时报了 36010 处不符，那恰恰说明
+        //     pres 真的接到了 polar_map 上。
+        //
+        // 宁可少一段测试，也不要让 TB 为了重复覆盖而变慢到没人愿意跑。
 
         // [4] 视图开关抽查：切到"只柱状"，验证极坐标/波形真的被关掉
         //---------------------------------------------------------------------
