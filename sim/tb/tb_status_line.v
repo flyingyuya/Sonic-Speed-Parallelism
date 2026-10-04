@@ -8,11 +8,17 @@
 
 module tb_status_line;
 
-    localparam integer NLEN = 17;
+    // ⚠️ 两个常量要分清：DUT 的 NLEN 是【每行】字符数，
+    //   TB 比较时用的是【两行合计】。一开始把 DUT 的 NLEN 也传成 34，
+    //   于是它的终止条件变成 NLEN*2-1 = 67，而 cnt 只有 6 位（最大 63），
+    //   永远等不到 -> 状态机卡在写入状态死循环，影子寄存器一直不更新。
+    localparam integer NLEN  = 34;     // 总字符数（TB 比较用）
+    localparam integer LNLEN = 17;     // 每行字符数（传给 DUT）
 
     reg        clk = 0, rst_n = 0;
     reg [7:0]  cfg_view = 8'h07, cfg_style = 8'h00, cfg_hue_spd = 8'h06;
     reg [7:0]  cfg_wave_gain = 8'h08, cfg_bg_mode = 8'h00, cfg_demo = 8'h00;
+    reg [11:0] tp_x = 12'd123, tp_y = 12'd456;
     wire       we;
     wire [15:0] waddr;
     wire [7:0]  wdata;
@@ -20,11 +26,11 @@ module tb_status_line;
     integer n_err = 0;
     integer i;
 
-    status_line #(.NLEN(NLEN)) dut (
+    status_line #(.NLEN(LNLEN), .NC(60)) dut (
         .clk(clk), .rst_n(rst_n),
         .cfg_view(cfg_view), .cfg_style(cfg_style), .cfg_hue_spd(cfg_hue_spd),
         .cfg_wave_gain(cfg_wave_gain), .cfg_bg_mode(cfg_bg_mode),
-        .cfg_demo(cfg_demo),
+        .cfg_demo(cfg_demo), .tp_x(tp_x), .tp_y(tp_y),
         .we(we), .waddr(waddr), .wdata(wdata)
     );
 
@@ -34,13 +40,14 @@ module tb_status_line;
     //   不能当标识符。iverilog 报的是毫无帮助的 "syntax error"，
     //   而它自己也只在报错信息里提到 "variable list"，查起来非常费劲。
     //   遇到"平平无奇的声明报语法错"，先怀疑是不是撞了关键字/原语名。
-    reg [7:0] line_buf [0:63];
+    // 地址是 行*60+列，所以第二行是 60..76 —— 6 位装不下（最大 63）
+    reg [7:0] line_buf [0:127];
     integer   n_wr;
 
     // 收集写入
     always @(posedge clk) begin
         if (rst_n && we) begin
-            line_buf[waddr[5:0]] = wdata;
+            line_buf[waddr[6:0]] = wdata;
             n_wr = n_wr + 1;
         end
     end
@@ -55,10 +62,12 @@ module tb_status_line;
         begin
             for (i = 0; i < NLEN; i = i + 1) begin
                 w = want[8*(NLEN-1-i) +: 8];
-                if (line_buf[i] !== w) begin
+                // 也要按【行*NC + 列】取，和 RTL 的地址算法一致
+                if (line_buf[(i/LNLEN)*60 + (i%LNLEN)] !== w) begin
                     n_err = n_err + 1;
                     $display("  [ERR] 第 %0d 个字符是 '%c'(%02h)，期望 '%c'(%02h)",
-                             i, line_buf[i], line_buf[i], w, w);
+                             i, line_buf[(i/LNLEN)*60 + (i%LNLEN)],
+                             line_buf[(i/LNLEN)*60 + (i%LNLEN)], w, w);
                 end
             end
         end
@@ -66,8 +75,13 @@ module tb_status_line;
 
     task show;
         begin
+            // 期望串必须【正好 NLEN 个字符】。第一行恰好占满 17 个，
+            // 所以两行之间【没有分隔符】；第二行不足 17 就补空格。
+            // 一开始写的是 29 字符的串，被 Verilog 从左边补零，整体错位，
+            // 报了一百多处假错误。
             $write("      实测: \"");
-            for (i = 0; i < NLEN; i = i + 1) $write("%c", line_buf[i]);
+            for (i = 0; i < NLEN; i = i + 1)
+                $write("%c", line_buf[(i/LNLEN)*60 + (i%LNLEN)]);
             $write("\"\n");
         end
     endtask
@@ -83,7 +97,7 @@ module tb_status_line;
 
         //---------------------------------------------------------------------
         $display("");
-        $display(" [1] 上电后自动写一次（默认 V7 S0 H6 G8 B0 D0）");
+        $display(" [1] 上电后自动写一次（两行：配置 + 触摸读数）");
         repeat (60) @(posedge clk);
         if (n_wr < NLEN) begin
             n_err = n_err + 1;
@@ -91,7 +105,7 @@ module tb_status_line;
         end else
             $display("  [ok ] 上电自动写入 %0d 个字符", n_wr);
         show();
-        want_line("V7 S0 H6 G8 B0 D0");
+        want_line("V7 S0 H6 G8 B0 D0TX123 TY456      ");
         if (n_err == 0) $display("  [ok ] 内容与期望 'V7 S0 H6 G8 B0 D0' 一致");
 
         //---------------------------------------------------------------------
@@ -114,24 +128,41 @@ module tb_status_line;
         cfg_view = 8'h02;
         repeat (60) @(posedge clk);
         show();
-        want_line("V2 S0 H6 G8 B0 D0");
+        want_line("V2 S0 H6 G8 B0 D0TX123 TY456      ");
         if (n_err == 0) $display("  [ok ] V 变成 2");
 
         cfg_wave_gain = 8'h0F;      // 也测一下 A-F 的十六进制
         repeat (60) @(posedge clk);
         show();
-        want_line("V2 S0 H6 GF B0 D0");
+        want_line("V2 S0 H6 GF B0 D0TX123 TY456      ");
         if (n_err == 0) $display("  [ok ] 增益 0F 显示成 'F'（十六进制大写）");
 
         cfg_demo = 8'h03;
         repeat (60) @(posedge clk);
         show();
-        want_line("V2 S0 H6 GF B0 D3");
+        want_line("V2 S0 H6 GF B0 D3TX123 TY456      ");
         if (n_err == 0) $display("  [ok ] D 字段跟着变");
+
+        // 触摸读数变化也要触发重写（上板验证管脚就靠这条）
+        begin : tp
+            integer n0;
+            n0 = n_wr;
+            tp_x = 12'd987; tp_y = 12'd5;
+            repeat (60) @(posedge clk);
+            if (n_wr - n0 < NLEN) begin
+                n_err = n_err + 1;
+                $display("  [ERR] 触摸读数变了却没有重写");
+            end else begin
+                $display("  [ok ] 触摸读数变化触发了重写");
+                show();
+                want_line("V2 S0 H6 GF B0 D3TX987 TY005      ");
+                if (n_err == 0) $display("  [ok ] 第二行按十进制显示，个位补零");
+            end
+        end
 
         //---------------------------------------------------------------------
         $display("");
-        $display(" [4] 再改回原值也要重写（判据是「和上次不同」，不是「和默认不同」）");
+        $display(" [5] 再改回原值也要重写（判据是「和上次不同」，不是「和默认不同」）");
         begin : again
             integer n0;
             n0 = n_wr;

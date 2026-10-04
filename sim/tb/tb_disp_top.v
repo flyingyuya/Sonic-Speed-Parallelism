@@ -82,6 +82,7 @@ module tb_disp_top;
     reg [7:0] hue_spd  = 8'd6;      // 与 ui_ctrl 的默认值一致
     reg [7:0] wave_gain = 8'd8;     // G 命令：8 = 1.0 倍（与 ui_ctrl 默认一致）
     reg [7:0] ui_demo_v = 8'd0;     // T 命令：演示图案（默认关）
+    reg [11:0] tp_x_v = 12'd123, tp_y_v = 12'd456;   // 触摸原始读数（固定值）
                                     //   H 越大越快：H=6 -> 每 2^(8-6)=4 帧滚一级
     integer           wdiv = 0, wph = 0;
 
@@ -125,6 +126,8 @@ module tb_disp_top;
         .ui_hue_spd(hue_spd),
         .ui_wave_gain(wave_gain),
         .ui_demo   (ui_demo_v),
+        .tp_x      (tp_x_v),
+        .tp_y      (tp_y_v),
         .wave_din  (wave_din),
         .wave_we   (wave_we),
         .lcd_rgb   (lcd_rgb),
@@ -227,6 +230,7 @@ module tb_disp_top;
         .cfg_view({5'b0, view_en}), .cfg_style(8'd0),
         .cfg_hue_spd(hue_spd), .cfg_wave_gain(wave_gain),
         .cfg_bg_mode(8'd0), .cfg_demo(ui_demo_v),
+        .tp_x(tp_x_v), .tp_y(tp_y_v),
         .we(e_t_we), .waddr(e_t_addr), .wdata(e_t_data)
     );
 

@@ -72,6 +72,12 @@ module top #(
     output wire        aud_dacdat,      // FPGA -> WM8960 DACDAT
 
     //----------------------- LCD（接 JM1）---------------------
+    // XPT2046 电阻触摸屏（在 LCD 子卡上，经 JM1 的 37~40 脚过来）
+    output wire        tp_dclk,
+    output wire        tp_cs_n,
+    output wire        tp_din,
+    input  wire        tp_dout,
+
     output wire [23:0] lcd_rgb,
     output wire        lcd_hs,
     output wire        lcd_vs,
@@ -365,6 +371,49 @@ module top #(
     wire               wave_we_sel   = demo_on ? demo_wave_we : rx_valid;
 
     //=========================================================================
+    // 6e. 触摸屏（XPT2046，在 LCD 子卡上）
+    //-----------------------------------------------------------------------------
+    // 没有用中断脚（TP_nINT 那一路的 R12 是 NC 未焊，接不到），所以纯轮询。
+    // 轮询周期取 10 ms —— 人手按一下至少几十毫秒，这个速率足够跟手，
+    // 又不会让 SPI 一直占着（一次读 X+Y 约 48 us，占空比不到 0.5%）。
+    //=========================================================================
+    localparam integer TP_PERIOD = 48_000_000 / 100;      // 10 ms
+
+    reg [22:0] tp_cnt;
+    reg        tp_go;
+    wire       tp_busy, tp_valid;
+    wire [11:0] tp_x, tp_y;
+
+    always @(posedge clk_sys) begin
+        if (!rst_sys_n) begin
+            tp_cnt <= 23'd0;
+            tp_go  <= 1'b0;
+        end else begin
+            tp_go <= 1'b0;
+            if (tp_cnt == TP_PERIOD - 1) begin
+                tp_cnt <= 23'd0;
+                tp_go  <= 1'b1;         // 单拍脉冲，启动一次读 X+Y
+            end else begin
+                tp_cnt <= tp_cnt + 1'b1;
+            end
+        end
+    end
+
+    xpt2046 #(.CLK_HZ(48_000_000), .SCLK_HZ(1_000_000)) u_touch (
+        .clk     (clk_sys),
+        .rst_n   (rst_sys_n),
+        .start   (tp_go),
+        .busy    (tp_busy),
+        .valid   (tp_valid),
+        .x_pos   (tp_x),
+        .y_pos   (tp_y),
+        .tp_dclk (tp_dclk),
+        .tp_cs_n (tp_cs_n),
+        .tp_din  (tp_din),
+        .tp_dout (tp_dout)
+    );
+
+    //=========================================================================
     // 7. 显示（含跨时钟域快照）
     //=========================================================================
     disp_top u_disp (
@@ -380,6 +429,8 @@ module top #(
         .ui_hue_spd (ui_hue_spd),
         .ui_wave_gain(ui_wave_gain),        // G 命令：波形增益（以前是死控件）
         .ui_demo    (ui_demo),              // T 命令：演示图案
+        .tp_x       (tp_x),                 // 触摸原始读数（显示在状态行第二行）
+        .tp_y       (tp_y),
         .wave_din   (wave_din_sel),         // 波形显示左声道（或自检图案）
         .wave_we    (wave_we_sel),
         .lcd_rgb    (lcd_rgb),

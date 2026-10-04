@@ -101,6 +101,10 @@ module disp_top #(
     input  wire [7:0]            ui_wave_gain,  // 来自 ui_ctrl：波形增益（G 命令）
     input  wire [7:0]            ui_demo,       // 来自 ui_ctrl：演示图案（T 命令）
 
+    //--------------------- 触摸原始读数（clk_sys 域）---------------------
+    input  wire [11:0]           tp_x,
+    input  wire [11:0]           tp_y,
+
     //--------------------- 液晶输出 ---------------------
     output wire [23:0]           lcd_rgb,
     output wire                  lcd_hs,
@@ -172,6 +176,15 @@ module disp_top #(
         .clk(clk_pix), .rst_n(rst_pix_n), .din(ui_wave_gain), .dout(ui_wave_gain_s));
     cdc_sync #(.WIDTH(8), .RESET_VAL(8'd0)) u_sync_demo (
         .clk(clk_pix), .rst_n(rst_pix_n), .din(ui_demo), .dout(ui_demo_s));
+
+    // 触摸原始读数也要跨过来。它们是慢变量（10 ms 才更新一次），
+    // 而且只用来在屏幕上显示数字 —— 偶尔采到中间态最多让某一帧的数字
+    // 闪一下，无害。真正需要无损传递的多比特数据走异步 FIFO。
+    wire [11:0] tp_x_s, tp_y_s;
+    cdc_sync #(.WIDTH(12), .RESET_VAL(12'd0)) u_sync_tpx (
+        .clk(clk_pix), .rst_n(rst_pix_n), .din(tp_x), .dout(tp_x_s));
+    cdc_sync #(.WIDTH(12), .RESET_VAL(12'd0)) u_sync_tpy (
+        .clk(clk_pix), .rst_n(rst_pix_n), .din(tp_y), .dout(tp_y_s));
 
     //=========================================================================
     // 3. 色相滚动
@@ -359,6 +372,8 @@ module disp_top #(
         .cfg_wave_gain (ui_wave_gain_s),
         .cfg_bg_mode   ({4'b0, ui_mode_s}),
         .cfg_demo      (ui_demo_s),
+        .tp_x          (tp_x_s),
+        .tp_y          (tp_y_s),
         .we            (text_we),
         .waddr         (text_waddr),
         .wdata         (text_wdata)
