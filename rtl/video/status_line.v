@@ -50,9 +50,14 @@ module status_line #(
     //=========================================================================
     reg [7:0] v_d, s_d, h_d, g_d, b_d, m_d;
 
-    wire changed = (cfg_view      !== v_d) || (cfg_style     !== s_d) ||
-                   (cfg_hue_spd   !== h_d) || (cfg_wave_gain !== g_d) ||
-                   (cfg_bg_mode   !== b_d) || (cfg_demo      !== m_d);
+    // ⚠️ 必须用 != 而不是 !==。
+    //   `!==` 是【仿真专用】运算符（会比较 X/Z），**不可综合** ——
+    //   综合器会自动替换成 != 并报 [Synth 8-589] 警告。
+    //   这里用 != 是安全的：复位时 *_d 都被初始化成 8'hFF，不会出现 X。
+    //   （TB 里用 ===/!== 没问题，因为 TB 不综合；RTL 里一律不要用。）
+    wire changed = (cfg_view      != v_d) || (cfg_style     != s_d) ||
+                   (cfg_hue_spd   != h_d) || (cfg_wave_gain != g_d) ||
+                   (cfg_bg_mode   != b_d) || (cfg_demo      != m_d);
 
     //=========================================================================
     // 2. 逐字符写入

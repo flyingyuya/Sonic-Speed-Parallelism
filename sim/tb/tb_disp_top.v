@@ -81,6 +81,7 @@ module tb_disp_top;
     reg [2:0] view_en  = 3'b111;
     reg [7:0] hue_spd  = 8'd6;      // 与 ui_ctrl 的默认值一致
     reg [7:0] wave_gain = 8'd8;     // G 命令：8 = 1.0 倍（与 ui_ctrl 默认一致）
+    reg [7:0] ui_demo_v = 8'd0;     // T 命令：演示图案（默认关）
                                     //   H 越大越快：H=6 -> 每 2^(8-6)=4 帧滚一级
     integer           wdiv = 0, wph = 0;
 
@@ -123,6 +124,7 @@ module tb_disp_top;
         .ui_view   (view_en),
         .ui_hue_spd(hue_spd),
         .ui_wave_gain(wave_gain),
+        .ui_demo   (ui_demo_v),
         .wave_din  (wave_din),
         .wave_we   (wave_we),
         .lcd_rgb   (lcd_rgb),
@@ -213,12 +215,40 @@ module tb_disp_top;
 
     // ---- 合成（优先级必须和 disp_mix 完全一致）----
     // 优先级必须和 disp_mix 完全一致：背景 < 柱状 < 波形 < 极坐标
-    wire [23:0] exp_rgb = e_p_litg ? e_rb_pol
+    // ---- 文字层（参照模型也用【同一个模块】，不是另写一遍）----
+    //   text_buf / status_line 是纯组合 + 一个小寄存器，直接例化同一个模块
+    //   最可靠 —— 自己再写一遍排版逻辑反而容易和 RTL 错开。
+    wire        e_t_we, e_t_hit, e_t_lit;
+    wire [15:0] e_t_addr;
+    wire [7:0]  e_t_data;
+
+    status_line u_status_ref (
+        .clk(clk_pix), .rst_n(rst_pix_n),
+        .cfg_view({5'b0, view_en}), .cfg_style(8'd0),
+        .cfg_hue_spd(hue_spd), .cfg_wave_gain(wave_gain),
+        .cfg_bg_mode(8'd0), .cfg_demo(ui_demo_v),
+        .we(e_t_we), .waddr(e_t_addr), .wdata(e_t_data)
+    );
+
+    text_buf #(.NC(60), .NL(4), .XW(10), .YW(9), .TX0(2), .TY0(2)) u_text_ref (
+        .clk(clk_pix), .we(e_t_we), .waddr(e_t_addr), .wdata(e_t_data),
+        .x(x_d), .y(y_d), .hit(e_t_hit), .lit(e_t_lit)
+    );
+
+    localparam [23:0] TEXT_RGB = 24'hF0_F0_F0;
+    wire [23:0] TEXT_BG = {2'b00, e_bg[23:18], 2'b00, e_bg[15:10], 2'b00, e_bg[7:2]};
+
+    wire [23:0] exp_mix = e_p_litg ? e_rb_pol
                         : e_p_core ? CORE_RGB
                         : e_wline  ? e_rb_pol
                         : e_waxis  ? AXIS_RGB
                         : e_b_lit  ? e_rb_bar
                         :            e_bg;
+
+    // 文字在最上层（与 disp_mix 里的顺序一致）
+    wire [23:0] exp_rgb = e_t_lit ? TEXT_RGB
+                        : e_t_hit ? TEXT_BG
+                        :           exp_mix;
 
     //=========================================================================
     // 测量窗口

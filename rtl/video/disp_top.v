@@ -99,6 +99,7 @@ module disp_top #(
     input  wire signed [23:0]    wave_din,      // = audio_top 的 rx_l
     input  wire                  wave_we,       // = audio_top 的 rx_valid
     input  wire [7:0]            ui_wave_gain,  // 来自 ui_ctrl：波形增益（G 命令）
+    input  wire [7:0]            ui_demo,       // 来自 ui_ctrl：演示图案（T 命令）
 
     //--------------------- 液晶输出 ---------------------
     output wire [23:0]           lcd_rgb,
@@ -156,7 +157,7 @@ module disp_top #(
     //=========================================================================
     wire [3:0] ui_mode_s, ui_style_s;
     wire [2:0] ui_view_s;
-    wire [7:0] ui_hue_spd_s;
+    wire [7:0] ui_hue_spd_s, ui_wave_gain_s, ui_demo_s;
 
     cdc_sync #(.WIDTH(4), .RESET_VAL(4'd0)) u_sync_mode (
         .clk(clk_pix), .rst_n(rst_pix_n), .din(ui_mode), .dout(ui_mode_s));
@@ -167,6 +168,10 @@ module disp_top #(
         .clk(clk_pix), .rst_n(rst_pix_n), .din(ui_view), .dout(ui_view_s));
     cdc_sync #(.WIDTH(8), .RESET_VAL(8'd6)) u_sync_hue (
         .clk(clk_pix), .rst_n(rst_pix_n), .din(ui_hue_spd), .dout(ui_hue_spd_s));
+    cdc_sync #(.WIDTH(8), .RESET_VAL(8'd8)) u_sync_wg (
+        .clk(clk_pix), .rst_n(rst_pix_n), .din(ui_wave_gain), .dout(ui_wave_gain_s));
+    cdc_sync #(.WIDTH(8), .RESET_VAL(8'd0)) u_sync_demo (
+        .clk(clk_pix), .rst_n(rst_pix_n), .din(ui_demo), .dout(ui_demo_s));
 
     //=========================================================================
     // 3. 色相滚动
@@ -333,6 +338,44 @@ module disp_top #(
                                 : wave_d3[23:0];
 
     //=========================================================================
+    // 5c. 状态行文字
+    //-----------------------------------------------------------------------------
+    // 状态行用【已同步到 clk_pix 的】配置值，整个链路都在 clk_pix 域，
+    // 所以 text_buf 可以是单时钟的，不用再搞一个双时钟存储器。
+    // 内容格式和 UART 的 '?' 回执完全一致，方便两边对着看：
+    //     V7 S0 H6 G8 B0 D0
+    //=========================================================================
+    wire        text_we;
+    wire [15:0] text_waddr;
+    wire [7:0]  text_wdata;
+    wire        text_hit, text_lit;
+
+    status_line u_status (
+        .clk           (clk_pix),
+        .rst_n         (rst_pix_n),
+        .cfg_view      ({5'b0, ui_view_s}),
+        .cfg_style     ({4'b0, ui_style_s}),
+        .cfg_hue_spd   (ui_hue_spd_s),
+        .cfg_wave_gain (ui_wave_gain_s),
+        .cfg_bg_mode   ({4'b0, ui_mode_s}),
+        .cfg_demo      (ui_demo_s),
+        .we            (text_we),
+        .waddr         (text_waddr),
+        .wdata         (text_wdata)
+    );
+
+    text_buf #(.NC(60), .NL(4), .XW(XW), .YW(YW), .TX0(2), .TY0(2)) u_text (
+        .clk   (clk_pix),
+        .we    (text_we),
+        .waddr (text_waddr),
+        .wdata (text_wdata),
+        .x     (x),
+        .y     (y),
+        .hit   (text_hit),
+        .lit   (text_lit)
+    );
+
+    //=========================================================================
     // 6. 混合
     //=========================================================================
     disp_mix #(
@@ -353,6 +396,8 @@ module disp_top #(
         .pres_bar(pres_bar),
         .pres_pol(pres_pol),
         .pres_wav(pres_wav),
+        .text_hit(text_hit),
+        .text_lit(text_lit),
         .rgb     (rgb_in)
     );
 

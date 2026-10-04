@@ -86,6 +86,15 @@ module disp_mix #(
     input  wire [7:0]           pres_bar,
     input  wire [7:0]           pres_pol,
     input  wire [7:0]           pres_wav,
+
+    //-------------------------------------------------------------------------
+    // 文字叠加（来自 text_buf）
+    //   hit = 该像素落在文本框内（用来画底板）
+    //   lit = 该像素是一个字形像素
+    //   文字画在【最上层】，所以放在输出级最后处理。
+    //-------------------------------------------------------------------------
+    input  wire                 text_hit,
+    input  wire                 text_lit,
     output reg  [23:0]          rgb
 );
 
@@ -182,6 +191,16 @@ module disp_mix #(
 
     localparam [23:0] AXIS_RGB = 24'h20_38_50;       // 波形中线：暗青
     localparam [23:0] CORE_RGB = 24'h40_50_60;       // 圆心环：淡灰蓝
+    localparam [23:0] TEXT_RGB = 24'hF0_F0_F0;       // 文字：近白
+
+    // 文字底板：把背景压到 1/4 亮度，而不是盖一块死黑。
+    //   这样文字在亮背景和暗背景上都读得清，又不会完全挡住后面的画面 ——
+    //   「半透明底板」比「实心黑框」看着专业，代价只是一次右移。
+    //   三个通道各右移 2 位：R(23:16)>>2 放回 23:18、G(15:8)>>2 放回 15:10、
+    //   B(7:0)>>2 放回 7:2，每段高位补 0。写成拼接比拼回去的移位清楚得多。
+    wire [23:0] TEXT_BG = {2'b00, bg_rgb[23:18],
+                           2'b00, bg_rgb[15:10],
+                           2'b00, bg_rgb[7:2]};
 
     //=========================================================================
     // 5. 合成
@@ -200,11 +219,17 @@ module disp_mix #(
         else if (w_axis)
             rgb = AXIS_RGB;
 
-        // 极坐标在最上层
+        // 极坐标
         if (p_lit_g)
             rgb = rb_pol;
         else if (p_core)
             rgb = CORE_RGB;
+
+        // 文字在最上层（底板 + 字形）
+        if (text_lit)
+            rgb = TEXT_RGB;
+        else if (text_hit)
+            rgb = TEXT_BG;
     end
 
 endmodule
