@@ -128,6 +128,8 @@ module tb_disp_top;
         .ui_demo   (ui_demo_v),
         .tp_x      (tp_x_v),
         .tp_y      (tp_y_v),
+        .tp_edges  (12'd7),
+        .tp_low    (1'b1),
         .wave_din  (wave_din),
         .wave_we   (wave_we),
         .lcd_rgb   (lcd_rgb),
@@ -230,7 +232,7 @@ module tb_disp_top;
         .cfg_view({5'b0, view_en}), .cfg_style(8'd0),
         .cfg_hue_spd(hue_spd), .cfg_wave_gain(wave_gain),
         .cfg_bg_mode(8'd0), .cfg_demo(ui_demo_v),
-        .tp_x(tp_x_v), .tp_y(tp_y_v),
+        .tp_x(tp_x_v), .tp_y(tp_y_v), .tp_edges(12'd7), .tp_low(1'b1),
         .we(e_t_we), .waddr(e_t_addr), .wdata(e_t_data)
     );
 

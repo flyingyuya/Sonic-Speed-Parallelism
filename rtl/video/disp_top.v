@@ -104,6 +104,8 @@ module disp_top #(
     //--------------------- 触摸原始读数（clk_sys 域）---------------------
     input  wire [11:0]           tp_x,
     input  wire [11:0]           tp_y,
+    input  wire [11:0]           tp_edges,      // 诊断：DOUT 跳变次数
+    input  wire                  tp_low,        // 诊断：DOUT 是否出现过低电平
 
     //--------------------- 液晶输出 ---------------------
     output wire [23:0]           lcd_rgb,
@@ -181,10 +183,16 @@ module disp_top #(
     // 而且只用来在屏幕上显示数字 —— 偶尔采到中间态最多让某一帧的数字
     // 闪一下，无害。真正需要无损传递的多比特数据走异步 FIFO。
     wire [11:0] tp_x_s, tp_y_s;
+    wire [11:0] tp_edges_s;
+    wire        tp_low_s;
     cdc_sync #(.WIDTH(12), .RESET_VAL(12'd0)) u_sync_tpx (
         .clk(clk_pix), .rst_n(rst_pix_n), .din(tp_x), .dout(tp_x_s));
     cdc_sync #(.WIDTH(12), .RESET_VAL(12'd0)) u_sync_tpy (
         .clk(clk_pix), .rst_n(rst_pix_n), .din(tp_y), .dout(tp_y_s));
+    cdc_sync #(.WIDTH(12), .RESET_VAL(12'd0)) u_sync_tpe (
+        .clk(clk_pix), .rst_n(rst_pix_n), .din(tp_edges), .dout(tp_edges_s));
+    cdc_sync #(.WIDTH(1), .RESET_VAL(1'b0)) u_sync_tpl (
+        .clk(clk_pix), .rst_n(rst_pix_n), .din(tp_low), .dout(tp_low_s));
 
     //=========================================================================
     // 3. 色相滚动
@@ -374,6 +382,8 @@ module disp_top #(
         .cfg_demo      (ui_demo_s),
         .tp_x          (tp_x_s),
         .tp_y          (tp_y_s),
+        .tp_edges      (tp_edges_s),
+        .tp_low        (tp_low_s),
         .we            (text_we),
         .waddr         (text_waddr),
         .wdata         (text_wdata)

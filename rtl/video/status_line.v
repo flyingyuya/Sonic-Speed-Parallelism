@@ -30,7 +30,7 @@
 `timescale 1ns/1ps
 
 module status_line #(
-    parameter integer NLEN = 17,       // 【每行】字符数（共 2 行 = NLEN*2 个）
+    parameter integer NLEN = 17,       // 【每行】字符数（共 3 行 = NLEN*3 个）
     parameter integer NC   = 60        // text_buf 每行能放多少字符（地址换算用）
 ) (
     input  wire        clk,
@@ -45,6 +45,8 @@ module status_line #(
     input  wire [7:0]  cfg_demo,
     input  wire [11:0] tp_x,            // 触摸屏原始 X（用于上板验证管脚）
     input  wire [11:0] tp_y,
+    input  wire [11:0] tp_edges,        // 诊断：最近一次转换 DOUT 跳变次数
+    input  wire        tp_low,          // 诊断：DOUT 是否出现过低电平
 
     //--------------------- 写 text_buf ---------------------
     output reg         we,
@@ -57,6 +59,8 @@ module status_line #(
     //=========================================================================
     reg [7:0]  v_d, s_d, h_d, g_d, b_d, m_d;
     reg [11:0] tx_d, ty_d;
+    reg [11:0] te_d;
+    reg        tl_d;
 
     // ⚠️ 必须用 != 而不是 !==。
     //   `!==` 是【仿真专用】运算符（会比较 X/Z），**不可综合** ——
@@ -66,12 +70,13 @@ module status_line #(
     wire changed = (cfg_view      != v_d) || (cfg_style     != s_d) ||
                    (cfg_hue_spd   != h_d) || (cfg_wave_gain != g_d) ||
                    (cfg_bg_mode   != b_d) || (cfg_demo      != m_d) ||
-                   (tp_x != tx_d) || (tp_y != ty_d);
+                   (tp_x != tx_d) || (tp_y != ty_d) ||
+                   (tp_edges != te_d) || (tp_low != tl_d);
 
     //=========================================================================
     // 2. 逐字符写入
     //=========================================================================
-    reg [5:0] cnt;
+    reg [5:0] cnt;      // 0..NLEN*3-1（三行）
     reg       busy;
 
     // 十六进制数字 -> ASCII（'0'..'9' / 'A'..'F'）
@@ -82,50 +87,76 @@ module status_line #(
         end
     endfunction
 
-    // 12 位值 -> 3 位十进制 ASCII（触摸读数用十进制看着直观）
-    function [7:0] dec3;
+    // 12 位值 -> 4 位十进制 ASCII
+    //   ⚠️ 必须是 4 位！12 位最大 4095，3 位装不下。
+    //   第一版写的是"百位 = v/100"，v=4095 时算出 40，再 "0"+40 得到
+    //   码 88 也就是字母 'X' —— 屏幕上显示出 "TXX95"，
+    //   看起来像乱码，其实是在告诉你"读回来是 0xFFF"。
+    function [7:0] dec4;
         input [11:0] v;
-        input [1:0]  d;          // 0 = 百位，1 = 十位，2 = 个位
+        input [2:0]  d;          // 0=千位 1=百位 2=十位 3=个位
         reg [11:0]   t;
         begin
             case (d)
-                2'd0:    t = v / 100;
-                2'd1:    t = (v / 10) % 10;
+                3'd0:    t = (v / 1000) % 10;
+                3'd1:    t = (v / 100) % 10;
+                3'd2:    t = (v / 10) % 10;
                 default: t = v % 10;
             endcase
-            dec3 = "0" + t[7:0];
+            dec4 = "0" + t[7:0];
         end
     endfunction
 
-    // 第 cnt 个字符是什么
+    //-------------------------------------------------------------------------
+    // 字符表（cnt = 行*NLEN + 列）
+    //
+    //   第 1 行 (0..16)  : "V7 S0 H6 G8 B0 D0"      配置，与 UART 回执同格式
+    //   第 2 行 (17..33) : "TX0000 TY0000"          触摸原始读数（4 位十进制）
+    //   第 3 行 (34..50) : "E0000 L0"               诊断（DOUT 跳变数 / 见过低电平吗）
+    //
+    //   ⚠️ 12 位读数最大 4095，所以必须 4 位十进制 —— 3 位装不下，
+    //      会把 v/100 算出 40 再 "0"+40 变成字母 'X'。
+    //-------------------------------------------------------------------------
     reg [7:0] ch;
     always @(*) begin
-        // 第二行的列号（0..16）
         case (cnt)
-            //-------- 第一行 "V7 S0 H6 G8 B0 D0" --------
-            5'd0:  ch = "V";     5'd1:  ch = hexc(cfg_view[3:0]);
-            5'd2:  ch = " ";     5'd3:  ch = "S";
-            5'd4:  ch = hexc(cfg_style[3:0]);
-            5'd5:  ch = " ";     5'd6:  ch = "H";
-            5'd7:  ch = hexc(cfg_hue_spd[3:0]);
-            5'd8:  ch = " ";     5'd9:  ch = "G";
-            5'd10: ch = hexc(cfg_wave_gain[3:0]);
-            5'd11: ch = " ";     5'd12: ch = "B";
-            5'd13: ch = hexc(cfg_bg_mode[3:0]);
-            5'd14: ch = " ";     5'd15: ch = "D";
-            5'd16: ch = hexc(cfg_demo[3:0]);
-            //-------- 第二行 "TX000 TY000" --------
-            5'd17: ch = "T";     5'd18: ch = "X";
-            5'd19: ch = dec3(tp_x, 2'd0);
-            5'd20: ch = dec3(tp_x, 2'd1);
-            5'd21: ch = dec3(tp_x, 2'd2);
-            5'd22: ch = " ";     5'd23: ch = "T";
-            5'd24: ch = "Y";
-            5'd25: ch = dec3(tp_y, 2'd0);
-            5'd26: ch = dec3(tp_y, 2'd1);
-            5'd27: ch = dec3(tp_y, 2'd2);
-            5'd28: ch = " ";     5'd29: ch = " ";
-            5'd30: ch = " ";     5'd31: ch = " ";
+            //-------- 第 1 行：配置 --------
+            6'd0:  ch = "V";   6'd1:  ch = hexc(cfg_view[3:0]);
+            6'd2:  ch = " ";   6'd3:  ch = "S";
+            6'd4:  ch = hexc(cfg_style[3:0]);
+            6'd5:  ch = " ";   6'd6:  ch = "H";
+            6'd7:  ch = hexc(cfg_hue_spd[3:0]);
+            6'd8:  ch = " ";   6'd9:  ch = "G";
+            6'd10: ch = hexc(cfg_wave_gain[3:0]);
+            6'd11: ch = " ";   6'd12: ch = "B";
+            6'd13: ch = hexc(cfg_bg_mode[3:0]);
+            6'd14: ch = " ";   6'd15: ch = "D";
+            6'd16: ch = hexc(cfg_demo[3:0]);
+            //-------- 第 2 行：触摸读数 "TX0000 TY0000" --------
+            6'd17: ch = "T";   6'd18: ch = "X";
+            6'd19: ch = dec4(tp_x, 3'd0);
+            6'd20: ch = dec4(tp_x, 3'd1);
+            6'd21: ch = dec4(tp_x, 3'd2);
+            6'd22: ch = dec4(tp_x, 3'd3);
+            6'd23: ch = " ";
+            6'd24: ch = "T";   6'd25: ch = "Y";
+            6'd26: ch = dec4(tp_y, 3'd0);
+            6'd27: ch = dec4(tp_y, 3'd1);
+            6'd28: ch = dec4(tp_y, 3'd2);
+            6'd29: ch = dec4(tp_y, 3'd3);
+            6'd30: ch = " ";   6'd31: ch = " ";   6'd32: ch = " ";   6'd33: ch = " ";
+            //-------- 第 3 行：诊断 "E0000 L0" --------
+            6'd34: ch = "E";
+            6'd35: ch = dec4(tp_edges, 3'd0);
+            6'd36: ch = dec4(tp_edges, 3'd1);
+            6'd37: ch = dec4(tp_edges, 3'd2);
+            6'd38: ch = dec4(tp_edges, 3'd3);
+            6'd39: ch = " ";
+            6'd40: ch = "L";
+            6'd41: ch = tp_low ? "1" : "0";
+            6'd42: ch = " ";   6'd43: ch = " ";   6'd44: ch = " ";
+            6'd45: ch = " ";   6'd46: ch = " ";   6'd47: ch = " ";
+            6'd48: ch = " ";   6'd49: ch = " ";   6'd50: ch = " ";
             default: ch = " ";
         endcase
     end
@@ -135,6 +166,7 @@ module status_line #(
             v_d <= 8'hFF; s_d <= 8'hFF; h_d <= 8'hFF;
             g_d <= 8'hFF; b_d <= 8'hFF; m_d <= 8'hFF;   // 上电必触发一次
             tx_d <= 12'hFFF; ty_d <= 12'hFFF;
+            te_d <= 12'hFFF; tl_d <= 1'b1;
             cnt <= 6'd0;
             busy <= 1'b0;
             we <= 1'b0;
@@ -156,14 +188,15 @@ module status_line #(
                 //   "第一行的第 17~33 列"，屏幕上第二行永远是空的。
                 waddr <= {11'd0, (cnt / NLEN) * NC + (cnt % NLEN)};
                 wdata <= ch;
-                // 两行一起写：cnt 从 0 数到 NLEN*2-1
-                if (cnt == NLEN*2 - 1) begin
+                // 三行一起写：cnt 从 0 数到 NLEN*3-1
+                if (cnt == NLEN*3 - 1) begin
                     busy <= 1'b0;
                     // 记下这次写的是什么配置，下次只有再变才重写
                     v_d <= cfg_view;      s_d <= cfg_style;
                     h_d <= cfg_hue_spd;   g_d <= cfg_wave_gain;
                     b_d <= cfg_bg_mode;   m_d <= cfg_demo;
                     tx_d <= tp_x;         ty_d <= tp_y;
+                    te_d <= tp_edges;     tl_d <= tp_low;
                 end else begin
                     cnt <= cnt + 1'b1;
                 end

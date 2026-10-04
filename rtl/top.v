@@ -383,6 +383,8 @@ module top #(
     reg        tp_go;
     wire       tp_busy, tp_valid;
     wire [11:0] tp_x, tp_y;
+    wire [11:0] tp_edges;
+    wire        tp_low;
 
     always @(posedge clk_sys) begin
         if (!rst_sys_n) begin
@@ -407,6 +409,8 @@ module top #(
         .valid   (tp_valid),
         .x_pos   (tp_x),
         .y_pos   (tp_y),
+        .dbg_edges (tp_edges),              // 诊断：DOUT 跳变次数
+        .dbg_low   (tp_low),                // 诊断：DOUT 见过低电平吗
         .tp_dclk (tp_dclk),
         .tp_cs_n (tp_cs_n),
         .tp_din  (tp_din),
@@ -431,6 +435,8 @@ module top #(
         .ui_demo    (ui_demo),              // T 命令：演示图案
         .tp_x       (tp_x),                 // 触摸原始读数（显示在状态行第二行）
         .tp_y       (tp_y),
+        .tp_edges   (tp_edges),             // 诊断量（状态行第三行）
+        .tp_low     (tp_low),
         .wave_din   (wave_din_sel),         // 波形显示左声道（或自检图案）
         .wave_we    (wave_we_sel),
         .lcd_rgb    (lcd_rgb),

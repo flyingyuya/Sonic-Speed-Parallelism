@@ -46,6 +46,20 @@ module xpt2046 #(
     output reg  [11:0] x_pos,
     output reg  [11:0] y_pos,
 
+    //-------------------------------------------------------------------------
+    // 诊断量：上板排查"到底通没通"用
+    //-----------------------------------------------------------------------------
+    //   dbg_edges : 最近一次转换里 DOUT 跳变了几次
+    //   dbg_low   : 最近一次转换里 DOUT 有没有出现过低电平（粘滞到下一次 start）
+    //
+    //   判据：
+    //     · dbg_low 一直是 0 -> 器件根本没回话（没选中 / 没供电 / DOUT 接错脚）
+    //     · 有跳变但值不对     -> 接线基本对，是协议或时序问题
+    //   这比"看读回来的数字对不对"更能定位问题，因为数字对不对还需要校准作前提。
+    //-------------------------------------------------------------------------
+    output reg  [11:0] dbg_edges,
+    output reg         dbg_low,
+
     //--------------------- 引脚 ---------------------
     output reg         tp_dclk,
     output reg         tp_cs_n,
@@ -74,6 +88,8 @@ module xpt2046 #(
     reg [15:0] div;
     reg [3:0]  gap;
     reg [11:0] sh;          // 本次转换的移位结果
+    reg        dout_d;      // 上一拍的 DOUT，用来数跳变
+    reg [11:0] edge_cnt;    // 本次事务累计跳变数
     reg [7:0]  cmd;         // 当前在发的命令字节
 
     wire tick = (div == DIV - 1);
@@ -85,6 +101,7 @@ module xpt2046 #(
         if (!rst_n) begin
             st <= S_IDLE;
             bitn <= 5'd0; phase <= 1'b0; div <= 16'd0; gap <= 4'd0;
+            dout_d <= 1'b0; edge_cnt <= 12'd0;
             sh <= 12'd0; cmd <= CMD_X;
             busy <= 1'b0; valid <= 1'b0;
             x_pos <= 12'd0; y_pos <= 12'd0;
@@ -107,6 +124,9 @@ module xpt2046 #(
                         cmd  <= CMD_X;
                         busy <= 1'b1;
                         tp_cs_n <= 1'b0;    // 拉低片选，开始转换
+                        // 每轮事务开始前清掉诊断量
+                        edge_cnt <= 12'd0;
+                        dbg_low  <= 1'b0;
                     end
                 end
 
@@ -131,12 +151,27 @@ module xpt2046 #(
                             //   结果位按 MSB 先出：第 9 位是 bit11，第 20 位是 bit0
                             if (is_dat)
                                 sh[5'd20 - bitn] <= tp_dout;
+
+                            // 数 DOUT 跳变 + 记录有没有见过低电平（整个事务范围）
+                            // ⚠️ 这里又是那个坑：RTL 里不能用 === / !==（仿真专用、
+                            //   不可综合，综合器会替换掉并报 [Synth 8-589]）。
+                            //   账本第 68 条刚记过一次，写这里时又犯了 ——
+                            //   所以"每次构建都数一遍日志里的 WARNING 行数"这条纪律
+                            //   不是形式主义，它是唯一能兜住这类疏漏的东西。
+                            if (tp_dout != dout_d)
+                                edge_cnt <= edge_cnt + 1'b1;
+                            if (tp_dout == 1'b0)
+                                dbg_low <= 1'b1;
                             tp_dclk <= 1'b0;
                             phase   <= 1'b0;
+
+                            dout_d <= tp_dout;
 
                             if (bitn == 5'd23) begin
                                 // 一次转换结束
                                 bitn <= 5'd0;
+                                if (st == S_Y)
+                                    dbg_edges <= edge_cnt;   // 两次都读完再快照
                                 if (st == S_X) begin
                                     // 存下 X，然后【必须先把 nCS 抬起来】再读 Y。
                                     // ⚠️ 这不是可有可无的细节：XPT2046 只在
