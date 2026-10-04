@@ -10,9 +10,14 @@
 #      上面有两个 40 脚连接器：
 #        · LCD1 = 屏的 FPC 座（TIANMA-TM043NDH02-40），对 FPGA 不可见
 #        · CON40 / J1 = 与主板对接的 40 脚排针，这里才有 FPGA 信号
-#      CON40 上的触摸信号：
-#        37 = TP_SPI_DCLK   38 = TP_SPI_DIN
-#        39 = TP_SPI_nCS    40 = TP_SPI_DOUT
+#      CON40 是【2x20 排针，左列全是奇数脚、右列全是偶数脚】：
+#        37 = TP_SPI_nCS    38 = TP_SPI_DOUT
+#        39 = TP_SPI_DCLK   40 = TP_SPI_DIN
+#
+#      ⚠️ 这里返过工：第一版按"标签的上下位置"去对，把 nCS/DCLK 和
+#         DOUT/DIN 全写反了。**正确做法是先看左右的奇偶规律** ——
+#         左列只可能是 37/39，右列只可能是 38/40，再去对上下顺序，
+#         就不可能搞混。
 #      控制器是 U2 = XPT2046（就在子卡上，四线 SPI），
 #      XP/XN/YP/YN 接触摸面板，对 FPGA 不可见。
 #
@@ -50,10 +55,11 @@
 #   DIN  : FPGA -> XPT2046（发给控制器的命令字节是 MSB 先出）
 #   DOUT : XPT2046 -> FPGA（读回 12 位坐标，MSB 先出）
 #-----------------------------------------------------------------------------
-set_property -dict {PACKAGE_PIN E19 IOSTANDARD LVCMOS33} [get_ports tp_dclk]
-set_property -dict {PACKAGE_PIN D19 IOSTANDARD LVCMOS33} [get_ports tp_cs_n]
-set_property -dict {PACKAGE_PIN B20 IOSTANDARD LVCMOS33} [get_ports tp_din]
-set_property -dict {PACKAGE_PIN A20 IOSTANDARD LVCMOS33} [get_ports tp_dout]
+#                         40P 脚   JM1 脚   FPGA
+set_property -dict {PACKAGE_PIN E19 IOSTANDARD LVCMOS33} [get_ports tp_cs_n]   #  37  ->  37
+set_property -dict {PACKAGE_PIN B20 IOSTANDARD LVCMOS33} [get_ports tp_dout]   #  38  ->  38
+set_property -dict {PACKAGE_PIN D19 IOSTANDARD LVCMOS33} [get_ports tp_dclk]   #  39  ->  39
+set_property -dict {PACKAGE_PIN A20 IOSTANDARD LVCMOS33} [get_ports tp_din]    #  40  ->  40
 
 # 排线比较长（子卡通过 40 脚排线接过来），驱动电流调大一点、压摆率放缓。
 #   ⚠️ 只能对【输出】端口设 —— 对纯输入设 DRIVE 会触发 [Vivado 12-4702]
