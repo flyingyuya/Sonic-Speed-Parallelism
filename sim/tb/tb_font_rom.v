@@ -36,18 +36,18 @@ module tb_font_rom;
         begin
             case ({code, rr})
                 // '-' 第 3 行是一条实线
-                {8'h2D, 3'd3}: expect_row = 8'b11111;
+                {8'h2D, 3'd3}: expect_row = 8'b00011111;
                 // '=' 第 2、4 行两条实线
-                {8'h3D, 3'd2}: expect_row = 8'b11111;
-                {8'h3D, 3'd4}: expect_row = 8'b11111;
+                {8'h3D, 3'd2}: expect_row = 8'b00011111;
+                {8'h3D, 3'd4}: expect_row = 8'b00011111;
                 // 'I' 第 0、6 行是 01110，中间几行是 00100
-                {8'h49, 3'd0}: expect_row = 8'b01110;
-                {8'h49, 3'd6}: expect_row = 8'b01110;
-                {8'h49, 3'd3}: expect_row = 8'b00100;
+                {8'h49, 3'd0}: expect_row = 8'b00000001110;
+                {8'h49, 3'd6}: expect_row = 8'b00000001110;
+                {8'h49, 3'd3}: expect_row = 8'b00000100;
                 // '/' 第 0 行在最右，第 6 行在最左 -> 验证列方向没反
-                {8'h2F, 3'd0}: expect_row = 8'b00001;
-                {8'h2F, 3'd6}: expect_row = 8'b10000;
-                default:       expect_row = 8'bz;   // z = 不检查
+                {8'h2F, 3'd0}: expect_row = 8'b00000001;
+                {8'h2F, 3'd6}: expect_row = 8'b00010000;
+                default:       expect_row = 8'bzzzzzzzz;   // z = 不检查
             endcase
         end
     endfunction
@@ -83,19 +83,19 @@ module tb_font_rom;
             for (c = 0; c < 8; c = c + 1) begin
                 // 挨个查 ' ' 到 '~' 里我们声明过期望值的那些
                 ch = 8'h2D; row = 3'd3; #1;
-                if (bits !== 8'b11111) k = k + 1;
+                if (bits !== 8'b00011111) k = k + 1;
                 ch = 8'h3D; row = 3'd2; #1;
-                if (bits !== 8'b11111) k = k + 1;
+                if (bits !== 8'b00011111) k = k + 1;
                 ch = 8'h3D; row = 3'd4; #1;
-                if (bits !== 8'b11111) k = k + 1;
+                if (bits !== 8'b00011111) k = k + 1;
                 ch = 8'h49; row = 3'd0; #1;
-                if (bits !== 8'b01110) k = k + 1;
+                if (bits !== 8'b00000001110) k = k + 1;
                 ch = 8'h49; row = 3'd6; #1;
-                if (bits !== 8'b01110) k = k + 1;
+                if (bits !== 8'b00000001110) k = k + 1;
                 ch = 8'h2F; row = 3'd0; #1;
-                if (bits !== 8'b00001) k = k + 1;
+                if (bits !== 8'b00000001) k = k + 1;
                 ch = 8'h2F; row = 3'd6; #1;
-                if (bits !== 8'b10000) k = k + 1;
+                if (bits !== 8'b00010000) k = k + 1;
                 c = 99;     // 只跑一遍
             end
             if (k != 0) begin
