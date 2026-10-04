@@ -55,11 +55,23 @@
 #   DIN  : FPGA -> XPT2046（发给控制器的命令字节是 MSB 先出）
 #   DOUT : XPT2046 -> FPGA（读回 12 位坐标，MSB 先出）
 #-----------------------------------------------------------------------------
-#                         40P 脚   JM1 脚   FPGA
-set_property -dict {PACKAGE_PIN E19 IOSTANDARD LVCMOS33} [get_ports tp_cs_n]   #  37  ->  37
-set_property -dict {PACKAGE_PIN B20 IOSTANDARD LVCMOS33} [get_ports tp_dout]   #  38  ->  38
-set_property -dict {PACKAGE_PIN D19 IOSTANDARD LVCMOS33} [get_ports tp_dclk]   #  39  ->  39
-set_property -dict {PACKAGE_PIN A20 IOSTANDARD LVCMOS33} [get_ports tp_din]    #  40  ->  40
+# ⚠️ 注释必须【单独占一行】。
+#   Tcl 只把"命令起始处"的 # 当注释；跟在命令参数后面的 # 会被当成
+#   普通参数解析 —— 第一版写成 `... [get_ports tp_cs_n]  # 37 -> 37`，
+#   结果 `->` 被当成 set_property 的选项，报了
+#   [Common 17-170] Unknown option '->'。
+#
+#   40P 脚 37 = nCS  ->  JM1 37 = E19
+set_property -dict {PACKAGE_PIN E19 IOSTANDARD LVCMOS33} [get_ports tp_cs_n]
+#
+#   40P 脚 38 = DOUT ->  JM1 38 = B20
+set_property -dict {PACKAGE_PIN B20 IOSTANDARD LVCMOS33} [get_ports tp_dout]
+#
+#   40P 脚 39 = DCLK ->  JM1 39 = D19
+set_property -dict {PACKAGE_PIN D19 IOSTANDARD LVCMOS33} [get_ports tp_dclk]
+#
+#   40P 脚 40 = DIN  ->  JM1 40 = A20
+set_property -dict {PACKAGE_PIN A20 IOSTANDARD LVCMOS33} [get_ports tp_din]
 
 # 排线比较长（子卡通过 40 脚排线接过来），驱动电流调大一点、压摆率放缓。
 #   ⚠️ 只能对【输出】端口设 —— 对纯输入设 DRIVE 会触发 [Vivado 12-4702]
