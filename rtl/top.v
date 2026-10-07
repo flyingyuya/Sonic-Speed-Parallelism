@@ -305,6 +305,22 @@ module top #(
     );
 
     //=========================================================================
+    // 6b-1. 触摸按钮的网络声明
+    //-----------------------------------------------------------------------------
+    //   【为什么要单独提前声明】
+    //     这里有个环：ui_ctrl 需要"哪个按钮被按了"，而按钮来自 disp_top，
+    //     disp_top 又需要 ui_ctrl 输出的配置。Verilog【没有前置声明】，
+    //     所以只能把【导线声明】提前、【驱动它的逻辑】放到后面。
+    //
+    //   ⚠️ 不提前声明的话，`ui_btn_act` 会被当成【隐式 1 位网络】——
+    //     既不报错也不连到 disp_top 的端口上，功能静默失效。
+    //     （最初就是这么错的，iverilog 只报了一句 implicit definition 的警告。）
+    //=========================================================================
+    wire [3:0] ui_btn_act;      // disp_top 输出：当前按着的按钮动作码
+    wire [3:0] btn_act_s;       // 同步到 clk_sys 之后的动作码
+    wire       btn_press_s;     // clk_sys 域的一次"按下"事件（单拍）
+
+    //=========================================================================
     // 6c. 写端口仲裁：按键 / UART **汇到同一条总线**
     //     这就是扩展点②真正落地的地方 —— 显示链完全不知道是谁改的。
     //     优先级：按键 > UART（人的即时操作优先，UART 少写一次无所谓）
@@ -315,13 +331,28 @@ module top #(
     wire [3:0]  ui_wr_addr = k2_press ? 4'h4 : uart_wr_addr;
     wire [7:0]  ui_wr_data = k2_press ? bg_next : uart_wr_data;
 
+    //=========================================================================
+    // 6c-2. 触摸按钮 -> 配置（P1-1 工控屏）
+    //-----------------------------------------------------------------------------
+    // disp_top 已经给出"按下那一拍"的脉冲（ui_btn_press）和动作码（ui_btn_act），
+    // 这里只做分流：
+    //   VIEW 按钮 -> next_view 脉冲（和 KEY1 完全同一个动作）
+    //   其它按钮  -> step_en + 地址（让 ui_ctrl 自己按字段的有效范围递增）
+    //
+    // 优先级：触摸按钮 > 按键 > UART（屏幕上的是用户刚点的，最"新"）
+    //=========================================================================
+    wire btn_view = btn_press_s & (btn_act_s == 4'h0);
+    wire btn_step = btn_press_s & (btn_act_s != 4'h0) & (btn_act_s != 4'hF);
+
     ui_ctrl u_ui (
         .clk           (clk_sys),
         .rst_n         (rst_sys_n),
         .wr_en         (ui_wr_en),
         .wr_addr       (ui_wr_addr),
         .wr_data       (ui_wr_data),
-        .next_view     (k1_press),          // KEY1：轮换视图预设
+        .next_view     (k1_press | btn_view),   // KEY1 或 VIEW 按钮
+        .step_en       (btn_step),
+        .step_addr     (btn_act_s),
         .cfg_view      (ui_view),
         .cfg_style     (ui_style),
         .cfg_hue_spd   (ui_hue_spd),
@@ -421,6 +452,8 @@ module top #(
     // 7. 显示（含跨时钟域快照）
     //=========================================================================
     disp_top u_disp (
+        .ui_btn_act (ui_btn_act),
+        .ui_btn_press(),                    // 用不到：边沿在 clk_sys 侧重新做
         .clk_sys    (clk_sys),
         .rst_sys_n  (rst_sys_n),
         .spec_wr    (spec_wr_sel),
@@ -459,5 +492,31 @@ module top #(
 
     assign led[0] = init_done;          // 常亮 = WM8960 配置完成
     assign led[1] = hb[23];             // 约 2.9 Hz 心跳
+
+    //=========================================================================
+    // 6b-0. 触摸按钮的跨时钟域（从 clk_pix 送回 clk_sys）
+    //-----------------------------------------------------------------------------
+    //   注意 CDC 要【放在使用之前】—— Verilog 不允许先用后声明。
+    //
+    //   ui_btn_press 是 clk_pix 域的【单拍脉冲】，直接过两级同步器会：
+    //     · 宽了或窄了都有风险（pulse 同步必须用展宽/握手或边沿编码）
+    //     这里用最省事又安全的办法：在 clk_sys 侧对【电平】做边沿检测。
+    //     也就是把 ui_btn_act 同步过来，再看"按下的按钮编号变了"当作一次按下 ——
+    //     因为每次按下都会让 act 变化（松开时变成 0xF）。
+    //     代价是同一按钮连按两次要靠 0xF 的中间态区分，本工程够用。
+    //=========================================================================
+    reg [3:0] btn_act_d;
+
+    cdc_sync #(.WIDTH(4), .RESET_VAL(4'hF)) u_sync_bact (
+        .clk(clk_sys), .rst_n(rst_sys_n), .din(ui_btn_act), .dout(btn_act_s));
+
+    always @(posedge clk_sys) begin
+        if (!rst_sys_n) btn_act_d <= 4'hF;
+        else            btn_act_d <= btn_act_s;
+    end
+
+    // 从"没按"变成"按了某个按钮" -> 一次按下事件
+    assign btn_press_s = (btn_act_d == 4'hF) && (btn_act_s != 4'hF);
+
 
 endmodule

@@ -36,6 +36,7 @@ module disp_top #(
     parameter integer NBARS      = `DISP_NBARS,
     parameter integer HW         = 9,
     parameter integer BARS_Y0    = `DISP_BARS_Y0,
+    parameter integer BARS_H     = `DISP_BARS_H,
     parameter integer BAR_GAP    = `DISP_BAR_GAP,
     parameter integer POL_CX     = `DISP_POL_CX,
     parameter integer POL_CY     = `DISP_POL_CY,
@@ -79,7 +80,17 @@ module disp_top #(
     //   32 帧就是 480 万拍，仿真跑不动）。
     //-------------------------------------------------------------------------
     parameter integer ANIM_FULL = 128,
-    parameter integer ANIM_STEP = 4
+    parameter integer ANIM_STEP = 4,
+
+    //-------------------------------------------------------------------------
+    // UI 按钮带（P1-1 工控屏）
+    //-------------------------------------------------------------------------
+    parameter integer NB_UI  = `DISP_UI_NB,
+    parameter integer UI_BX0 = 0,
+    parameter integer UI_BY0 = `DISP_UI_BY0,
+    parameter integer UI_BW  = `DISP_UI_BW,
+    parameter integer UI_BH  = `DISP_UI_BH,
+    parameter integer UI_GAP = `DISP_UI_GAP
 ) (
     //--------------------- 音频域（clk_sys）---------------------
     input  wire                  clk_sys,
@@ -108,6 +119,15 @@ module disp_top #(
     input  wire                  tp_low,        // 诊断：DOUT 是否出现过低电平
 
     //--------------------- 液晶输出 ---------------------
+    //--------------------- 按钮命中（送回 clk_sys 改配置）---------------------
+    //   ui_btn_act   : 当前正按着的按钮的动作码（4'hF = 没按）
+    //   ui_btn_press : 【按下那一拍】的单拍脉冲 —— 上层用它触发一次动作。
+    //                  边沿检测放在这里而不是上层，是因为"按下"的原始状态
+    //                  就在本模块里（demo 扫描 / 真实触摸二选一），
+    //                  上层拿到的已经是屏幕坐标了，再判一次边沿反而绕。
+    output wire [3:0]            ui_btn_act,
+    output wire                  ui_btn_press,
+
     output wire [23:0]           lcd_rgb,
     output wire                  lcd_hs,
     output wire                  lcd_vs,
@@ -401,12 +421,121 @@ module disp_top #(
     );
 
     //=========================================================================
-    // 6. 混合
+    // 6. 触摸坐标：原始 ADC -> 屏幕坐标（或者演示扫描）
+    //-----------------------------------------------------------------------------
+    // 【真实触摸】XPT2046 原始值大约 200..3900（12 位）。
+    //   先做一个【临时线性标定】：screen = raw >> 3（4096/8 = 512，接近 480）。
+    //   这只是让 UI 能动起来；等 U2 焊好后，要按实测的四角坐标做正式标定
+    //   （带偏移和斜率），那时候再改这里。
+    //
+    // 【按下判定】没触摸时 XPT2046 的读数会贴到 0 或 4095，所以
+    //   "落在一个像样的中间范围"就当作按下。
+    //
+    // 【T04 演示扫描】焊好之前，用一个虚拟光标依次停在每个按钮上并"按下"，
+    //   让人现在就能看到工控屏 UI 工作。它也顺便是个演示模式。
+    //=========================================================================
+    wire demo_touch = (ui_demo_s[3:0] == 4'd4);
+
+    wire [9:0] tch_x_raw = tp_x_s[11:3];
+    wire [8:0] tch_y_raw = tp_y_s[11:4];
+    wire       tch_down  = (tp_x_s > 12'd100) && (tp_x_s < 12'd4000) &&
+                           (tp_y_s > 12'd100) && (tp_y_s < 12'd4000);
+
+    // ---- 演示扫描：每 SW_HOLD 拍换一个按钮，切换时给一个短"按下"脉冲 ----
+    localparam integer SW_HOLD = 4_000_000;     // @12.5MHz 约 0.32 s
+    localparam integer SW_PUSH =    80_000;     // 按下持续约 6.4 ms
+
+    reg [22:0] sw_cnt;
+    reg [2:0]  sw_idx;
+
+    always @(posedge clk_pix) begin
+        if (!rst_pix_n) begin
+            sw_cnt <= 23'd0;
+            sw_idx <= 3'd0;
+        end else if (demo_touch) begin
+            if (sw_cnt == SW_HOLD - 1) begin
+                sw_cnt <= 23'd0;
+                sw_idx <= (sw_idx == NB_UI - 1) ? 3'd0 : sw_idx + 1'b1;
+            end else begin
+                sw_cnt <= sw_cnt + 1'b1;
+            end
+        end else begin
+            sw_cnt <= 23'd0;
+            sw_idx <= 3'd0;
+        end
+    end
+
+    // 光标停在按钮 sw_idx 的中心
+    wire [XW-1:0] sw_x = UI_BX0 + sw_idx*(UI_BW+UI_GAP) + UI_BW/2;
+    wire [YW-1:0] sw_y = UI_BY0 + UI_BH/2;
+    wire          sw_down = demo_touch && (sw_cnt < SW_PUSH);
+
+    wire [XW-1:0] tx_scr = demo_touch ? sw_x : tch_x_raw;
+    wire [YW-1:0] ty_scr = demo_touch ? sw_y : tch_y_raw;
+    wire          td_scr = demo_touch ? sw_down : tch_down;
+
+    //=========================================================================
+    // 6b. UI 按钮层（工控屏式操作条）
+    //   必须放在高亮逻辑【之前】：高亮要用到它的 hit_act（ui_btn_act）。
+    //=========================================================================
+    wire        ui_draw;
+    wire [23:0] ui_rgb;
+    wire [2:0]  ui_hit_k;
+
+    // 高亮值要先声明（Verilog 不允许先用后声明）——
+    //   ui_layer 例化时就要用到它，而"锁存最近按下"的逻辑在下面。
+    reg [3:0]  ui_active;
+
+    ui_layer #(
+        .NB(NB_UI), .XW(XW), .YW(YW),
+        .BX0(UI_BX0), .BY0(UI_BY0), .BW(UI_BW), .BH(UI_BH), .GAP(UI_GAP)
+    ) u_ui (
+        .x        (x),
+        .y        (y),
+        .tx       (tx_scr),
+        .ty       (ty_scr),
+        .pressed  (td_scr),
+        .active   (ui_active),
+        .draw     (ui_draw),
+        .rgb      (ui_rgb),
+        .hit_k    (ui_hit_k),
+        .hit      (),
+        .hit_act  (ui_btn_act)
+    );
+
+    // 高亮：锁存"最近一次按下的按钮"，松开后保持约 1.3 s，让人看清反馈。
+    //   press_now 是按下沿；它同时也作为对外的 ui_btn_press 脉冲。
+    reg [21:0] hl_cnt;
+    reg        td_scr_d;
+    wire       press_now = td_scr & ~td_scr_d;
+
+    always @(posedge clk_pix) begin
+        if (!rst_pix_n) begin
+            td_scr_d  <= 1'b0;
+            ui_active <= 4'hF;
+            hl_cnt    <= 22'd0;
+        end else begin
+            td_scr_d <= td_scr;
+            if (press_now) begin
+                ui_active <= ui_btn_act;    // 按下时锁存动作码
+                hl_cnt    <= 22'd0;
+            end else if (hl_cnt != 22'h3FFFFF) begin
+                hl_cnt <= hl_cnt + 1'b1;    // 保持一段时间后自动清高亮
+            end else begin
+                ui_active <= 4'hF;
+            end
+        end
+    end
+
+    assign ui_btn_press = press_now;
+
+    //=========================================================================
+    // 7. 混合
     //=========================================================================
     disp_mix #(
         .HDISP(HDISP), .VDISP(VDISP), .NBARS(NBARS), .HW(HW),
         .XW(XW), .YW(YW),
-        .BARS_Y0(BARS_Y0), .BAR_GAP(BAR_GAP),
+        .BARS_Y0(BARS_Y0), .BARS_H(BARS_H), .BAR_GAP(BAR_GAP),
         .POL_CX(POL_CX), .POL_CY(POL_CY), .POL_RIN(POL_RIN), .POL_RMAX(POL_RMAX),
         .WAVE_CY(WAVE_CY), .WAVE_AMP(WAVE_AMP), .WAVE_TH(WAVE_TH)
     ) u_mix (
@@ -423,6 +552,8 @@ module disp_top #(
         .pres_wav(pres_wav),
         .text_hit(text_hit),
         .text_lit(text_lit),
+        .ui_draw (ui_draw),
+        .ui_rgb  (ui_rgb),
         .rgb     (rgb_in)
     );
 

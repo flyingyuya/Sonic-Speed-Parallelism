@@ -294,8 +294,14 @@ run_async_fifo() {
         # ⚠️ 不能只看 vvp 的退出码 —— $finish 永远返回 0，
         #    必须检查输出里的 PASS/FAIL 文本。这个坑曾经让一个失败的
         #    testbench 被统计成"通过"。
-        if ( cd "$ROOT" && "$VVP" $VVP_LIBFLAGS "$OUT/tb_async_fifo.vvp" +novcd ) \
-                | tee "$OUT/async_fifo.run.log" | grep -q "\*\*\* PASS"; then
+        # ⚠️ 不能写成 `... | tee log | grep -q PASS`：
+        #   grep -q 找到匹配就【立刻退出】，关掉管道右端，tee 收到 SIGPIPE 返回非零，
+        #   在 set -o pipefail 下整条管道就被判成失败 —— 明明测试是 PASS 的。
+        #   这个坑以前没暴露，是因为输出小、能全部塞进管道缓冲，tee 先写完了；
+        #   加了 UI 之后输出变大才撞上。所以一律【先落盘，再单独 grep】。
+        ( cd "$ROOT" && "$VVP" $VVP_LIBFLAGS "$OUT/tb_async_fifo.vvp" +novcd ) \
+                > "$OUT/async_fifo.run.log" 2>&1
+        if grep -q "\*\*\* PASS" "$OUT/async_fifo.run.log"; then
             pass=$((pass + 1))
         else
             echo "  [测试失败]"; grep -E "\[ERR\]|FAIL" "$OUT/async_fifo.run.log" | head -10
@@ -323,8 +329,10 @@ run_top_smoke() {
         echo "  [编译失败]"; cat "$OUT/top.log"; fail=$((fail + 1)); return
     fi
     grep -i "warning" "$OUT/top.log" | head -20 || true
-    if ( cd "$ROOT" && "$VVP" $VVP_LIBFLAGS "$OUT/tb_top.vvp" +novcd ) \
-            | tee "$OUT/top.run.log" | grep -q "\*\*\* PASS"; then
+    # 同上：先落盘再 grep，避开 grep -q 早退引发的 SIGPIPE
+    ( cd "$ROOT" && "$VVP" $VVP_LIBFLAGS "$OUT/tb_top.vvp" +novcd ) \
+            > "$OUT/top.run.log" 2>&1
+    if grep -q "\*\*\* PASS" "$OUT/top.run.log"; then
         pass=$((pass + 1))
     else
         echo "  [测试失败]"; grep -E "\[ERR\]|FAIL" "$OUT/top.run.log" | head -10
@@ -367,8 +375,12 @@ for tb in $ALL_TB; do
     # 默认加 +novcd 关波形；WAVE=1 时不加，波形落在 sim/build/ 下
     if [ -n "${WAVE:-}" ]; then VVPARG=""; else VVPARG="+novcd"; fi
     # 同上：必须检查输出文本，不能只看退出码
-    if ( cd "$ROOT" && "$VVP" $VVP_LIBFLAGS "$OUT/tb_${tb}.vvp" $VVPARG ) \
-            | tee "$OUT/${tb}.run.log" | grep -q "\*\*\* PASS"; then
+    # ⚠️ 同上：写成 `| tee log | grep -q PASS` 的话，grep -q 一找到就退出，
+    #   tee 收到 SIGPIPE 返回非零，set -o pipefail 会把 PASS 的测试判成失败。
+    #   一律【先落盘，再单独 grep】。
+    ( cd "$ROOT" && "$VVP" $VVP_LIBFLAGS "$OUT/tb_${tb}.vvp" $VVPARG ) \
+            > "$OUT/${tb}.run.log" 2>&1
+    if grep -q "\*\*\* PASS" "$OUT/${tb}.run.log"; then
         pass=$((pass + 1))
     else
         echo "  [测试失败]"; grep -E "\[ERR\]|FAIL" "$OUT/${tb}.run.log" | head -10

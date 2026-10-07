@@ -47,7 +47,22 @@ module ui_ctrl #(
     input  wire [7:0]  wr_data,
 
     //--------------------- 便捷操作 ---------------------
-    input  wire        next_view,       // 1 拍脉冲：切到下一个视图预设
+    input  wire        next_view,       // 1 拍脉冲：切到下一个视图预设 (VIEW 按钮)
+
+    //-------------------------------------------------------------------------
+    // 步进（P1-1 工控屏的旋钮式调节）
+    //-----------------------------------------------------------------------------
+    //   按钮/UART 想"把某个寄存器 +1"时用这个。放在这里而不是放上层，是因为
+    //   "当前值是多少"只有本模块知道 —— 上层如果自己读出来再写回去，
+    //   就得把 6 个寄存器的输出全接上去，还要处理回写冲突。
+    //   这里只给一个地址，本模块自己查表递增，代价是一个 case。
+    //
+    //   每个字段的有效范围不同（比如色相速度是 0..7、背景只有 0..1），
+    //   所以"回绕点"按字段分别定，不能统一用 8 位回绕。
+    //   为 0 的字段：该字段不可步进（避免出现非法值）。
+    //-------------------------------------------------------------------------
+    input  wire        step_en,         // 1 拍脉冲：对 step_addr 指向的字段 +1
+    input  wire [3:0]  step_addr,
 
     //--------------------- 配置输出 ---------------------
     output reg  [7:0]  cfg_view,
@@ -131,6 +146,28 @@ module ui_ctrl #(
                 else if (wr_data[2:0] == 3'b010) view_idx <= 4'd4;
                 else if (wr_data[2:0] == 3'b100) view_idx <= 4'd5;
             end
+        end else if (step_en) begin
+            // 旋钮式步进：按字段各自的有效范围递增
+            case (step_addr)
+                // VIEW 用预设轮转（和 KEY1 同一个动作），不走这里
+
+                // STYLE 0..1（实心 / 半透明）
+                4'h1: cfg_style     <= (cfg_style[3:0] >= 4'd1) ? 8'd0
+                                                                 : cfg_style + 1'b1;
+                // HUESPD 0..7，0 = 停住
+                4'h2: cfg_hue_spd   <= (cfg_hue_spd[3:0] >= 4'd7) ? 8'd0
+                                                                 : cfg_hue_spd + 1'b1;
+                // WAVEG 1..15（0 会被当成 8，干脆跳过，免得看着像没反应）
+                4'h3: cfg_wave_gain <= (cfg_wave_gain[3:0] >= 4'd15) ? 8'd1
+                                                                     : cfg_wave_gain + 1'b1;
+                // BGMODE 0..1
+                4'h4: cfg_bg_mode   <= (cfg_bg_mode[3:0] >= 4'd1) ? 8'd0
+                                                                  : cfg_bg_mode + 1'b1;
+                // DEMO 0..3
+                4'h6: cfg_demo      <= (cfg_demo[1:0] >= 2'd3) ? 8'd0
+                                                               : cfg_demo + 1'b1;
+                default: ;          // 其它地址不步进
+            endcase
         end else if (next_view || auto_tick) begin
             cfg_view <= preset[nxt_idx];
             view_idx <= nxt_idx;

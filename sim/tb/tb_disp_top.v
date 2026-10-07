@@ -22,7 +22,8 @@
 // 检查项：
 //   ① 跨时钟域快照   30 根柱高跨域后逐根一致
 //   ② 颜色           【全部 130560 个有效像素】逐一比对
-//   ③ 柱状区像素数   每根柱点亮数 = (bh*3/16) * (8-BAR_GAP)
+//   ③ 柱状区像素数   每根柱点亮数 = (bh*29/256) * (8-BAR_GAP)
+//                     （系数随 BARS_H 变：原来是 3/16，加了 UI 按钮带后是 29/256）
 //   ④ 极坐标覆盖     30 根辐条都要有像素
 //   ⑤ 帧内不撕裂     非 sof 拍 bars 不允许变化
 //   ⑥ 色相滚动       跨帧 hue_off 递增（波形也用 rb_pol 上色）
@@ -82,7 +83,10 @@ module tb_disp_top;
     reg [7:0] hue_spd  = 8'd6;      // 与 ui_ctrl 的默认值一致
     reg [7:0] wave_gain = 8'd8;     // G 命令：8 = 1.0 倍（与 ui_ctrl 默认一致）
     reg [7:0] ui_demo_v = 8'd0;     // T 命令：演示图案（默认关）
-    reg [11:0] tp_x_v = 12'd123, tp_y_v = 12'd456;   // 触摸原始读数（固定值）
+    reg [11:0] tp_x_v = 12'd4095, tp_y_v = 12'd4095;  // 未触摸（上下限都贴住）
+    // 触摸原始读数固定成"完全没触摸"（>4000 判为未按下），
+    // 这样 UI 层只画按钮条、没有"按下"高亮，参照模型好写。
+    // 真正测"按下"的交互留给 tb_xpt2046 和 tb_ui_layer。
                                     //   H 越大越快：H=6 -> 每 2^(8-6)=4 帧滚一级
     integer           wdiv = 0, wph = 0;
 
@@ -162,8 +166,10 @@ module tb_disp_top;
     // ---- 柱状 ----
     wire [5:0]    e_bbar = {1'b0, x_d[8:3]};
     wire [HW-1:0] e_bbh  = bars_d[e_bbar*HW +: HW];
-    wire [10:0]   e_bmul = (e_bbh << 1) + e_bbh;
-    wire [6:0]    e_bhpx = e_bmul[10:4];
+    // 系数必须和 disp_mix 里一致：BARS_H=58 -> bh*29/256
+    //   （原来 BARS_H=96 时是 bh*3/16；底部让给 UI 按钮带后系数跟着改）
+    wire [13:0]   e_bmul = (e_bbh << 5) - (e_bbh << 1) - e_bbh;
+    wire [8:0]    e_bhpx = e_bmul[13:8];
     wire [8:0]    e_bfb  = VDISP[8:0] - 9'd1 - y_d;
     wire e_b_hit = (y_d >= BARS_Y0[8:0]) && (e_bfb < {2'b00, e_bhpx})
                    && (x_d[2:0] >= BAR_GAP[2:0]);
@@ -241,6 +247,27 @@ module tb_disp_top;
         .x(x_d), .y(y_d), .hit(e_t_hit), .lit(e_t_lit)
     );
 
+    // ---- UI 按钮层（参照也用【同一个模块】）----
+    wire        e_u_draw;
+    wire [23:0] e_u_rgb;
+    wire [2:0]  e_u_k;
+    wire        e_u_hit;
+    wire [3:0]  e_u_act;
+
+    ui_layer #(
+        .NB(`DISP_UI_NB), .XW(10), .YW(9),
+        .BX0(0), .BY0(`DISP_UI_BY0), .BW(`DISP_UI_BW), .BH(`DISP_UI_BH),
+        .GAP(`DISP_UI_GAP)
+    ) u_ui_ref (
+        // 参照用【同一个 ui_layer 模块】；输入要和 DUT 内部算出来的一致。
+        // DUT 里：未触摸 -> tch_down=0，且高亮锁存 ui_active 会在上电时
+        // 被初始化成 0xF（无高亮）。所以这里也用 4'hF。
+        .x(x_d), .y(y_d), .tx(10'd0), .ty(9'd0),
+        .pressed(1'b0), .active(4'hF),
+        .draw(e_u_draw), .rgb(e_u_rgb),
+        .hit_k(e_u_k), .hit(e_u_hit), .hit_act(e_u_act)
+    );
+
     localparam [23:0] TEXT_RGB = 24'hF0_F0_F0;
     wire [23:0] TEXT_BG = {2'b00, e_bg[23:18], 2'b00, e_bg[15:10], 2'b00, e_bg[7:2]};
 
@@ -251,10 +278,11 @@ module tb_disp_top;
                         : e_b_lit  ? e_rb_bar
                         :            e_bg;
 
-    // 文字在最上层（与 disp_mix 里的顺序一致）
+    // 叠加顺序必须和 disp_mix 完全一致：mix -> UI -> 文字
+    wire [23:0] exp_ui  = e_u_draw ? e_u_rgb : exp_mix;
     wire [23:0] exp_rgb = e_t_lit ? TEXT_RGB
                         : e_t_hit ? TEXT_BG
-                        :           exp_mix;
+                        :           exp_ui;
 
     //=========================================================================
     // 测量窗口
@@ -439,7 +467,8 @@ module tb_disp_top;
         $display(" [2] 柱状区像素数");
         n_err_bar = 0;
         for (k = 0; k < NBARS; k = k + 1) begin
-            exp_px = (got_bars[k] * 3) / 16 * NBAR_W;
+            // 系数必须和 disp_mix 一致：BARS_H=58 时是 bh*29/256（原来是 bh*3/16）
+            exp_px = (got_bars[k] * 29) / 256 * NBAR_W;
             if (bar_cnt[k] != exp_px) begin
                 n_err_bar = n_err_bar + 1;
                 if (n_err_bar <= 6)

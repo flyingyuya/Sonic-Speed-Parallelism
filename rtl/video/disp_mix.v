@@ -52,7 +52,10 @@ module disp_mix #(
     parameter integer BAR_SH   = 3,
 
     // ---- 柱状频谱区 ----
+    //   ⚠️ BARS_H 原来是 VDISP-BARS_Y0 推导的（96）。现在底部要给 UI 按钮带
+    //      留 38 px，柱状区实际只有 58 px，所以必须显式给，不能再推导。
     parameter integer BARS_Y0  = `DISP_BARS_Y0,
+    parameter integer BARS_H   = `DISP_BARS_H,
     parameter integer BAR_GAP  = `DISP_BAR_GAP,
 
     // ---- 极坐标区 ----
@@ -95,10 +98,16 @@ module disp_mix #(
     //-------------------------------------------------------------------------
     input  wire                 text_hit,
     input  wire                 text_lit,
+
+    //-------------------------------------------------------------------------
+    // UI 按钮层（来自 ui_layer）
+    //   画在【柱状/极坐标之上、文字之下】—— 按钮上的字属于文字层。
+    //-------------------------------------------------------------------------
+    input  wire                 ui_draw,
+    input  wire [23:0]          ui_rgb,
     output reg  [23:0]          rgb
 );
 
-    localparam integer BARS_H = VDISP - BARS_Y0;     // 96
     localparam integer AW     = $clog2(NBARS);       // 柱号位宽（60 -> 6）
 
     // 常量做成长度匹配的字面值，避免各处写死位宽
@@ -117,11 +126,14 @@ module disp_mix #(
     wire [HW+7:0] bbh_s = bbh * pres_bar;            // 9+8 = 17 位，最大 511*128
     wire [HW-1:0] bbh_a = bbh_s[HW+6 : 7];           // /128
 
-    // 柱高 0..511 -> 像素 0..95： h = bh * 3 / 16
-    //   ⚠️ 这个 3/16 是按【当前布局】算出来的：BARS_H=96 像素、bh 满量程 512
-    //      （96*16/3 ≈ 512）。换布局必须重算，不能只改参数。
-    wire [HW+1:0] bmul = (bbh_a << 1) + bbh_a;       // bh * 3
-    wire [YW-1:0] bhpx = bmul[HW+1 : 4];             // /16 -> 0..95
+    // 柱高 0..511 -> 像素 0..BARS_H-1
+    //   ⚠️ 系数必须按【当前 BARS_H】重算，不能沿用旧值：
+    //      原来 BARS_H=96 时用 bh*3/16；现在 BARS_H=58（底部让给 UI 按钮带），
+    //      系数变成 58/512 ≈ 29/256 —— 和 polar_map 里那个是同一个数。
+    //      29 = 32 - 2 - 1 -> (bh<<5) - (bh<<1) - bh，零乘法器。
+    //      满量程 511*29 = 14819，右移 8 -> 57，正好铺满 58 像素。
+    wire [HW+4:0] bmul = (bbh_a << 5) - (bbh_a << 1) - bbh_a;   // bh * 29
+    wire [YW-1:0] bhpx = bmul[HW+4 : 8];             // /256 -> 0..57
 
     wire [YW-1:0] b_from_bot = VDISP_L - 1'b1 - y;
     wire          b_area     = (y >= Y0_L);
@@ -224,6 +236,10 @@ module disp_mix #(
             rgb = rb_pol;
         else if (p_core)
             rgb = CORE_RGB;
+
+        // UI 按钮层（盖住它下面的柱状/极坐标）
+        if (ui_draw)
+            rgb = ui_rgb;
 
         // 文字在最上层（底板 + 字形）
         if (text_lit)

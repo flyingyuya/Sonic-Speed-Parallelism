@@ -157,6 +157,7 @@ module tb_top;
     wire [23:0] lcd_rgb;
     wire        lcd_hs, lcd_vs, lcd_clk;
     wire [1:0]  led;
+    wire        tp_dclk_w, tp_cs_n_w, tp_din_w;
 
     top #(
         .INIT_WAIT_MS (INI_WAIT),
@@ -169,6 +170,11 @@ module tb_top;
         .key2_n     (key2_n),
         .uart_rx_pin(pc_serial),
         .uart_tx_pin(pc_serial_back),
+        // 触摸屏：U2 没焊，DOUT 悬空读高。这里直接拉高，模拟"没触摸"。
+        .tp_dclk    (tp_dclk_w),
+        .tp_cs_n    (tp_cs_n_w),
+        .tp_din     (tp_din_w),
+        .tp_dout    (1'b1),
         .aud_scl    (aud_scl),
         .aud_sda    (aud_sda),
         .aud_bclk   (aud_bclk),
