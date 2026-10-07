@@ -121,9 +121,9 @@ RTL="rtl/fft/fft_addr_gen.v rtl/fft/fft_twiddle_rom.v rtl/fft/fft_butterfly.v rt
      rtl/video/disp_mix.v rtl/video/disp_top.v rtl/video/rainbow_rom.v \
      rtl/video/polar_map.v rtl/video/wave_buf.v rtl/video/demo_src.v \
      rtl/video/ui_anim.v rtl/video/font_rom.v rtl/video/text_buf.v \
-     rtl/video/status_line.v rtl/touch/xpt2046.v"
+     rtl/video/status_line.v rtl/video/ui_layer.v rtl/touch/xpt2046.v"
 
-ALL_TB="xpt2046 eq_cascade i2s_loopback audio_top fft_addr_gen fft_butterfly fft_core wm8960_init lcd_timing spectrum disp_top i2s_slave polar_map wave_buf ui_ctrl uart_cmd demo_src ui_anim font_rom text_buf status_line"
+ALL_TB="ui_layer xpt2046 eq_cascade i2s_loopback audio_top fft_addr_gen fft_butterfly fft_core wm8960_init lcd_timing spectrum disp_top i2s_slave polar_map wave_buf ui_ctrl uart_cmd demo_src ui_anim font_rom text_buf status_line"
 WANT="${1:-all}"
 
 pass=0
