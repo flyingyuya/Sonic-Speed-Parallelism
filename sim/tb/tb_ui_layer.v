@@ -294,6 +294,22 @@ module tb_ui_layer;
                 end
             end
             `CHK(bad == 0, "hit_act 与按钮表的动作码一致");
+
+            // ⚠️ 关键判据：没按下时 hit_act 必须是 0xF。
+            //   上层就是靠"从 0xF 变成非 0xF"来识别一次按下的；
+            //   如果没按时它仍然给出动作码，上层就再也识别不到"按下"。
+            //   （这正是演示扫描时"光标一直动、配置不动"的根因。）
+            bad = 0;
+            pressed = 1'b0;
+            for (k = 0; k < NB; k = k + 1) begin
+                settouch(BX0 + k*BW + BW/2, BY0 + BH/2, 1'b0);
+                if (hit_act !== 4'hF) begin
+                    bad = bad + 1;
+                    $display("      [ERR] 没按下时 hit_act=%h（应为 F）", hit_act);
+                end
+                if (hit) bad = bad + 1;
+            end
+            `CHK(bad == 0, "没按下时 hit_act 恒为 0xF（上层才能识别'按下'沿）");
         end
 
         //---------------------------------------------------------------------

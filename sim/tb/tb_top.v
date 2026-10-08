@@ -158,6 +158,19 @@ module tb_top;
     wire        lcd_hs, lcd_vs, lcd_clk;
     wire [1:0]  led;
     wire        tp_dclk_w, tp_cs_n_w, tp_din_w;
+    wire        tp_dout_w;
+    reg  [11:0] tp_force_x = 12'hFFF;   // 默认：贴上限 = 没触摸
+    reg  [11:0] tp_force_y = 12'hFFF;
+    wire [7:0]  tp_last_cmd;
+    wire [3:0]  tp_n_cmd;
+    wire [7:0]  tp_n_dclk;
+
+    xpt2046_model u_tpm (
+        .tp_dclk(tp_dclk_w), .tp_cs_n(tp_cs_n_w),
+        .tp_din(tp_din_w), .tp_dout(tp_dout_w),
+        .force_x(tp_force_x), .force_y(tp_force_y),
+        .last_cmd(tp_last_cmd), .n_cmd(tp_n_cmd), .n_dclk(tp_n_dclk)
+    );
 
     top #(
         .INIT_WAIT_MS (INI_WAIT),
@@ -170,11 +183,12 @@ module tb_top;
         .key2_n     (key2_n),
         .uart_rx_pin(pc_serial),
         .uart_tx_pin(pc_serial_back),
-        // 触摸屏：U2 没焊，DOUT 悬空读高。这里直接拉高，模拟"没触摸"。
+        // 触摸屏：接一个 XPT2046 行为模型，这样 SPI 那条链也一起被测到。
+        //   force_x/force_y 由本 TB 控制，用来"把手指按到某个按钮上"。
         .tp_dclk    (tp_dclk_w),
         .tp_cs_n    (tp_cs_n_w),
         .tp_din     (tp_din_w),
-        .tp_dout    (1'b1),
+        .tp_dout    (tp_dout_w),
         .aud_scl    (aud_scl),
         .aud_sda    (aud_sda),
         .aud_bclk   (aud_bclk),
@@ -504,6 +518,37 @@ module tb_top;
                 end else
                     $display("  [ok ] T00 后切回音频通路（柱高不再等于斜坡）");
             end
+        end
+
+        //---------------------------------------------------------------------
+        // [6] 触摸按钮端到端：打到按钮 3（GAIN）中心，配置必须真的变
+        //---------------------------------------------------------------------
+        //   ⚠️ 这条判据是补上的 —— 之前"按钮层"和"配置"各自都测了，
+        //   但【从触摸到配置】这一整条链没有测试覆盖，
+        //   结果上板时表现为：光标一直扫、配置一动不动。
+        //
+        //   换算：disp_top 里 screen = raw >> 3（x）、raw >> 4（y）。
+        //   按钮 3 中心 = x 3*80+39 = 279 -> raw_x = 279*8 = 2232
+        //                y 234+19   = 253 -> raw_y = 253*16 = 4048
+        $display("");
+        $display(" [6] 触摸按钮端到端（按 GAIN 按钮，配置必须变）");
+        begin : tp_e2e
+            reg [7:0] g0;
+            g0 = dut.ui_wave_gain;
+            tp_force_x = 12'd2232;      // 按钮 3 中心的原始 X
+            tp_force_y = 12'd4048;      // 按钮 3 中心的原始 Y
+            // 触摸是每 10 ms 轮询一次，所以至少要跑一个轮询周期 + SPI 事务
+            repeat (600000) @(posedge clk_sys);     // 12.5 ms（一个轮询周期多一点）
+            // 松开
+            tp_force_x = 12'hFFF; tp_force_y = 12'hFFF;
+            repeat (600000) @(posedge clk_sys);
+            if (dut.ui_wave_gain === g0) begin
+                n_err = n_err + 1;
+                $display("  [ERR] 按住 GAIN 按钮后 cfg_wave_gain 没变（还是 %0d）", g0);
+                $display("        说明 触摸->命中->同步->步进 这条链有一环没通");
+            end else
+                $display("  [ok ] 按 GAIN 按钮：cfg_wave_gain %0d -> %0d",
+                         g0, dut.ui_wave_gain);
         end
 
         $display("");

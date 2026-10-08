@@ -321,7 +321,7 @@ run_top_smoke() {
     echo ">>> 仿真 top（整机冒烟，约需 1~2 分钟）"
     if "$IVERILOG" $IVERILOG_LIBFLAGS $IVFLAGS -s tb_top \
             -o "$OUT/tb_top.vvp" \
-            sim/tb/xilinx_stub.v \
+            sim/tb/xilinx_stub.v sim/tb/xpt2046_model.v \
             $(ls rtl/*.v rtl/*/*.v 2>/dev/null) \
             "sim/tb/tb_top.v" 2>"$OUT/top.log"; then
         :

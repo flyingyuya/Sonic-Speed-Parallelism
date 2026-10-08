@@ -266,9 +266,18 @@ module ui_layer #(
         hit_k = tk;
     end
 
-    // 写成连续赋值而不是放进 always @(*)：
+    // ⚠️ hit_act 的语义是【正在被按下的按钮】，不是"光标停在哪个按钮上"！
+    //   必须用 hit 门控，没按时返回 4'hF。
+    //
+    //   第一版写成 `assign hit_act = act_tab[tk];` —— 于是只要光标停在某个按钮上，
+    //   动作码就一直有效。上层用"从 0xF 变成非 0xF"来判"按下"，
+    //   而演示扫描的光标是【在按钮之间直接跳】的，从不经过 0xF，
+    //   结果除了第一次，后面每一次"按下"都触发不了 ——
+    //   现象是光标一直循环、配置一动不动。
+    //
+    //   写成连续赋值而不是放进 always @(*)：
     //   数组下标读取会让 iverilog 抱怨
     //   "@* is sensitive to all 6 words in array 'act_tab'"（功能上没错）。
-    assign hit_act = act_tab[tk];
+    assign hit_act = hit ? act_tab[tk] : 4'hF;
 
 endmodule
