@@ -447,8 +447,11 @@ module disp_top #(
                            (tp_y_s > 12'd16) && (tp_y_s < 12'd4080);
 
     // ---- 演示扫描：每 SW_HOLD 拍换一个按钮，切换时给一个短"按下"脉冲 ----
+    // ⚠️ SW_PUSH 必须【明显长于触摸轮询周期】（那一头是 5 ms），
+    //   否则按下会被轮询整个跳过，表现为"某些按钮好用、某些不好用"。
+    //   第一版 SW_PUSH=80_000（6.4 ms）< 轮询 10 ms，实测就是只有个别按钮生效。
     localparam integer SW_HOLD = 4_000_000;     // @12.5MHz 约 0.32 s
-    localparam integer SW_PUSH =    80_000;     // 按下持续约 6.4 ms
+    localparam integer SW_PUSH = 2_000_000;     // 按下持续约 0.16 s（远大于轮询周期）
 
     reg [22:0] sw_cnt;
     reg [2:0]  sw_idx;

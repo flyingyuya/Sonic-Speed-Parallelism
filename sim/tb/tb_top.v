@@ -549,6 +549,35 @@ module tb_top;
             end else
                 $display("  [ok ] 按 GAIN 按钮：cfg_wave_gain %0d -> %0d",
                          g0, dut.ui_wave_gain);
+
+            //-----------------------------------------------------------------
+            // [6b] 短按也必须被采到（回归：轮询周期 vs 按下宽度）
+            //-----------------------------------------------------------------
+            //   ⚠️ 这条是专门为"轮询丢事件"那个 bug 加的。
+            //   当初轮询周期 10 ms、而演示扫描的按下只持续 6.4 ms ——
+            //   两者相位固定，于是每次都漏掉同样几个按钮（实测只有 STYLE 生效）。
+            //
+            //   这里按住【6 ms】：只要轮询周期 < 6 ms，任意 6 ms 窗口里
+            //   必然落进至少一次轮询，所以这条判据是【确定性】的，
+            //   不是碰运气。用旧的 10 ms 周期跑，它一定会失败。
+            begin : short_press
+                reg [7:0] g1;
+                g1 = dut.ui_wave_gain;
+                tp_force_x = 12'd2232;      // 还是 GAIN 按钮
+                tp_force_y = 12'd4048;
+                repeat (288000) @(posedge clk_sys);     // 6 ms
+                tp_force_x = 12'hFFF; tp_force_y = 12'hFFF;
+                repeat (600000) @(posedge clk_sys);     // 松手后再等一会儿
+                if (dut.ui_wave_gain === g1) begin
+                    n_err = n_err + 1;
+                    $display("  [ERR] 只按 6 ms 的那次没被采到（cfg_wave_gain 还是 %0d）",
+                             g1);
+                    $display("        说明轮询周期 >= 6 ms，短按会被整个跳过");
+                    $display("        —— 这正是'某些按钮好用、某些不好用'的根因");
+                end else
+                    $display("  [ok ] 只按 6 ms 也被采到：cfg_wave_gain %0d -> %0d",
+                             g1, dut.ui_wave_gain);
+            end
         end
 
         $display("");
