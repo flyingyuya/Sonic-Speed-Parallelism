@@ -280,6 +280,69 @@ module disp_top #(
     );
 
     //=========================================================================
+    // 6. 触摸坐标：原始 ADC -> 屏幕坐标（或者演示扫描）
+    //-----------------------------------------------------------------------------
+    // 【真实触摸】XPT2046 原始值大约 200..3900（12 位）。
+    //   先做一个【临时线性标定】：screen = raw >> 3（4096/8 = 512，接近 480）。
+    //   这只是让 UI 能动起来；等 U2 焊好后，要按实测的四角坐标做正式标定
+    //   （带偏移和斜率），那时候再改这里。
+    //
+    // 【按下判定】没触摸时 XPT2046 的读数会贴到 0 或 4095，所以
+    //   "落在一个像样的中间范围"就当作按下。
+    //
+    // 【T04 演示扫描】焊好之前，用一个虚拟光标依次停在每个按钮上并"按下"，
+    //   让人现在就能看到工控屏 UI 工作。它也顺便是个演示模式。
+    //=========================================================================
+    wire demo_touch = (ui_demo_s[3:0] == 4'd4);
+
+    wire [9:0] tch_x_raw = tp_x_s[11:3];
+    wire [8:0] tch_y_raw = tp_y_s[11:4];
+    // 阈值必须覆盖到【屏幕最下边】对应的原始值：
+    //   screen = raw >> 4，屏幕底 y=271 -> raw = 271*16 = 4336。
+    //   第一版写的是 <4000，于是按钮带（屏幕下半部分）永远判不成"按下"。
+    //   这里放宽到"没卡在两端轨"就行 —— 没触摸时 XPT2046 会贴到 0 或 4095。
+    //   ⚠️ 这只是【临时】判据；正式标定要在拿到实测四角之后重做。
+    wire       tch_down  = (tp_x_s > 12'd16) && (tp_x_s < 12'd4080) &&
+                           (tp_y_s > 12'd16) && (tp_y_s < 12'd4080);
+
+    // ---- 演示扫描：每 SW_HOLD 拍换一个按钮，切换时给一个短"按下"脉冲 ----
+    // ⚠️ SW_PUSH 必须【明显长于触摸轮询周期】（那一头是 5 ms），
+    //   否则按下会被轮询整个跳过，表现为"某些按钮好用、某些不好用"。
+    //   第一版 SW_PUSH=80_000（6.4 ms）< 轮询 10 ms，实测就是只有个别按钮生效。
+    localparam integer SW_HOLD = 4_000_000;     // @12.5MHz 约 0.32 s
+    localparam integer SW_PUSH = 2_000_000;     // 按下持续约 0.16 s（远大于轮询周期）
+
+    reg [22:0] sw_cnt;
+    reg [2:0]  sw_idx;
+
+    always @(posedge clk_pix) begin
+        if (!rst_pix_n) begin
+            sw_cnt <= 23'd0;
+            sw_idx <= 3'd0;
+        end else if (demo_touch) begin
+            if (sw_cnt == SW_HOLD - 1) begin
+                sw_cnt <= 23'd0;
+                sw_idx <= (sw_idx == NB_UI - 1) ? 3'd0 : sw_idx + 1'b1;
+            end else begin
+                sw_cnt <= sw_cnt + 1'b1;
+            end
+        end else begin
+            sw_cnt <= 23'd0;
+            sw_idx <= 3'd0;
+        end
+    end
+
+    // 光标停在按钮 sw_idx 的中心
+    wire [XW-1:0] sw_x = UI_BX0 + sw_idx*(UI_BW+UI_GAP) + UI_BW/2;
+    wire [YW-1:0] sw_y = UI_BY0 + UI_BH/2;
+    wire          sw_down = demo_touch && (sw_cnt < SW_PUSH);
+
+    wire [XW-1:0] tx_scr = demo_touch ? sw_x : tch_x_raw;
+    wire [YW-1:0] ty_scr = demo_touch ? sw_y : tch_y_raw;
+    wire          td_scr = demo_touch ? sw_down : tch_down;
+
+
+    //=========================================================================
     // 3b. 属性插值器：三个视图各自的“存在度”（0..128）
     //-----------------------------------------------------------------------------
     //   按 KEY1 切视图预设时，disp_mix 里那些显示开关是【硬跳】的 ——
@@ -291,19 +354,45 @@ module disp_top #(
     //   除以 128 就是右移 7 位，零成本。
     //   过渡时长 = FULL/STEP 帧 = 32 帧 ≈ 32 x 12.01 ms ≈ 384 ms。
     //=========================================================================
-    wire [3*8-1:0] ui_level;
+    wire [4*8-1:0] ui_level;      // 4 个通道：柱状/极坐标/波形/面板
 
-    ui_anim #(.NCH(3), .FULL(ANIM_FULL), .STEP(ANIM_STEP)) u_anim (
+    //=========================================================================
+    // 3b-0. 操作面板的展开/收起（声明提前，驱动在 ui_layer 之后）
+    //-----------------------------------------------------------------------------
+    //   ⚠️ 这里有个环：ui_anim 要用 panel_target，panel_target 要用 ui_open，
+    //      而 ui_open 的翻转要用 ui_layer 输出的 tab_press。
+    //      Verilog 没有前置声明，只能【声明提前、驱动后置】——
+    //      和账本第 82/83 条那个环是同一套解法。
+    //
+    //   演示扫描时必须强制展开：否则按钮整条在屏幕外，命中测试永远落空，
+    //   T04 就成了"光标在动但没人接"。
+    //=========================================================================
+    localparam integer TAB_MS  = `DISP_UI_IDLE_MS;       // 空闲多久自动收起
+    localparam integer TAB_CNT = 12500 * TAB_MS;         // @12.5MHz，1 ms = 12500 拍
+
+    reg  [23:0] idle_cnt;
+    reg         ui_open;
+    wire        panel_target = demo_touch | ui_open;
+
+    ui_anim #(.NCH(4), .FULL(ANIM_FULL), .STEP(ANIM_STEP)) u_anim (
         .clk    (clk_pix),
         .rst_n  (rst_pix_n),
         .frame  (sof),          // 帧起始，每帧只走一步
-        .target (ui_view_s),    // 已同步到 clk_pix
+        .target ({panel_target, ui_view_s}),   // [3]=面板 [2:0]=三个视图
         .level  (ui_level)
     );
 
     wire [7:0] pres_bar = ui_level[0*8 +: 8];   // 柱状
     wire [7:0] pres_pol = ui_level[1*8 +: 8];   // 极坐标
     wire [7:0] pres_wav = ui_level[2*8 +: 8];   // 波形
+    wire [7:0] pres_panel = ui_level[3*8 +: 8];   // 操作面板
+
+    // 动画后的实际 y：收起时整条移到屏幕下边缘之外
+    //   level=128 -> y = BY0；level=0 -> y = VDISP（看不见）
+    // 宏不能直接放进拼接里（`DISP_UI_BH 的宽度不定），先落成有宽度的常量
+    localparam [9:0] UI_BH_L = `DISP_UI_BH;
+    wire [YW+7:0] by0_mul = {6'b0, UI_BH_L} * pres_panel[7:0];
+    wire [YW-1:0] ui_by0  = VDISP[YW-1:0] - by0_mul[YW+6:7];
 
     //=========================================================================
     // 4. 背景生成
@@ -391,7 +480,7 @@ module disp_top #(
     wire [7:0]  text_wdata;
     wire        text_hit, text_lit;
 
-    status_line #(.NLEN(17), .NC(20)) u_status (
+    status_line #(.NLEN(`DISP_TXT_NLEN), .NC(`DISP_TXT_NLEN)) u_status (
         .clk           (clk_pix),
         .rst_n         (rst_pix_n),
         .cfg_view      ({5'b0, ui_view_s}),
@@ -412,7 +501,8 @@ module disp_top #(
     // NC=20：每行 20 字符 = 160 px 宽，正好不碰圆盘（圆盘从 x=178 起）。
     // NL=8 ：6 行配置标签 + 2 行触摸诊断。
     //   旧配置是 NC=60/NL=4（240 项），现在是 160 项 —— 反而更省。
-    text_buf #(.NC(20), .NL(8), .XW(XW), .YW(YW), .TX0(2), .TY0(2)) u_text (
+    text_buf #(.NC(`DISP_TXT_NLEN), .NL(`DISP_TXT_NL), .XW(XW), .YW(YW),
+               .TX0(2), .TY0(2)) u_text (
         .clk   (clk_pix),
         .we    (text_we),
         .waddr (text_waddr),
@@ -424,74 +514,21 @@ module disp_top #(
     );
 
     //=========================================================================
-    // 6. 触摸坐标：原始 ADC -> 屏幕坐标（或者演示扫描）
-    //-----------------------------------------------------------------------------
-    // 【真实触摸】XPT2046 原始值大约 200..3900（12 位）。
-    //   先做一个【临时线性标定】：screen = raw >> 3（4096/8 = 512，接近 480）。
-    //   这只是让 UI 能动起来；等 U2 焊好后，要按实测的四角坐标做正式标定
-    //   （带偏移和斜率），那时候再改这里。
-    //
-    // 【按下判定】没触摸时 XPT2046 的读数会贴到 0 或 4095，所以
-    //   "落在一个像样的中间范围"就当作按下。
-    //
-    // 【T04 演示扫描】焊好之前，用一个虚拟光标依次停在每个按钮上并"按下"，
-    //   让人现在就能看到工控屏 UI 工作。它也顺便是个演示模式。
-    //=========================================================================
-    wire demo_touch = (ui_demo_s[3:0] == 4'd4);
-
-    wire [9:0] tch_x_raw = tp_x_s[11:3];
-    wire [8:0] tch_y_raw = tp_y_s[11:4];
-    // 阈值必须覆盖到【屏幕最下边】对应的原始值：
-    //   screen = raw >> 4，屏幕底 y=271 -> raw = 271*16 = 4336。
-    //   第一版写的是 <4000，于是按钮带（屏幕下半部分）永远判不成"按下"。
-    //   这里放宽到"没卡在两端轨"就行 —— 没触摸时 XPT2046 会贴到 0 或 4095。
-    //   ⚠️ 这只是【临时】判据；正式标定要在拿到实测四角之后重做。
-    wire       tch_down  = (tp_x_s > 12'd16) && (tp_x_s < 12'd4080) &&
-                           (tp_y_s > 12'd16) && (tp_y_s < 12'd4080);
-
-    // ---- 演示扫描：每 SW_HOLD 拍换一个按钮，切换时给一个短"按下"脉冲 ----
-    // ⚠️ SW_PUSH 必须【明显长于触摸轮询周期】（那一头是 5 ms），
-    //   否则按下会被轮询整个跳过，表现为"某些按钮好用、某些不好用"。
-    //   第一版 SW_PUSH=80_000（6.4 ms）< 轮询 10 ms，实测就是只有个别按钮生效。
-    localparam integer SW_HOLD = 4_000_000;     // @12.5MHz 约 0.32 s
-    localparam integer SW_PUSH = 2_000_000;     // 按下持续约 0.16 s（远大于轮询周期）
-
-    reg [22:0] sw_cnt;
-    reg [2:0]  sw_idx;
-
-    always @(posedge clk_pix) begin
-        if (!rst_pix_n) begin
-            sw_cnt <= 23'd0;
-            sw_idx <= 3'd0;
-        end else if (demo_touch) begin
-            if (sw_cnt == SW_HOLD - 1) begin
-                sw_cnt <= 23'd0;
-                sw_idx <= (sw_idx == NB_UI - 1) ? 3'd0 : sw_idx + 1'b1;
-            end else begin
-                sw_cnt <= sw_cnt + 1'b1;
-            end
-        end else begin
-            sw_cnt <= 23'd0;
-            sw_idx <= 3'd0;
-        end
-    end
-
-    // 光标停在按钮 sw_idx 的中心
-    wire [XW-1:0] sw_x = UI_BX0 + sw_idx*(UI_BW+UI_GAP) + UI_BW/2;
-    wire [YW-1:0] sw_y = UI_BY0 + UI_BH/2;
-    wire          sw_down = demo_touch && (sw_cnt < SW_PUSH);
-
-    wire [XW-1:0] tx_scr = demo_touch ? sw_x : tch_x_raw;
-    wire [YW-1:0] ty_scr = demo_touch ? sw_y : tch_y_raw;
-    wire          td_scr = demo_touch ? sw_down : tch_down;
-
-    //=========================================================================
     // 6b. UI 按钮层（工控屏式操作条）
     //   必须放在高亮逻辑【之前】：高亮要用到它的 hit_act（ui_btn_act）。
     //=========================================================================
     wire        ui_draw;
     wire [23:0] ui_rgb;
     wire [2:0]  ui_hit_k;
+    wire        tab_hit_w;
+    reg         tab_hit_d;
+
+    // 把手按下的边沿检测（tab_hit_w 是电平，切成单拍脉冲给 ui_open 用）
+    always @(posedge clk_pix) begin
+        if (!rst_pix_n) tab_hit_d <= 1'b0;
+        else            tab_hit_d <= tab_hit_w;
+    end
+    wire tab_press = tab_hit_w & ~tab_hit_d;
 
     // 高亮值要先声明（Verilog 不允许先用后声明）——
     //   ui_layer 例化时就要用到它，而"锁存最近按下"的逻辑在下面。
@@ -506,12 +543,15 @@ module disp_top #(
         .tx       (tx_scr),
         .ty       (ty_scr),
         .pressed  (td_scr),
+        .ui_by0   (ui_by0),
+        .ui_open  (panel_target),
         .active   (ui_active),
         .draw     (ui_draw),
         .rgb      (ui_rgb),
         .hit_k    (ui_hit_k),
         .hit      (),
-        .hit_act  (ui_btn_act)
+        .hit_act  (ui_btn_act),
+        .tab_hit  (tab_hit_w)
     );
 
     // 高亮：锁存"最近一次按下的按钮"，松开后保持约 1.3 s，让人看清反馈。
@@ -535,6 +575,25 @@ module disp_top #(
             end else begin
                 ui_active <= 4'hF;
             end
+        end
+    end
+
+    //=========================================================================
+    // 6b-2. 面板展开/收起的驱动（放在 ui_layer 之后：要用它的 tab_press）
+    //=========================================================================
+    always @(posedge clk_pix) begin
+        if (!rst_pix_n) begin
+            ui_open  <= 1'b0;
+            idle_cnt <= 24'd0;
+        end else begin
+            // 任何触摸（或演示里的"按下"）都算活动，重置空闲计时
+            if (td_scr || tab_press) idle_cnt <= 24'd0;
+            else if (idle_cnt != TAB_CNT[23:0]) idle_cnt <= idle_cnt + 1'b1;
+
+            if (tab_press)                       // 点把手 -> 切换
+                ui_open <= ~ui_open;
+            if (idle_cnt == TAB_CNT[23:0])       // 空闲超时 -> 自动收起
+                ui_open <= 1'b0;
         end
     end
 

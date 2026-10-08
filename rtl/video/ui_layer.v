@@ -26,14 +26,17 @@
 //=============================================================================
 `timescale 1ns/1ps
 
+// 布局常数（把手位置等）来自 disp_cfg.vh —— 布局的唯一真相源
+`include "disp_cfg.vh"
+
 module ui_layer #(
     parameter integer NB    = 6,        // 按钮个数
     parameter integer XW    = 10,       // 坐标位宽（与时序发生器一致）
     parameter integer YW    = 9,
 
     //--------------------- 按钮带的位置 ---------------------
-    parameter integer BX0   = 0,        // 左上角
-    parameter integer BY0   = 234,
+    parameter integer BX0   = 0,        // 按钮带左上角（x 固定）
+    parameter integer BY0   = 234,      // 按钮带【展开后】的 y（运行时由 ui_by0 覆盖）
     parameter integer BW    = 78,       // 每个按钮宽
     parameter integer BH    = 38,       // 高
     parameter integer GAP   = 0,        // 按钮之间的空隙
@@ -44,7 +47,14 @@ module ui_layer #(
     parameter [23:0] C_PRESS = 24'hC0_E0_FF,   // 被按下时的底面
     parameter [23:0] C_ACT   = 24'h30_60_90,   // 当前生效的那个按钮的底面
     parameter [23:0] C_TXT   = 24'hE0_F0_FF,   // 标签文字（底面之上）
-    parameter [23:0] C_TXT_HI= 24'h10_20_30    // 标签文字（按下/生效时用深色）
+    parameter [23:0] C_TXT_HI= 24'h10_20_30,   // 标签文字（按下/生效时用深色）
+
+    //---- 展缩把手（侧边小三角）----
+    parameter integer TX    = `DISP_TAB_X,
+    parameter integer TY    = `DISP_TAB_Y,
+    parameter integer TW    = `DISP_TAB_W,
+    parameter integer TH    = `DISP_TAB_H,
+    parameter [23:0] C_TAB  = 24'h38_78_A0     // 把手颜色
 ) (
     //--------------------- 扫描位置（组合） ---------------------
     input  wire [XW-1:0]  x,
@@ -56,6 +66,14 @@ module ui_layer #(
     input  wire [YW-1:0]  ty,
     input  wire           pressed,      // 手指正按着
 
+    //--------------------- 按钮带的实际 y（运行时） ---------------------
+    //   展开/收起动画就是把它从「屏幕外」平滑移到 BY0。
+    //   渲染和命中都只用这一个值 —— 不然会出现"框在这儿、热区在那儿"。
+    input  wire [YW-1:0]  ui_by0,
+
+    //--------------------- 面板是否展开（决定箭头方向） ---------------------
+    input  wire           ui_open,
+
     //--------------------- 当前生效的按钮（用来画高亮） ---------------------
     input  wire [3:0]     active,       // 与某个按钮的 act 相同则高亮；其它值无高亮
 
@@ -66,7 +84,12 @@ module ui_layer #(
     //--------------------- 交互输出 ---------------------
     output reg  [2:0]     hit_k,        // 被按下的按钮编号（0..NB-1）
     output reg            hit,          // 有按钮被按下
-    output wire [3:0]     hit_act       // 被按下按钮的动作码
+    output wire [3:0]     hit_act,      // 被按下按钮的动作码
+
+    //--------------------- 交互输出：把手 ---------------------
+    output reg            tab_hit       // 手指正点在把手上
+                                        //   （"按下那一拍"的边沿检测放在上层，
+                                        //    因为上层才需要那个脉冲去翻转 ui_open）
 );
 
     //=========================================================================
@@ -156,7 +179,7 @@ module ui_layer #(
         //   （这个警告不在白名单里，会被门禁拦下，是它先发现这个问题的）。
         //   改成"先减再比"就自然安全：x < BX0 时相减下溢成一个很大的数，
         //   比较为假，效果正确，而且省掉一个比较器。
-        if (y >= BY0[YW-1:0] && y < (BY0 + BH) &&
+        if (y >= ui_by0 && y < (ui_by0 + BH) &&
             ((x - BX0[XW-1:0]) < (NB*(BW+GAP) - GAP)))
             in_band = 1'b1;
 
@@ -170,7 +193,7 @@ module ui_layer #(
     // 边框：离按钮边缘 2 像素以内算边
     wire [XW-1:0] bx0 = BX0 + bx*(BW+GAP);
     wire [XW-1:0] off = x - bx0[XW-1:0];
-    wire [YW-1:0] oy  = y - BY0[YW-1:0];
+    wire [YW-1:0] oy  = y - ui_by0;
 
     // 这个像素对应哪个字符格的哪一行
     wire [XW-1:0] lx = (x - bx0[XW-1:0]) >> 3;   // 字符列（含 LBL_COL0 偏移）
@@ -212,8 +235,43 @@ module ui_layer #(
     // 这个按钮当前是不是"被手指按着"
     wire is_pressed = pressed && hit && (hit_k == bx);
 
+    //=========================================================================
+    // 1b. 展缩把手（侧边小三角）
+    //-----------------------------------------------------------------------------
+    //   三角形宽 5、高 7，居中放在 TW x TH 的方框里。
+    //   第 r 行的宽度 = 5 - |r-3|  ->  2,3,4,5,4,3,2（r=0..6）
+    //   折叠时朝右（▶，像素靠左），展开时朝左（◀，像素靠右）。
+    //
+    //   把手【常驻显示】，不像按钮带那样会滑走 —— 否则收起后就再也点不开了。
+    //=========================================================================
+    wire [XW-1:0] tx_off = x - TX[XW-1:0];
+    wire [YW-1:0] ty_off = y - TY[YW-1:0];
+
+    wire in_tab = (x >= TX[XW-1:0]) && (x < (TX + TW)) &&
+                  (y >= TY[YW-1:0]) && (y < (TY + TH));
+
+    // 三角形：把 (tx_off, ty_off) 映射到 5x7 的三角区域
+    wire [XW-1:0] tri_x = tx_off - ((TW - 5) / 2);      // 水平居中
+    wire [YW-1:0] tri_y = ty_off - ((TH - 7) / 2);      // 垂直居中
+    wire [2:0]    tri_r = tri_y[2:0];
+    wire [3:0]    tri_w = 4'd5 - ((tri_r > 3'd3) ? (tri_r - 3'd3) : (3'd3 - tri_r));
+    // ▶：像素靠左（0 .. w-1）；◀：像素靠右（5-w .. 4）
+    wire [3:0]    tri_lo = ui_open ? (4'd5 - tri_w) : 4'd0;
+    wire [3:0]    tri_hi = ui_open ? 4'd4 : (tri_w - 1'b1);
+
+    wire tri_pix = in_tab && (tri_y < 7) &&
+                   (tri_x >= tri_lo) && (tri_x <= tri_hi) &&
+                   (tri_r < 7);
+
     always @(*) begin
-        if (!in_band) begin
+        if (tri_pix) begin
+            draw = 1'b1;
+            rgb  = C_TAB;
+        end else if (in_tab) begin
+            // 把手底板：压暗的背景，让三角看得清
+            draw = 1'b1;
+            rgb  = 24'h10_18_20;
+        end else if (!in_band) begin
             draw = 1'b0;
             rgb  = 24'h000000;
         end else begin
@@ -243,7 +301,7 @@ module ui_layer #(
             x0 = BX0 + k*(BW+GAP);
             // 同样用"先减再比"，避开"px >= 常数 0 恒真"的无符号警告
             in_rect = ((px - x0) < BW) &&
-                      (py >= BY0[YW-1:0]) && (py < (BY0 + BH));
+                      (py >= ui_by0) && (py < (ui_by0 + BH));
         end
     endfunction
 
@@ -264,6 +322,13 @@ module ui_layer #(
     always @(*) begin
         hit   = pressed && tv;
         hit_k = tk;
+    end
+
+    // 把手命中：和渲染共用同一套几何（TX/TY/TW/TH）
+    always @(*) begin
+        tab_hit = pressed &&
+                  (tx >= TX[XW-1:0]) && (tx < (TX + TW)) &&
+                  (ty >= TY[YW-1:0]) && (ty < (TY + TH));
     end
 
     // ⚠️ hit_act 的语义是【正在被按下的按钮】，不是"光标停在哪个按钮上"！

@@ -50,7 +50,12 @@ module top #(
     //   整机冒烟仿真可以把它们调小，否则光上电就要跑 31 ms 仿真时间。
     //   综合时用默认值（10 ms + 1 ms x 20 条）。
     parameter integer INIT_WAIT_MS = 10,        // 复位释放后等多久再发 I2C
-    parameter integer I2C_DLY_MS   = 1          // I2C 每条寄存器之间的间隔
+    parameter integer I2C_DLY_MS   = 1,         // I2C 每条寄存器之间的间隔
+
+    // 属性插值器每帧步进。默认 4 -> 32 帧 ≈ 384 ms 的过渡。
+    //   暴露出来是为了让 testbench 能设成 128（一帧到位）：
+    //   否则 TB 要等 384 ms 仿真时间才能看到操作面板开完，跑不动。
+    parameter integer ANIM_STEP    = 4
 ) (
     //----------------------- 时钟与复位 -----------------------
     input  wire        clk_200m_p,      // R4  IO_L13P_MRCC_34（差分）
@@ -459,7 +464,7 @@ module top #(
     //=========================================================================
     // 7. 显示（含跨时钟域快照）
     //=========================================================================
-    disp_top u_disp (
+    disp_top #(.ANIM_STEP(ANIM_STEP)) u_disp (
         .ui_btn_act (ui_btn_act),
         .ui_btn_press(),                    // 用不到：边沿在 clk_sys 侧重新做
         .clk_sys    (clk_sys),

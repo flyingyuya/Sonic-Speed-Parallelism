@@ -52,8 +52,9 @@ module disp_mix #(
     parameter integer BAR_SH   = 3,
 
     // ---- 柱状频谱区 ----
-    //   ⚠️ BARS_H 原来是 VDISP-BARS_Y0 推导的（96）。现在底部要给 UI 按钮带
-    //      留 38 px，柱状区实际只有 58 px，所以必须显式给，不能再推导。
+    //   BARS_H 原来是 VDISP-BARS_Y0 推导的（96）。现在显式给：
+    //   按钮带是可折叠的覆盖层、不占垂直空间，所以柱状区仍然是全高 96 px，
+    //   但显式写出来更清楚，改布局时不容易忘。
     parameter integer BARS_Y0  = `DISP_BARS_Y0,
     parameter integer BARS_H   = `DISP_BARS_H,
     parameter integer BAR_GAP  = `DISP_BAR_GAP,
@@ -127,13 +128,11 @@ module disp_mix #(
     wire [HW-1:0] bbh_a = bbh_s[HW+6 : 7];           // /128
 
     // 柱高 0..511 -> 像素 0..BARS_H-1
-    //   ⚠️ 系数必须按【当前 BARS_H】重算，不能沿用旧值：
-    //      原来 BARS_H=96 时用 bh*3/16；现在 BARS_H=58（底部让给 UI 按钮带），
-    //      系数变成 58/512 ≈ 29/256 —— 和 polar_map 里那个是同一个数。
-    //      29 = 32 - 2 - 1 -> (bh<<5) - (bh<<1) - bh，零乘法器。
-    //      满量程 511*29 = 14819，右移 8 -> 57，正好铺满 58 像素。
-    wire [HW+4:0] bmul = (bbh_a << 5) - (bbh_a << 1) - bbh_a;   // bh * 29
-    wire [YW-1:0] bhpx = bmul[HW+4 : 8];             // /256 -> 0..57
+    //   系数按 BARS_H 算：BARS_H=96 时是 bh*3/16（96*16/3 ≈ 512）。
+    //   按钮带改成【可折叠、不占垂直空间】之后，柱状区恢复全高 96 px，
+    //   所以系数也回到 3/16。
+    wire [HW+1:0] bmul = (bbh_a << 1) + bbh_a;       // bh * 3
+    wire [YW-1:0] bhpx = bmul[HW+1 : 4];             // /16 -> 0..95
 
     wire [YW-1:0] b_from_bot = VDISP_L - 1'b1 - y;
     wire          b_area     = (y >= Y0_L);

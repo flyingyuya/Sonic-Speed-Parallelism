@@ -174,7 +174,8 @@ module tb_top;
 
     top #(
         .INIT_WAIT_MS (INI_WAIT),
-        .I2C_DLY_MS   (I2C_DLY)
+        .I2C_DLY_MS   (I2C_DLY),
+        .ANIM_STEP    (128)     // 面板一帧开完，否则 TB 要等 384 ms
     ) dut (
         .clk_200m_p (clk_p),
         .clk_200m_n (clk_n),
@@ -530,6 +531,31 @@ module tb_top;
         //   换算：disp_top 里 screen = raw >> 3（x）、raw >> 4（y）。
         //   按钮 3 中心 = x 3*80+39 = 279 -> raw_x = 279*8 = 2232
         //                y 234+19   = 253 -> raw_y = 253*16 = 4048
+        //---------------------------------------------------------------------
+        // [5b] 先点把手，把操作面板打开
+        //---------------------------------------------------------------------
+        //   ⚠️ 面板默认是【收起】的 —— 按钮带整条在屏幕外，点按钮当然没反应。
+        //   这是设计如此（不占展示空间），但测试必须先"开面板"。
+        //   第一次跑忘了这一步，[6] 直接失败，现象和真坏了很像。
+        //
+        //   把手在屏幕右侧 (448..463, 124..147)，原始值换算：
+        //     x = 456 -> raw = 456*8  = 3648
+        //     y = 136 -> raw = 136*16 = 2176
+        $display("");
+        $display(" [5b] 点右侧把手，打开操作面板");
+        begin : open_panel
+            tp_force_x = 12'd3648;
+            tp_force_y = 12'd2176;
+            repeat (600000) @(posedge clk_sys);
+            tp_force_x = 12'hFFF; tp_force_y = 12'hFFF;
+            repeat (600000) @(posedge clk_sys);
+            if (!dut.u_disp.ui_open) begin
+                n_err = n_err + 1;
+                $display("  [ERR] 点了把手但面板没打开（ui_open 仍为 0）");
+            end else
+                $display("  [ok ] 点把手后 ui_open = 1（面板已展开）");
+        end
+
         $display("");
         $display(" [6] 触摸按钮端到端（按 GAIN 按钮，配置必须变）");
         begin : tp_e2e

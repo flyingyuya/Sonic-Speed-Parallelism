@@ -22,8 +22,7 @@
 // 检查项：
 //   ① 跨时钟域快照   30 根柱高跨域后逐根一致
 //   ② 颜色           【全部 130560 个有效像素】逐一比对
-//   ③ 柱状区像素数   每根柱点亮数 = (bh*29/256) * (8-BAR_GAP)
-//                     （系数随 BARS_H 变：原来是 3/16，加了 UI 按钮带后是 29/256）
+//   ③ 柱状区像素数   每根柱点亮数 = (bh*3/16) * (8-BAR_GAP)
 //   ④ 极坐标覆盖     30 根辐条都要有像素
 //   ⑤ 帧内不撕裂     非 sof 拍 bars 不允许变化
 //   ⑥ 色相滚动       跨帧 hue_off 递增（波形也用 rb_pol 上色）
@@ -166,10 +165,10 @@ module tb_disp_top;
     // ---- 柱状 ----
     wire [5:0]    e_bbar = {1'b0, x_d[8:3]};
     wire [HW-1:0] e_bbh  = bars_d[e_bbar*HW +: HW];
-    // 系数必须和 disp_mix 里一致：BARS_H=58 -> bh*29/256
-    //   （原来 BARS_H=96 时是 bh*3/16；底部让给 UI 按钮带后系数跟着改）
-    wire [13:0]   e_bmul = (e_bbh << 5) - (e_bbh << 1) - e_bbh;
-    wire [8:0]    e_bhpx = e_bmul[13:8];
+    // 系数必须和 disp_mix 里一致：BARS_H=96 -> bh*3/16
+    //   （按钮带改成可折叠后柱状区恢复全高，系数也就回到 3/16）
+    wire [10:0]   e_bmul = (e_bbh << 1) + e_bbh;
+    wire [7:0]    e_bhpx = e_bmul[10:4];
     wire [8:0]    e_bfb  = VDISP[8:0] - 9'd1 - y_d;
     wire e_b_hit = (y_d >= BARS_Y0[8:0]) && (e_bfb < {2'b00, e_bhpx})
                    && (x_d[2:0] >= BAR_GAP[2:0]);
@@ -233,7 +232,7 @@ module tb_disp_top;
     wire [15:0] e_t_addr;
     wire [7:0]  e_t_data;
 
-    status_line #(.NLEN(17), .NC(20)) u_status_ref (
+    status_line #(.NLEN(`DISP_TXT_NLEN), .NC(`DISP_TXT_NLEN)) u_status_ref (
         .clk(clk_pix), .rst_n(rst_pix_n),
         .cfg_view({5'b0, view_en}), .cfg_style(8'd0),
         .cfg_hue_spd(hue_spd), .cfg_wave_gain(wave_gain),
@@ -242,7 +241,8 @@ module tb_disp_top;
         .we(e_t_we), .waddr(e_t_addr), .wdata(e_t_data)
     );
 
-    text_buf #(.NC(20), .NL(8), .XW(10), .YW(9), .TX0(2), .TY0(2)) u_text_ref (
+    text_buf #(.NC(`DISP_TXT_NLEN), .NL(`DISP_TXT_NL), .XW(10), .YW(9),
+               .TX0(2), .TY0(2)) u_text_ref (
         .clk(clk_pix), .we(e_t_we), .waddr(e_t_addr), .wdata(e_t_data),
         .x(x_d), .y(y_d), .hit(e_t_hit), .lit(e_t_lit)
     );
@@ -262,10 +262,13 @@ module tb_disp_top;
         // 参照用【同一个 ui_layer 模块】；输入要和 DUT 内部算出来的一致。
         // DUT 里：未触摸 -> tch_down=0，且高亮锁存 ui_active 会在上电时
         // 被初始化成 0xF（无高亮）。所以这里也用 4'hF。
+        // 参照要和 DUT 的【稳态】一致：
+        //   DUT 里 ANIM_STEP=FULL 一帧到位，面板默认收起 -> by0 = VDISP（屏幕外）
         .x(x_d), .y(y_d), .tx(10'd0), .ty(9'd0),
-        .pressed(1'b0), .active(4'hF),
+        .pressed(1'b0), .ui_by0(9'd272), .ui_open(1'b0), .active(4'hF),
         .draw(e_u_draw), .rgb(e_u_rgb),
-        .hit_k(e_u_k), .hit(e_u_hit), .hit_act(e_u_act)
+        .hit_k(e_u_k), .hit(e_u_hit), .hit_act(e_u_act),
+        .tab_hit()
     );
 
     localparam [23:0] TEXT_RGB = 24'hF0_F0_F0;
@@ -468,7 +471,7 @@ module tb_disp_top;
         n_err_bar = 0;
         for (k = 0; k < NBARS; k = k + 1) begin
             // 系数必须和 disp_mix 一致：BARS_H=58 时是 bh*29/256（原来是 bh*3/16）
-            exp_px = (got_bars[k] * 29) / 256 * NBAR_W;
+            exp_px = (got_bars[k] * 3) / 16 * NBAR_W;
             if (bar_cnt[k] != exp_px) begin
                 n_err_bar = n_err_bar + 1;
                 if (n_err_bar <= 6)

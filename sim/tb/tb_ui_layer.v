@@ -26,12 +26,15 @@ module tb_ui_layer;
     reg  [YW-1:0] ty = 0;
     reg           pressed = 0;
     reg  [3:0]    active = 4'hF;        // 0xF = 没有按钮生效
+    reg  [YW-1:0] ui_by0  = BY0[YW-1:0]; // 展开后的按钮带 y（正常情况下 = BY0）
+    reg           ui_open = 1'b0;        // 面板展开状态（决定箭头方向）
 
     wire          draw;
     wire [23:0]   rgb;
     wire [2:0]    hit_k;
     wire          hit;
     wire [3:0]    hit_act;
+    wire          tab_hit;
 
     integer n_err = 0;
     integer k, i, px, py;
@@ -44,8 +47,10 @@ module tb_ui_layer;
         .NB(NB), .XW(XW), .YW(YW),
         .BX0(BX0), .BY0(BY0), .BW(BW), .BH(BH), .GAP(GAP)
     ) dut (
-        .x(x), .y(y), .tx(tx), .ty(ty), .pressed(pressed), .active(active),
-        .draw(draw), .rgb(rgb), .hit_k(hit_k), .hit(hit), .hit_act(hit_act)
+        .x(x), .y(y), .tx(tx), .ty(ty), .pressed(pressed),
+        .ui_by0(ui_by0), .ui_open(ui_open), .active(active),
+        .draw(draw), .rgb(rgb), .hit_k(hit_k), .hit(hit), .hit_act(hit_act),
+        .tab_hit(tab_hit)
     );
 
     // 配色常量（和 DUT 里一致；这里只是给判据用）
@@ -55,6 +60,8 @@ module tb_ui_layer;
     localparam [23:0] C_ACT  = 24'h30_60_90;
     localparam [23:0] C_TXT  = 24'hE0_F0_FF;      // 标签文字（RTL 默认值）
     localparam [23:0] C_TXTH = 24'h10_20_30;      // 按下/生效时的深色字
+    localparam [23:0] C_TAB  = 24'h38_78_A0;      // 把手颜色（RTL 默认值）
+    localparam integer TAB_X = 448, TAB_Y = 124;  // 把手位置（disp_cfg 默认值）
 
     task setxy;
         input integer a, b;
@@ -361,6 +368,83 @@ module tb_ui_layer;
                 end
             end
             `CHK(bad == 0, "每个按钮都画出了标签，且各字符行宽度不同（真的是字形）");
+        end
+
+        //---------------------------------------------------------------------
+        $display("");
+        $display(" [11] 运行时 ui_by0：整条带子跟着移动");
+        begin : move_band
+            integer bad;
+            bad = 0;
+            pressed = 1'b0;
+            // 移到 BY0-40：按钮中心也应该整体上移 40
+            ui_by0 = (BY0 - 40);
+            for (k = 0; k < NB; k = k + 1) begin
+                // 新位置的中心应该命中
+                settouch(BX0 + k*BW + BW/2, BY0 - 40 + BH/2, 1'b1);
+                if (!hit || hit_k !== k[2:0]) bad = bad + 1;
+                // 旧位置的中心不该再命中
+                settouch(BX0 + k*BW + BW/2, BY0 + BH/2, 1'b1);
+                if (hit) bad = bad + 1;
+            end
+            `CHK(bad == 0, "ui_by0 改后，渲染与命中都跟着整体移动");
+            ui_by0 = BY0[YW-1:0];
+        end
+
+        //---------------------------------------------------------------------
+        $display("");
+        $display(" [12] 展缩把手：常驻显示 + 朝向随 ui_open 翻转");
+        begin : handle
+            integer bad, n_open, n_shut, sym;
+            bad = 0;
+
+            // 把手区域外：不该被把手点亮
+            pressed = 1'b0;
+            ui_open = 1'b0;
+            setxy(0, 0);
+            if (rgb !== 24'h000000 || draw) bad = bad + 1;
+
+            // 判据：比较两种朝向下的【亮点重心】。
+            //   ⚠️ 不能用"px<8 算左、>=8 算右"来分 —— 三角形只有 5 像素宽，
+            //   居中放在 16 像素的把手盒里，实际落在 px=5..9（横跨中间）。
+            //   第一版就是这么分的，于是两种朝向都被判成"两边都有"。
+            //   重心比较才是真正在问"箭头朝哪边"。
+            sym = 0;        // 先算折叠（▶）
+            for (k = 0; k < 7; k = k + 1) begin
+                for (px = 0; px < 16; px = px + 1) begin
+                    setxy(TAB_X + px, TAB_Y + 8 + k);
+                    if (rgb === C_TAB) sym = sym + px;
+                end
+            end
+            n_shut = sym;
+
+            ui_open = 1'b1; // 再算展开（◀）
+            sym = 0;
+            for (k = 0; k < 7; k = k + 1) begin
+                for (px = 0; px < 16; px = px + 1) begin
+                    setxy(TAB_X + px, TAB_Y + 8 + k);
+                    if (rgb === C_TAB) sym = sym + px;
+                end
+            end
+            n_open = sym;
+
+            if (n_shut >= n_open) begin
+                bad = bad + 1;
+                $display("      [ERR] 箭头朝向没翻转：折叠重心 %0d 应【小于】展开重心 %0d",
+                         n_shut, n_open);
+            end
+
+            // 命中：点把手中心
+            ui_open = 1'b0;
+            settouch(TAB_X + 8, TAB_Y + 12, 1'b1);
+            if (!tab_hit) begin bad = bad + 1; $display("      [ERR] 点把手中心没命中"); end
+            // 点把手外面
+            settouch(TAB_X + 40, TAB_Y + 12, 1'b1);
+            if (tab_hit) begin bad = bad + 1; $display("      [ERR] 把手外面居然命中了"); end
+
+            `CHK(bad == 0, "把手常驻、箭头朝向正确、命中范围正确");
+            ui_open = 1'b0;
+            pressed = 1'b0;
         end
 
         $display("");
