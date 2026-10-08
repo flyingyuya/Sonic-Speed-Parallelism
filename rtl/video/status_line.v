@@ -31,7 +31,7 @@
 
 module status_line #(
     parameter integer NLEN = 17,       // 【每行】字符数（共 3 行 = NLEN*3 个）
-    parameter integer NC   = 60        // text_buf 每行能放多少字符（地址换算用）
+    parameter integer NC   = 20        // text_buf 每行能放多少字符（地址换算用）
 ) (
     input  wire        clk,
     input  wire        rst_n,
@@ -76,7 +76,7 @@ module status_line #(
     //=========================================================================
     // 2. 逐字符写入
     //=========================================================================
-    reg [5:0] cnt;      // 0..NLEN*3-1（三行）
+    reg [7:0] cnt;      // 0..NLEN*8-1（八行）
     reg       busy;
 
     // 十六进制数字 -> ASCII（'0'..'9' / 'A'..'F'）
@@ -108,57 +108,85 @@ module status_line #(
     endfunction
 
     //-------------------------------------------------------------------------
-    // 字符表（cnt = 行*NLEN + 列）
+    // 字符表：6 行可读标签 + 2 行触摸诊断（cnt = 行*NLEN + 列）
     //
-    //   第 1 行 (0..16)  : "V7 S0 H6 G8 B0 D0"      配置，与 UART 回执同格式
-    //   第 2 行 (17..33) : "TX0000 TY0000"          触摸原始读数（4 位十进制）
-    //   第 3 行 (34..50) : "E0000 L0"               诊断（DOUT 跳变数 / 见过低电平吗）
+    //   为什么从 "V7 S0 H6 G8 B0 D0" 改成这种写法：
+    //     前者是给 UART 回读用的紧凑格式，屏幕上根本没人看得懂。
+    //     字母表已经有了（5x7 字库），直接写完整的字段名更直观。
     //
-    //   ⚠️ 12 位读数最大 4095，所以必须 4 位十进制 —— 3 位装不下，
-    //      会把 v/100 算出 40 再 "0"+40 变成字母 'X'。
+    //   第 1~6 行 (0..101)   : "VIEW   7" 这类，每行 8 个字符有意义，其余留空
+    //   第 7~8 行 (102..135) : "TX4095" / "E0000 L0" 触摸诊断
+    //
+    //   ⚠️ 值一律用【十六进制】还是【十进制】：
+    //     配置字段都是小整数（0..15），十六进制一位就够，和 UART 回执一致；
+    //     触摸读数是 12 位（0..4095），十进制 4 位才装得下，
+    //     而且十进制看"手指往右移动数字变大"更直观。
     //-------------------------------------------------------------------------
+    // 字段名表：第 i 行前 5 个字符
+    reg [7:0] nm [0:6*5-1];      // 6 行 x 5 字符
+    initial begin
+        //        01234
+        // ⚠️ 这张表是【从 0 开始】的，第一行第一列就是 index 0。
+        //   第一版在这里写了个 '#' 当占位符（想表示空格），结果把 'V' 挤掉了，
+        //   整张表右移一位：屏幕上第一行变成 "#VIEW 7"。
+        nm[ 0]="V"; nm[ 1]="I"; nm[ 2]="E"; nm[ 3]="W"; nm[ 4]=" ";
+        nm[ 5]="S"; nm[ 6]="T"; nm[ 7]="Y"; nm[ 8]="L"; nm[ 9]="E";
+        nm[10]="H"; nm[11]="U"; nm[12]="E"; nm[13]=" "; nm[14]=" ";
+        nm[15]="G"; nm[16]="A"; nm[17]="I"; nm[18]="N"; nm[19]=" ";
+        nm[20]="B"; nm[21]="G"; nm[22]=" "; nm[23]=" "; nm[24]=" ";
+        nm[25]="D"; nm[26]="E"; nm[27]="M"; nm[28]="O"; nm[29]=" ";
+    end
+
+    reg [2:0] li;       // 行号 0..7（下面那个按行选值的块要用）
+    reg [4:0] ci;       // 列号 0..NLEN-1
     reg [7:0] ch;
-    always @(*) begin
-        case (cnt)
-            //-------- 第 1 行：配置 --------
-            6'd0:  ch = "V";   6'd1:  ch = hexc(cfg_view[3:0]);
-            6'd2:  ch = " ";   6'd3:  ch = "S";
-            6'd4:  ch = hexc(cfg_style[3:0]);
-            6'd5:  ch = " ";   6'd6:  ch = "H";
-            6'd7:  ch = hexc(cfg_hue_spd[3:0]);
-            6'd8:  ch = " ";   6'd9:  ch = "G";
-            6'd10: ch = hexc(cfg_wave_gain[3:0]);
-            6'd11: ch = " ";   6'd12: ch = "B";
-            6'd13: ch = hexc(cfg_bg_mode[3:0]);
-            6'd14: ch = " ";   6'd15: ch = "D";
-            6'd16: ch = hexc(cfg_demo[3:0]);
-            //-------- 第 2 行：触摸读数 "TX0000 TY0000" --------
-            6'd17: ch = "T";   6'd18: ch = "X";
-            6'd19: ch = dec4(tp_x, 3'd0);
-            6'd20: ch = dec4(tp_x, 3'd1);
-            6'd21: ch = dec4(tp_x, 3'd2);
-            6'd22: ch = dec4(tp_x, 3'd3);
-            6'd23: ch = " ";
-            6'd24: ch = "T";   6'd25: ch = "Y";
-            6'd26: ch = dec4(tp_y, 3'd0);
-            6'd27: ch = dec4(tp_y, 3'd1);
-            6'd28: ch = dec4(tp_y, 3'd2);
-            6'd29: ch = dec4(tp_y, 3'd3);
-            6'd30: ch = " ";   6'd31: ch = " ";   6'd32: ch = " ";   6'd33: ch = " ";
-            //-------- 第 3 行：诊断 "E0000 L0" --------
-            6'd34: ch = "E";
-            6'd35: ch = dec4(tp_edges, 3'd0);
-            6'd36: ch = dec4(tp_edges, 3'd1);
-            6'd37: ch = dec4(tp_edges, 3'd2);
-            6'd38: ch = dec4(tp_edges, 3'd3);
-            6'd39: ch = " ";
-            6'd40: ch = "L";
-            6'd41: ch = tp_low ? "1" : "0";
-            6'd42: ch = " ";   6'd43: ch = " ";   6'd44: ch = " ";
-            6'd45: ch = " ";   6'd46: ch = " ";   6'd47: ch = " ";
-            6'd48: ch = " ";   6'd49: ch = " ";   6'd50: ch = " ";
-            default: ch = " ";
+
+    // 当前行对应的配置值。写成函数而不是数组：
+    //   数组放在 always @(*) 的敏感列表里会让 iverilog 抱怨
+    //   "@* is sensitive to all N words in array"，所以直接按行号选。
+    // 当前行对应的配置值（按行号选，避免"数组进敏感列表"的警告）
+    reg [7:0] vrow;
+    always @(li or cfg_view or cfg_style or cfg_hue_spd or
+             cfg_wave_gain or cfg_bg_mode or cfg_demo) begin
+        case (li)
+            3'd0:    vrow = cfg_view;
+            3'd1:    vrow = cfg_style;
+            3'd2:    vrow = cfg_hue_spd;
+            3'd3:    vrow = cfg_wave_gain;
+            3'd4:    vrow = cfg_bg_mode;
+            default: vrow = cfg_demo;
         endcase
+    end
+
+    // 敏感列表写全：数组（nm）不能进列表，所以只能用显式清单
+    always @(cnt or li or ci or vrow or tp_x or tp_edges or tp_low or
+             cfg_view or cfg_style or cfg_hue_spd or cfg_wave_gain or
+             cfg_bg_mode or cfg_demo) begin
+        li = cnt / NLEN;        // 0..7
+        ci = cnt % NLEN;        // 0..16
+
+        ch = " ";
+        if (li < 6) begin
+            // ---- 配置行 "VIEW   7" ----
+            if (ci < 5)
+                ch = nm[li*5 + ci];
+            else if (ci == 5)
+                ch = " ";
+            else if (ci == 6)
+                ch = hexc(vrow[3:0]);
+        end else if (li == 6) begin
+            // ---- 第 7 行 "TX4095" ----
+            if (ci == 0)      ch = "T";
+            else if (ci == 1) ch = "X";
+            else if (ci >= 2 && ci <= 5) ch = dec4(tp_x, ci[2:0] - 3'd2);
+        end else begin
+            // ---- 诊断 "E0000 L0" ----
+            if (ci == 0)      ch = "E";
+            else if (ci >= 1 && ci <= 4) ch = dec4(tp_edges, ci[2:0] - 3'd1);
+            else if (ci == 5) ch = " ";
+            else if (ci == 6) ch = "L";
+            else if (ci == 7) ch = tp_low ? "1" : "0";
+        end
     end
 
     always @(posedge clk) begin
@@ -167,7 +195,7 @@ module status_line #(
             g_d <= 8'hFF; b_d <= 8'hFF; m_d <= 8'hFF;   // 上电必触发一次
             tx_d <= 12'hFFF; ty_d <= 12'hFFF;
             te_d <= 12'hFFF; tl_d <= 1'b1;
-            cnt <= 6'd0;
+            cnt <= 8'd0;
             busy <= 1'b0;
             we <= 1'b0;
             waddr <= 16'd0;
@@ -179,7 +207,7 @@ module status_line #(
                 // 配置变了就启动一次重写
                 if (changed) begin
                     busy <= 1'b1;
-                    cnt  <= 6'd0;
+                    cnt  <= 8'd0;
                 end
             end else begin
                 we    <= 1'b1;
@@ -188,8 +216,8 @@ module status_line #(
                 //   "第一行的第 17~33 列"，屏幕上第二行永远是空的。
                 waddr <= {11'd0, (cnt / NLEN) * NC + (cnt % NLEN)};
                 wdata <= ch;
-                // 三行一起写：cnt 从 0 数到 NLEN*3-1
-                if (cnt == NLEN*3 - 1) begin
+                // 八行一起写：cnt 从 0 数到 NLEN*8-1
+                if (cnt == NLEN*8 - 1) begin
                     busy <= 1'b0;
                     // 记下这次写的是什么配置，下次只有再变才重写
                     v_d <= cfg_view;      s_d <= cfg_style;

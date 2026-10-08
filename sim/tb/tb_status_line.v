@@ -12,8 +12,9 @@ module tb_status_line;
     //   TB 比较时用的是【两行合计】。一开始把 DUT 的 NLEN 也传成 34，
     //   于是它的终止条件变成 NLEN*2-1 = 67，而 cnt 只有 6 位（最大 63），
     //   永远等不到 -> 状态机卡在写入状态死循环，影子寄存器一直不更新。
-    localparam integer NLEN  = 51;     // 总字符数（3 行 x 17）
+    localparam integer NLEN  = 136;    // 总字符数（8 行 x 17）
     localparam integer LNLEN = 17;     // 每行字符数（传给 DUT）
+    localparam integer NCB   = 20;     // text_buf 每行能放几个字符
 
     reg        clk = 0, rst_n = 0;
     reg [7:0]  cfg_view = 8'h07, cfg_style = 8'h00, cfg_hue_spd = 8'h06;
@@ -28,7 +29,7 @@ module tb_status_line;
     integer n_err = 0;
     integer i;
 
-    status_line #(.NLEN(LNLEN), .NC(60)) dut (
+    status_line #(.NLEN(LNLEN), .NC(NCB)) dut (
         .clk(clk), .rst_n(rst_n),
         .cfg_view(cfg_view), .cfg_style(cfg_style), .cfg_hue_spd(cfg_hue_spd),
         .cfg_wave_gain(cfg_wave_gain), .cfg_bg_mode(cfg_bg_mode),
@@ -46,13 +47,13 @@ module tb_status_line;
     // 地址是 行*60+列。第三行是 120..136 —— 用 [6:0] 索引会回绕到 0..8，
     // 把第一行开头覆盖掉（症状是屏幕上前 8 个字符变空白，正是本 TB 踩过的）。
     // 这里给足 256 并直接索引到 8 位。
-    reg [7:0] line_buf [0:255];
+    reg [7:0] line_buf [0:511];
     integer   n_wr;
 
     // 收集写入
     always @(posedge clk) begin
         if (rst_n && we) begin
-            line_buf[waddr[7:0]] = wdata;
+            line_buf[waddr[8:0]] = wdata;
             n_wr = n_wr + 1;
         end
     end
@@ -68,11 +69,11 @@ module tb_status_line;
             for (i = 0; i < NLEN; i = i + 1) begin
                 w = want[8*(NLEN-1-i) +: 8];
                 // 也要按【行*NC + 列】取，和 RTL 的地址算法一致
-                if (line_buf[(i/LNLEN)*60 + (i%LNLEN)] !== w) begin
+                if (line_buf[(i/LNLEN)*NCB + (i%LNLEN)] !== w) begin
                     n_err = n_err + 1;
                     $display("  [ERR] 第 %0d 个字符是 '%c'(%02h)，期望 '%c'(%02h)",
-                             i, line_buf[(i/LNLEN)*60 + (i%LNLEN)],
-                             line_buf[(i/LNLEN)*60 + (i%LNLEN)], w, w);
+                             i, line_buf[(i/LNLEN)*NCB + (i%LNLEN)],
+                             line_buf[(i/LNLEN)*NCB + (i%LNLEN)], w, w);
                 end
             end
         end
@@ -86,7 +87,7 @@ module tb_status_line;
             // 报了一百多处假错误。
             $write("      实测: \"");
             for (i = 0; i < NLEN; i = i + 1)
-                $write("%c", line_buf[(i/LNLEN)*60 + (i%LNLEN)]);
+                $write("%c", line_buf[(i/LNLEN)*NCB + (i%LNLEN)]);
             $write("\"\n");
         end
     endtask
@@ -103,14 +104,15 @@ module tb_status_line;
         //---------------------------------------------------------------------
         $display("");
         $display(" [1] 上电后自动写一次（两行：配置 + 触摸读数）");
-        repeat (60) @(posedge clk);
+        repeat (400) @(posedge clk);
         if (n_wr < NLEN) begin
             n_err = n_err + 1;
             $display("  [ERR] 只写了 %0d 个字符（应 >= %0d）", n_wr, NLEN);
         end else
             $display("  [ok ] 上电自动写入 %0d 个字符", n_wr);
         show();
-        want_line("V7 S0 H6 G8 B0 D0TX0123 TY0456    E0007 L1         ");
+        want_line({"VIEW  7          STYLE 0          HUE   6          GAIN  8          ",
+                   "BG    0          DEMO  0          TX0123           E0007 L1         "});
         if (n_err == 0) $display("  [ok ] 内容与期望 'V7 S0 H6 G8 B0 D0' 一致");
 
         //---------------------------------------------------------------------
@@ -119,7 +121,7 @@ module tb_status_line;
         begin : no_rewrite
             integer n0;
             n0 = n_wr;
-            repeat (200) @(posedge clk);
+            repeat (400) @(posedge clk);
             if (n_wr != n0) begin
                 n_err = n_err + 1;
                 $display("  [ERR] 配置没变却又写了 %0d 次", n_wr - n0);
@@ -131,21 +133,24 @@ module tb_status_line;
         $display("");
         $display(" [3] 改一个字段就重写，且内容跟着变");
         cfg_view = 8'h02;
-        repeat (60) @(posedge clk);
+        repeat (400) @(posedge clk);
         show();
-        want_line("V2 S0 H6 G8 B0 D0TX0123 TY0456    E0007 L1         ");
+        want_line({"VIEW  2          STYLE 0          HUE   6          GAIN  8          ",
+                   "BG    0          DEMO  0          TX0123           E0007 L1         "});
         if (n_err == 0) $display("  [ok ] V 变成 2");
 
         cfg_wave_gain = 8'h0F;      // 也测一下 A-F 的十六进制
-        repeat (60) @(posedge clk);
+        repeat (400) @(posedge clk);
         show();
-        want_line("V2 S0 H6 GF B0 D0TX0123 TY0456    E0007 L1         ");
+        want_line({"VIEW  2          STYLE 0          HUE   6          GAIN  F          ",
+                   "BG    0          DEMO  0          TX0123           E0007 L1         "});
         if (n_err == 0) $display("  [ok ] 增益 0F 显示成 'F'（十六进制大写）");
 
         cfg_demo = 8'h03;
-        repeat (60) @(posedge clk);
+        repeat (400) @(posedge clk);
         show();
-        want_line("V2 S0 H6 GF B0 D3TX0123 TY0456    E0007 L1         ");
+        want_line({"VIEW  2          STYLE 0          HUE   6          GAIN  F          ",
+                   "BG    0          DEMO  3          TX0123           E0007 L1         "});
         if (n_err == 0) $display("  [ok ] D 字段跟着变");
 
         // 触摸读数变化也要触发重写（上板验证管脚就靠这条）
@@ -153,14 +158,15 @@ module tb_status_line;
             integer n0;
             n0 = n_wr;
             tp_x = 12'd987; tp_y = 12'd5;
-            repeat (60) @(posedge clk);
+            repeat (400) @(posedge clk);
             if (n_wr - n0 < NLEN) begin
                 n_err = n_err + 1;
                 $display("  [ERR] 触摸读数变了却没有重写");
             end else begin
                 $display("  [ok ] 触摸读数变化触发了重写");
                 show();
-                want_line("V2 S0 H6 GF B0 D3TX0987 TY0005    E0007 L1         ");
+                want_line({"VIEW  2          STYLE 0          HUE   6          GAIN  F          ",
+                   "BG    0          DEMO  3          TX0987           E0007 L1         "});
                 if (n_err == 0) $display("  [ok ] 第二行按十进制显示，个位补零");
             end
         end
@@ -172,7 +178,7 @@ module tb_status_line;
             integer n0;
             n0 = n_wr;
             cfg_view = 8'h07;
-            repeat (60) @(posedge clk);
+            repeat (400) @(posedge clk);
             if (n_wr - n0 < NLEN) begin
                 n_err = n_err + 1;
                 $display("  [ERR] 改回原值没有触发重写");

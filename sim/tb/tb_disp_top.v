@@ -233,7 +233,7 @@ module tb_disp_top;
     wire [15:0] e_t_addr;
     wire [7:0]  e_t_data;
 
-    status_line u_status_ref (
+    status_line #(.NLEN(17), .NC(20)) u_status_ref (
         .clk(clk_pix), .rst_n(rst_pix_n),
         .cfg_view({5'b0, view_en}), .cfg_style(8'd0),
         .cfg_hue_spd(hue_spd), .cfg_wave_gain(wave_gain),
@@ -242,7 +242,7 @@ module tb_disp_top;
         .we(e_t_we), .waddr(e_t_addr), .wdata(e_t_data)
     );
 
-    text_buf #(.NC(60), .NL(4), .XW(10), .YW(9), .TX0(2), .TY0(2)) u_text_ref (
+    text_buf #(.NC(20), .NL(8), .XW(10), .YW(9), .TX0(2), .TY0(2)) u_text_ref (
         .clk(clk_pix), .we(e_t_we), .waddr(e_t_addr), .wdata(e_t_data),
         .x(x_d), .y(y_d), .hit(e_t_hit), .lit(e_t_lit)
     );
