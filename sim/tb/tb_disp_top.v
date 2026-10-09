@@ -77,6 +77,9 @@ module tb_disp_top;
     //      画面会一直跳。第一版就喂了个全正值的三角波，正好踩在这个坑里。
     //   phase 0..63，幅度 -31..+31，再左移 18 位放进 Q1.23 的高位。
     reg signed [23:0] wave_din = 24'sd0;
+    // 自适应门限：TB 里给个固定值即可（DUT 的 wave_buf 用 ADAPT=1 读它，
+    // 参照那边用 ADAPT=0 走参数 TH，两边门限相同 -> 行为一致）
+    reg signed [23:0] wave_th_v = 24'sd131072;
     integer wave_tri = 0;
     reg               wave_we  = 1'b0;
 
@@ -140,6 +143,7 @@ module tb_disp_top;
         .tp_edges  (12'd7),
         .tp_low    (1'b1),
         .wave_din  (wave_din),
+        .wave_th   (wave_th_v),   // ⚠️ 漏接的话阈值变 X，波形整段对不上
         .wave_we   (wave_we),
         .lcd_rgb   (lcd_rgb),
         .lcd_hs    (lcd_hs),
@@ -207,10 +211,13 @@ module tb_disp_top;
 
     // ---- 波形（TB 里镜像一份 wave_buf，才能验证 disp_top 的连线与映射）----
     wire signed [23:0] e_wave;
-    wave_buf #(.DW(24), .AW(10), .SPAN(HDISP)) u_wave_ref (
+    // ⚠️ 参照的 ADAPT/th_in 必须和 DUT 里那个实例【完全一致】
+    //    （DUT 的 disp_top 用 .ADAPT(1) 读 wave_th）——
+    //    配置不一样的话，两边状态机分手，报几千处不符还很难查。
+    wave_buf #(.DW(24), .AW(10), .SPAN(HDISP), .ADAPT(1)) u_wave_ref (
         .wclk(clk_sys), .wrst_n(rst_sys_n), .we(wave_we), .din(wave_din),
         .rclk(clk_pix), .rrst_n(rst_pix_n), .sof(dut.sof), .x(dut.x),
-        .dout(e_wave), .trig_pulse(), .done_pulse()
+        .dout(e_wave), .th_in(wave_th_v), .trig_pulse(), .done_pulse()
     );
 
     // ⚠️ 采集波形也要延迟一拍：DUT 里 wave_buf.dout 是一级寄存器、

@@ -156,6 +156,7 @@ module tb_wave_buf;
     ) dut (
         .wclk(clk_sys), .wrst_n(rst_sys_n), .we(we), .din(din),
         .rclk(clk_pix), .rrst_n(rst_pix_n), .sof(sof), .x(x), .dout(dout),
+        .th_in(24'sd0),     // ADAPT=0（默认）-> 用固定参数 TH，th_in 不参与
         .trig_pulse(trig_pulse), .done_pulse(done_pulse)
     );
 
@@ -172,6 +173,7 @@ module tb_wave_buf;
     ) dut_b (
         .wclk(clk_sys), .wrst_n(rst_sys_n), .we(we_b), .din(din_b),
         .rclk(clk_pix), .rrst_n(rst_pix_n), .sof(sof), .x(x), .dout(dout_b),
+        .th_in(24'sd0),
         .trig_pulse(trig_b), .done_pulse(done_b)
     );
 

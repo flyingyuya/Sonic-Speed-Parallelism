@@ -80,6 +80,10 @@ module wave_buf #(
     //     太大 -> 弱信号永远触发不了（会退回自动触发）；太小 -> 挡不住噪声。
     parameter integer TH     = 131072,
 
+    // 1 = 用 th_in（自适应门限，来自 env_track）；0 = 用固定参数 TH。
+    //   把 TH 保留成参数是为了让 TB 能单独测"固定门限"这条路径。
+    parameter integer ADAPT  = 0,
+
     // TO_MAX：多少个采样没触发就强行抓一次（自动触发兜底）。
     //     2048 @48kHz = 43 ms —— 比显示帧周期(12 ms)长一些即可：
     //     太短会让"正常模式"被自动触发抢走，太长会让画面冻住几百毫秒才跳一次。
@@ -97,6 +101,8 @@ module wave_buf #(
     input  wire                  rrst_n,
     input  wire                  sof,      // 帧起始，锁存新的显示 bank
     input  wire [XW-1:0]         x,        // 当前列（0..SPAN-1）
+    // 自适应门限（正数，来自 env_track）。ADAPT=0 时不用。
+    input  wire signed [DW-1:0]  th_in,
     output reg  signed [DW-1:0]  dout,
 
     //----------------------- 观测（接调试/测试用）-----------------------
@@ -134,8 +140,11 @@ module wave_buf #(
     //    **同一根因这次又踩了一遍**（和 disp_top 里 demo_touch 那次一样）。
     reg           rt_s1, rt_s2;
 
-    // 阈值做成有符号常量。TH 是正数，th_n 是它的相反数。
-    wire signed [DW-1:0] th_n = -TH[DW-1:0];
+    // 门限来源：自适应（th_in）或固定（TH 参数）。
+    //   【为什么不是"永远用 th_in"】固定值那条路径是 TB 的独立判据基准，
+    //   去掉它就没法区分"门限自适应错了"和"触发器本身错了"。
+    wire signed [DW-1:0] th   = ADAPT ? th_in : TH[DW-1:0];
+    wire signed [DW-1:0] th_n = -th;
 
     wire        armed    = (st == S_ARM);
     wire        pos_edge = below && ~din[DW-1];            // 武装过 + 当前非负 = 向上过零

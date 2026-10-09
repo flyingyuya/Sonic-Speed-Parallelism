@@ -109,6 +109,7 @@ module disp_top #(
     //--------------------- 波形数据（clk_sys 域）---------------------
     input  wire signed [23:0]    wave_din,      // = audio_top 的 rx_l
     input  wire                  wave_we,       // = audio_top 的 rx_valid
+    input  wire signed [23:0]    wave_th,      // 自适应触发门限（来自 env_track）
     input  wire [7:0]            ui_wave_gain,  // 来自 ui_ctrl：波形增益（G 命令）
     input  wire [7:0]            ui_demo,       // 来自 ui_ctrl：演示图案（T 命令）
 
@@ -411,7 +412,9 @@ module disp_top #(
     //=========================================================================
     wire signed [23:0] wave_sample;
 
-    wave_buf #(.DW(24), .AW(10), .SPAN(HDISP), .XW(XW)) u_wave (
+    // .ADAPT(1)：门限来自 env_track（自适应）。
+    //   固定门限那条路径保留在 wave_buf 里，给 tb_wave_buf 当独立判据基准。
+    wave_buf #(.DW(24), .AW(10), .SPAN(HDISP), .XW(XW), .ADAPT(1)) u_wave (
         .wclk   (clk_sys),
         .wrst_n (rst_sys_n),
         .we     (wave_we),
@@ -421,6 +424,7 @@ module disp_top #(
         .sof    (sof),
         .x      (x),
         .dout   (wave_sample),
+        .th_in  (wave_th),
         // 这两个只是给调试/测试用的观测点，显示链不用它们。
         // 【为什么要显式写出来】不写的话 Verilator 报 PINMISSING（真问题类），
         // 显式接空只是 PINCONNECTEMPTY（风格类，已在白名单里）。

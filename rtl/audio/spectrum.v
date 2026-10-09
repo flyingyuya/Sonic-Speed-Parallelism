@@ -44,7 +44,26 @@ module spectrum #(
     parameter integer HW      = 9,      // 柱高位宽
     parameter integer DECAY   = 6,      // 每帧衰减量（0 = 不衰减，只保持峰值）
     parameter integer DB_OFFS = 64,     // log2 偏移（Q5.3）；mag < 2^(OFFS/8) 显示为 0
-    parameter integer SCALE_SH= 2       // 高度缩放（左移位数）
+    parameter integer SCALE_SH= 2,
+
+    //-------------------------------------------------------------------------
+    // 【sqrt 显示】把 dB 刻度拉长一倍
+    //-----------------------------------------------------------------------------
+    //   用户要的"频谱幅度开根号"，其实【不是新算法】：
+    //
+    //       20*log10(sqrt(x)) = 10*log10(x)
+    //               ↑
+    //       sqrt 在对数域里就是【减半】
+    //
+    //   而这里本来就在 log2 域里算高度（hsc = lv << SCALE_SH）。
+    //   所以"开根号"= 把斜率减半 = SCALE_SH 减 1 = 设成 1。
+    //   观感：现在约 60 dB 铺满全高；sqrt 模式下相当于 120 dB 铺满全高，
+    //   低声压的柱子会明显变高（更热闹，但动态范围被压缩）。
+    //
+    //   ⚠️ 做成【参数】而不是写死：参数默认值就是原来的 2，
+    //      逐位不变、零风险；想试 sqrt 就在实例化时改成 1。
+    //      要"运行时可切"的话，再把它做成 ui_ctrl 的一个寄存器位即可。
+    parameter integer SQRT_SCALE_SH = 2       // 高度缩放（左移位数）
 ) (
     input  wire                    clk,          // clk_sys
     input  wire                    rst_n,
@@ -103,7 +122,7 @@ module spectrum #(
     wire [7:0]  ilog2 = {mp, nrm[DW-2 -: 3]};
 
     wire [8:0]  lv  = ({1'b0, ilog2} > DB_OFFS) ? ({1'b0, ilog2} - DB_OFFS) : 9'd0;
-    wire [9:0]  hsc = lv << SCALE_SH;
+    wire [9:0]  hsc = lv << SQRT_SCALE_SH;
     wire [HW-1:0] lvl = (hsc > MAXH) ? MAXH[HW-1:0] : hsc[HW-1:0];
 
     //=========================================================================
