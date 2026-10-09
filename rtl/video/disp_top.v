@@ -420,7 +420,12 @@ module disp_top #(
         .rrst_n (rst_pix_n),
         .sof    (sof),
         .x      (x),
-        .dout   (wave_sample)
+        .dout   (wave_sample),
+        // 这两个只是给调试/测试用的观测点，显示链不用它们。
+        // 【为什么要显式写出来】不写的话 Verilator 报 PINMISSING（真问题类），
+        // 显式接空只是 PINCONNECTEMPTY（风格类，已在白名单里）。
+        .trig_pulse(),
+        .done_pulse()
     );
 
     //=========================================================================

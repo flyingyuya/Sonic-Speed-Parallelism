@@ -71,9 +71,13 @@ module tb_disp_top;
     reg  [DW-1:0] spec_din = {DW{1'b0}};
     reg           spec_wr  = 1'b0;
 
-    // 波形输入：喂一段三角波，方便看出"中心线固定、上下对称"
-    //   phase 0..63，幅度 0..31，再左移 18 位放进 Q1.23 的高位
+    // 波形输入：喂一段【双极性】三角波，周期 64 个采样。
+    //   ⚠️ 必须是双极性的（要走到 -TH 以下）—— wave_buf 用的是"向上过零"触发，
+    //      只会在正半周晃的信号永远碰不到迟滞闸门，只能靠自动触发兜底，
+    //      画面会一直跳。第一版就喂了个全正值的三角波，正好踩在这个坑里。
+    //   phase 0..63，幅度 -31..+31，再左移 18 位放进 Q1.23 的高位。
     reg signed [23:0] wave_din = 24'sd0;
+    integer wave_tri = 0;
     reg               wave_we  = 1'b0;
 
     // 视图使能：[0]柱状 [1]极坐标 [2]波形。主测量用全开，
@@ -95,7 +99,9 @@ module tb_disp_top;
         end else if (wdiv == 39) begin
             wdiv     <= 0;
             wave_we  <= 1'b1;
-            wave_din <= (wph < 32) ? (wph << 18) : ((63 - wph) << 18);
+            // 上半段 -31 -> +31，下半段 +31 -> -31；上升过零在 wph=16
+            wave_tri = (wph < 32) ? (2*wph - 31) : (95 - 2*wph);
+            wave_din <= wave_tri <<< 18;
             wph      <= (wph == 63) ? 0 : wph + 1;
         end else begin
             wdiv    <= wdiv + 1;
@@ -204,7 +210,7 @@ module tb_disp_top;
     wave_buf #(.DW(24), .AW(10), .SPAN(HDISP)) u_wave_ref (
         .wclk(clk_sys), .wrst_n(rst_sys_n), .we(wave_we), .din(wave_din),
         .rclk(clk_pix), .rrst_n(rst_pix_n), .sof(dut.sof), .x(dut.x),
-        .dout(e_wave)
+        .dout(e_wave), .trig_pulse(), .done_pulse()
     );
 
     // ⚠️ 采集波形也要延迟一拍：DUT 里 wave_buf.dout 是一级寄存器、
