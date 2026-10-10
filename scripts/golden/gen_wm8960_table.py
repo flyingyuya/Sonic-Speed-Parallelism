@@ -30,6 +30,34 @@ SPEC = [
     # (寄存器地址, 9 位数据, 短注释)
     (0x0F, 0x000, "software reset (must be 1st)"),
     (0x19, 0x1FC, "PWRMGMT1: VMIDSEL=11 VREF AINL AINR"),
+
+    #------------------------------------------------------------------------
+    # ★★★ 输入通路：原来【漏掉了这 4 条】，是"说话没反应"的根因 ★★★
+    #------------------------------------------------------------------------
+    #  R32/R33 = ADC 输入选择。板载话筒接在 LINPUT1（见模块原理图：
+    #      MIC1(AOS3729A) -> L1 磁珠 -> C15(10uF 交流耦合) -> INPUT_L1 -> LINPUT1）。
+    #      datasheet §"Input Signal Path"：
+    #        "In single-ended microphone input configuration the microphone signal
+    #         should be input to LINPUT1 or RINPUT1 and the internal non-inverting
+    #         input of the input PGA should be switched to VMID."
+    #      -> 单端配置就是 LMN1=1 / LMP2=LMP3=0（**这正是 R32 的复位默认值**）。
+    #      这里显式写出来，一是为了"配置是自解释的"，二是为了设 LMICBOOST。
+    #
+    #  R0/R1 = 输入 PGA 音量。**复位默认值里 LINMUTE/RINMUTE = 1，也就是出厂静音！**
+    #      datasheet R0 bit7 原文："LINMUTE  DEFAULT 1  1 = Enable Mute"，
+    #      并注明 "IPVU must be set to un-mute"。
+    #      -> 不写这两条，ADC 永远在转换静音：波形是直的、柱状谱一根都没有。
+    #      （这一条是上板实测"说话无反应"的直接原因。）
+    #
+    #  增益怎么定：板载模拟 MEMS 话筒灵敏度约 -38 dBV/Pa，正常说话到它那儿
+    #      只有零点几 mV，而 WM8960 输入满量程约 1 Vrms -> 差着 60 dB 以上。
+    #      所以 PGA 内部 boost +20dB、音量 +24dB，合计约 +44dB。
+    #      增益不够时先加大这两个，不要先怀疑接线。
+    #------------------------------------------------------------------------
+    (0x20, 0x120, "ADCL path: LINPUT1 single-ended, PGA boost +20dB"),
+    (0x21, 0x120, "ADCR path: RINPUT1 single-ended, PGA boost +20dB"),
+    (0x00, 0x137, "L in PGA: IPVU=1 LINMUTE=0 LINVOL +24dB"),
+    (0x01, 0x137, "R in PGA: IPVU=1 RINMUTE=0 RINVOL +24dB"),
     (0x2F, 0x00C, "PWRMGMT3: LOMIX ROMIX"),
     (0x1A, 0x1E0, "PWRMGMT2: DACL DACR LOUT1 ROUT1"),
     (0x08, 0x1C4, "CLOCKING2: BCLKDIV=0100 (/4)"),
@@ -177,6 +205,23 @@ if __name__ == '__main__':
         dst = os.path.join(root, 'rtl', 'wm8960', 'WM8960_init_table.v')
         open(dst, 'w', encoding='utf-8').write(verilog)
         print(f"已写入 {dst}   （{n} 条，ADDR_WIDTH={aw}）", file=sys.stderr)
+
+        # ★ 额外产出"条数"的共享头文件。
+        #   以前 WM8960_init.v 里自己写死了一个 LUT_SIZE=20，表里是 24，
+        #   两处各自为政 —— 加寄存器时表变了、状态机没变，
+        #   结果只发出前 20 条，而且报错是"最后一条不是 R4"，很难看出真正原因。
+        #   现在统一 include 这一份，改表就自动跟着变。
+        nreg = os.path.join(root, 'rtl', 'wm8960', 'wm8960_nreg.vh')
+        with open(nreg, 'w', encoding='utf-8') as f:
+            f.write("//=============================================================================\n")
+            f.write("// wm8960_nreg.vh - 初始化寄存器表的【条数】（**自动生成，不要手改**）\n")
+            f.write("//-----------------------------------------------------------------------------\n")
+            f.write("//   由 scripts/golden/gen_wm8960_table.py 生成。\n")
+            f.write("//   需要\u3010表有几条\u3011的地方就 include 它，别再自己写一个数\n")
+            f.write("//   两处各写一个的话迟早会分家（这个文件就是因为分家才出现的）。\n")
+            f.write("//=============================================================================\n\n")
+            f.write(f"localparam integer WM8960_NREG = {n};\n")
+        print(f"已写入 {nreg}   （WM8960_NREG={n}）", file=sys.stderr)
     else:
         print("--- Verilog 预览（未写入，加 --write 才写） ---")
         print(verilog)

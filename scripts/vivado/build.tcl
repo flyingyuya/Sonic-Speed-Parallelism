@@ -80,7 +80,7 @@ if {$XDC ne ""} {
 # 综合
 # ---------------------------------------------------------------------------
 # 头文件搜索路径（rtl/video/disp_cfg.vh 等）
-set_property include_dirs [list [file join $ROOT rtl video] [file join $ROOT rtl common]] [current_fileset]
+set_property include_dirs [list [file join $ROOT rtl video] [file join $ROOT rtl common] [file join $ROOT rtl wm8960]] [current_fileset]
 
 synth_design -top $TOP -part $PART -flatten_hierarchy none
 write_checkpoint -force [file join $OUT post_synth.dcp]

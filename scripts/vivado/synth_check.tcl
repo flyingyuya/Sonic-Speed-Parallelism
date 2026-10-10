@@ -68,7 +68,7 @@ if {[llength $fs]} { read_verilog $fs }
 #   而且报出来的位置是 include 的那一行 —— 看上去像文件缺失，
 #   实际只是搜索路径没配。
 #---------------------------------------------------------------------------
-set_property include_dirs [list [file join $ROOT rtl video] \
+set_property include_dirs [list [file join $ROOT rtl video] [file join $ROOT rtl wm8960] \
                                 [file join $ROOT rtl common]] [current_fileset]
 
 #---------------------------------------------------------------------------

@@ -37,37 +37,41 @@
 
 module WM8960_init_table #(
     parameter DATA_WIDTH = 16,
-    parameter ADDR_WIDTH = 5          // 装得下 20 条即可
+    parameter ADDR_WIDTH = 5          // 装得下 24 条即可
 ) (
     input      [(ADDR_WIDTH-1):0] addr,
     input                         clk,
     output reg [(DATA_WIDTH-1):0] q
 );
 
-    localparam LUT_SIZE = 20;
+    localparam LUT_SIZE = 24;
     reg [DATA_WIDTH-1:0] rom [0:(2**ADDR_WIDTH)-1];
 
     initial begin
         rom[ 0] = {7'h0f, 9'b0_0000_0000};  // software reset (must be 1st)
         rom[ 1] = {7'h19, 9'b1_1111_1100};  // PWRMGMT1: VMIDSEL=11 VREF AINL AINR
-        rom[ 2] = {7'h2f, 9'b0_0000_1100};  // PWRMGMT3: LOMIX ROMIX
-        rom[ 3] = {7'h1a, 9'b1_1110_0000};  // PWRMGMT2: DACL DACR LOUT1 ROUT1
-        rom[ 4] = {7'h08, 9'b1_1100_0100};  // CLOCKING2: BCLKDIV=0100 (/4)
-        rom[ 5] = {7'h07, 9'b0_0100_1010};  // IFACE1: MS=1 I2S 24bit
-        rom[ 6] = {7'h34, 9'b0_0011_1000};  // PLL N: PRESCALE=1 SDM=1 N=8
-        rom[ 7] = {7'h35, 9'b0_0011_0001};  // PLL K[23:16]
-        rom[ 8] = {7'h36, 9'b0_0010_0110};  // PLL K[15:8]
-        rom[ 9] = {7'h37, 9'b0_1110_1001};  // PLL K[7:0] -> K=0x3126E9
-        rom[10] = {7'h1a, 9'b1_1110_0001};  // PWRMGMT2 + PLLEN=1 -> PLL ON
-        rom[11] = {7'h02, 9'b1_1111_1001};  // LOUT1 vol +0dB
-        rom[12] = {7'h03, 9'b1_1111_1001};  // ROUT1 vol +0dB
-        rom[13] = {7'h15, 9'b1_1100_0011};  // L ADC vol 0dB
-        rom[14] = {7'h16, 9'b1_1100_0011};  // R ADC vol 0dB
-        rom[15] = {7'h2d, 9'b0_1000_0000};  // L mixer bypass 0dB
-        rom[16] = {7'h2e, 9'b0_1000_0000};  // R mixer bypass 0dB
-        rom[17] = {7'h2b, 9'b1_0101_0000};  // L input boost LIN3 = 0dB
-        rom[18] = {7'h2c, 9'b0_0000_1010};  // R input boost RIN2 = 0dB
-        rom[19] = {7'h04, 9'b0_0000_0101};  // CLOCKING1: SYSCLKDIV=/2 CLKSEL=PLL
+        rom[ 2] = {7'h20, 9'b1_0010_0000};  // ADCL path: LINPUT1 single-ended, PGA boost +20dB
+        rom[ 3] = {7'h21, 9'b1_0010_0000};  // ADCR path: RINPUT1 single-ended, PGA boost +20dB
+        rom[ 4] = {7'h00, 9'b1_0011_0111};  // L in PGA: IPVU=1 LINMUTE=0 LINVOL +24dB
+        rom[ 5] = {7'h01, 9'b1_0011_0111};  // R in PGA: IPVU=1 RINMUTE=0 RINVOL +24dB
+        rom[ 6] = {7'h2f, 9'b0_0000_1100};  // PWRMGMT3: LOMIX ROMIX
+        rom[ 7] = {7'h1a, 9'b1_1110_0000};  // PWRMGMT2: DACL DACR LOUT1 ROUT1
+        rom[ 8] = {7'h08, 9'b1_1100_0100};  // CLOCKING2: BCLKDIV=0100 (/4)
+        rom[ 9] = {7'h07, 9'b0_0100_1010};  // IFACE1: MS=1 I2S 24bit
+        rom[10] = {7'h34, 9'b0_0011_1000};  // PLL N: PRESCALE=1 SDM=1 N=8
+        rom[11] = {7'h35, 9'b0_0011_0001};  // PLL K[23:16]
+        rom[12] = {7'h36, 9'b0_0010_0110};  // PLL K[15:8]
+        rom[13] = {7'h37, 9'b0_1110_1001};  // PLL K[7:0] -> K=0x3126E9
+        rom[14] = {7'h1a, 9'b1_1110_0001};  // PWRMGMT2 + PLLEN=1 -> PLL ON
+        rom[15] = {7'h02, 9'b1_1111_1001};  // LOUT1 vol +0dB
+        rom[16] = {7'h03, 9'b1_1111_1001};  // ROUT1 vol +0dB
+        rom[17] = {7'h15, 9'b1_1100_0011};  // L ADC vol 0dB
+        rom[18] = {7'h16, 9'b1_1100_0011};  // R ADC vol 0dB
+        rom[19] = {7'h2d, 9'b0_1000_0000};  // L mixer bypass 0dB
+        rom[20] = {7'h2e, 9'b0_1000_0000};  // R mixer bypass 0dB
+        rom[21] = {7'h2b, 9'b1_0101_0000};  // L input boost LIN3 = 0dB
+        rom[22] = {7'h2c, 9'b0_0000_1010};  // R input boost RIN2 = 0dB
+        rom[23] = {7'h04, 9'b0_0000_0101};  // CLOCKING1: SYSCLKDIV=/2 CLKSEL=PLL
     end
 
     // 读端口（综合成分布式 ROM）

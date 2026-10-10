@@ -32,7 +32,13 @@ module tb_wm8960_init;
     localparam integer DLY_MS      = 1;            // 与真实配置一致
 
     localparam [7:0]   DEV_ADDR_W  = 8'h34;        // WM8960: 7'b0011010 << 1 | 0
-    localparam integer N_EXP       = 20;           // 期望写多少条
+    // ⚠️ 必须和 rtl/wm8960/WM8960_init_table.v 里的 LUT_SIZE 一致。
+    //    它写死的时候，加/删寄存器不会让仿真失败 —— 只会拿错位置的条目去比对，
+    //    报出"最后一条不是 R4"这种误导性的错（真正原因在别处）。
+    //    改寄存器表时【一定要同时改这里】，最好一次性改两处并在提交信息里写明。
+    `include "wm8960_nreg.vh"
+
+    localparam integer N_EXP       = WM8960_NREG;  // 期望写多少条（同源，不再手写）
     localparam integer LOCK_MIN_NS = 5_000_000;    // PLL 至少留 5 ms 锁定
 
     //=========================================================================
@@ -151,24 +157,31 @@ module tb_wm8960_init;
     initial begin
         exp_reg[ 0] = 7'h0F; exp_dat[ 0] = 9'h000; exp_note[ 0] = "soft reset";
         exp_reg[ 1] = 7'h19; exp_dat[ 1] = 9'h1FC; exp_note[ 1] = "PWRMGMT1";
-        exp_reg[ 2] = 7'h2F; exp_dat[ 2] = 9'h00C; exp_note[ 2] = "PWRMGMT3";
-        exp_reg[ 3] = 7'h1A; exp_dat[ 3] = 9'h1E0; exp_note[ 3] = "PWRMGMT2 (PLLEN=0)";
-        exp_reg[ 4] = 7'h08; exp_dat[ 4] = 9'h1C4; exp_note[ 4] = "BCLKDIV=/4";
-        exp_reg[ 5] = 7'h07; exp_dat[ 5] = 9'h04A; exp_note[ 5] = "IFACE1 master";
-        exp_reg[ 6] = 7'h34; exp_dat[ 6] = 9'h038; exp_note[ 6] = "PLL N";
-        exp_reg[ 7] = 7'h35; exp_dat[ 7] = 9'h031; exp_note[ 7] = "PLL K1";
-        exp_reg[ 8] = 7'h36; exp_dat[ 8] = 9'h026; exp_note[ 8] = "PLL K2";
-        exp_reg[ 9] = 7'h37; exp_dat[ 9] = 9'h0E9; exp_note[ 9] = "PLL K3";
-        exp_reg[10] = 7'h1A; exp_dat[10] = 9'h1E1; exp_note[10] = "PLLEN=1";
-        exp_reg[11] = 7'h02; exp_dat[11] = 9'h1F9; exp_note[11] = "LOUT1 vol";
-        exp_reg[12] = 7'h03; exp_dat[12] = 9'h1F9; exp_note[12] = "ROUT1 vol";
-        exp_reg[13] = 7'h15; exp_dat[13] = 9'h1C3; exp_note[13] = "L ADC vol";
-        exp_reg[14] = 7'h16; exp_dat[14] = 9'h1C3; exp_note[14] = "R ADC vol";
-        exp_reg[15] = 7'h2D; exp_dat[15] = 9'h080; exp_note[15] = "L mixer";
-        exp_reg[16] = 7'h2E; exp_dat[16] = 9'h080; exp_note[16] = "R mixer";
-        exp_reg[17] = 7'h2B; exp_dat[17] = 9'h150; exp_note[17] = "L boost";
-        exp_reg[18] = 7'h2C; exp_dat[18] = 9'h00A; exp_note[18] = "R boost";
-        exp_reg[19] = 7'h04; exp_dat[19] = 9'h005; exp_note[19] = "CLKSEL=PLL (LAST)";
+        // ★ 输入通路（原来漏了这 4 条 -> ADC 一直在转静音）。
+        //   R32/R33 复位默认值本来就是单端话筒配置，写它只为设 PGA boost。
+        //   R0/R1 【必须写】：复位默认 LINMUTE/RINMUTE = 1，出厂就是静音。
+        exp_reg[ 2] = 7'h20; exp_dat[ 2] = 9'h120; exp_note[ 2] = "ADCL path +20dB";
+        exp_reg[ 3] = 7'h21; exp_dat[ 3] = 9'h120; exp_note[ 3] = "ADCR path +20dB";
+        exp_reg[ 4] = 7'h00; exp_dat[ 4] = 9'h137; exp_note[ 4] = "L in PGA unmute";
+        exp_reg[ 5] = 7'h01; exp_dat[ 5] = 9'h137; exp_note[ 5] = "R in PGA unmute";
+        exp_reg[ 6] = 7'h2F; exp_dat[ 6] = 9'h00C; exp_note[ 6] = "PWRMGMT3";
+        exp_reg[ 7] = 7'h1A; exp_dat[ 7] = 9'h1E0; exp_note[ 7] = "PWRMGMT2 (PLLEN=0)";
+        exp_reg[ 8] = 7'h08; exp_dat[ 8] = 9'h1C4; exp_note[ 8] = "BCLKDIV=/4";
+        exp_reg[ 9] = 7'h07; exp_dat[ 9] = 9'h04A; exp_note[ 9] = "IFACE1 master";
+        exp_reg[10] = 7'h34; exp_dat[10] = 9'h038; exp_note[10] = "PLL N";
+        exp_reg[11] = 7'h35; exp_dat[11] = 9'h031; exp_note[11] = "PLL K1";
+        exp_reg[12] = 7'h36; exp_dat[12] = 9'h026; exp_note[12] = "PLL K2";
+        exp_reg[13] = 7'h37; exp_dat[13] = 9'h0E9; exp_note[13] = "PLL K3";
+        exp_reg[14] = 7'h1A; exp_dat[14] = 9'h1E1; exp_note[14] = "PLLEN=1";
+        exp_reg[15] = 7'h02; exp_dat[15] = 9'h1F9; exp_note[15] = "LOUT1 vol";
+        exp_reg[16] = 7'h03; exp_dat[16] = 9'h1F9; exp_note[16] = "ROUT1 vol";
+        exp_reg[17] = 7'h15; exp_dat[17] = 9'h1C3; exp_note[17] = "L ADC vol";
+        exp_reg[18] = 7'h16; exp_dat[18] = 9'h1C3; exp_note[18] = "R ADC vol";
+        exp_reg[19] = 7'h2D; exp_dat[19] = 9'h080; exp_note[19] = "L mixer";
+        exp_reg[20] = 7'h2E; exp_dat[20] = 9'h080; exp_note[20] = "R mixer";
+        exp_reg[21] = 7'h2B; exp_dat[21] = 9'h150; exp_note[21] = "L boost";
+        exp_reg[22] = 7'h2C; exp_dat[22] = 9'h00A; exp_note[22] = "R boost";
+        exp_reg[23] = 7'h04; exp_dat[23] = 9'h005; exp_note[23] = "CLKSEL=PLL (LAST)";
     end
 
     //=========================================================================

@@ -29,6 +29,8 @@
 
 module tb_top;
 
+
+    `include "wm8960_nreg.vh"
     localparam integer INI_WAIT = 1;        // ms，复位释放后等多久发 I2C
     localparam integer I2C_DLY  = 0;        // ms，I2C 每条间隔（冒烟取 0 省时间）
 
@@ -319,9 +321,10 @@ module tb_top;
         //---------------------------------------------------------------------
         // ② I2C 序列
         //---------------------------------------------------------------------
-        if (i2c_n != 20) begin
+        // 条数来自生成的头文件（和 RTL、和 tb_wm8960_init 同一个数）
+        if (i2c_n != WM8960_NREG) begin
             n_err = n_err + 1;
-            $display("  [ERR] I2C 条数 = %0d（应为 20）", i2c_n);
+            $display("  [ERR] I2C 条数 = %0d（应为 %0d）", i2c_n, WM8960_NREG);
         end else
             $display("  [ok ] I2C 写入 20 条，从机地址错误 %0d 次", i2c_bad);
         if (i2c_bad != 0) n_err = n_err + 1;

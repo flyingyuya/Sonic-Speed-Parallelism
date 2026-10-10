@@ -103,7 +103,7 @@ fi
 #-----------------------------------------------------------------------------
 # 源文件清单
 #-----------------------------------------------------------------------------
-IVFLAGS="-g2005 -Wall -Wno-timescale -I rtl/common -I rtl/audio -I rtl/video"
+IVFLAGS="-g2005 -Wall -Wno-timescale -I rtl/common -I rtl/wm8960 -I rtl/audio -I rtl/video"
 TBEXTRA="sim/tb/codec_model.v sim/tb/xpt2046_model.v"
 # 触摸屏的行为模型（只有 tb_xpt2046 用，但一起带上无害）
 RTL="rtl/fft/fft_addr_gen.v rtl/fft/fft_twiddle_rom.v rtl/fft/fft_butterfly.v rtl/fft/fft_core.v \
@@ -204,7 +204,7 @@ fi; true' EXIT
 VL_ALLOW="WIDTHEXPAND WIDTHTRUNC UNUSEDSIGNAL UNUSEDPARAM PROCASSINIT DECLFILENAME VARHIDDEN SYNCASYNCNET TIMESCALEMOD PINCONNECTEMPTY"
 
 # 只保留【版本无关】的选项：-Wall 开全部检查，-Wno-fatal 让退出码只反映真 Error
-VLFLAGS="--lint-only -Wall -Wno-fatal +incdir+rtl/video +incdir+rtl/common"
+VLFLAGS="--lint-only -Wall -Wno-fatal +incdir+rtl/video +incdir+rtl/common +incdir+rtl/wm8960"
 
 run_verilator_lint() {
     echo ""

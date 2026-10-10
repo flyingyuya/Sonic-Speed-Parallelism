@@ -223,13 +223,43 @@ def gen_ir():
     return packed
 
 
+def gen_wm8960():
+    """调用 WM8960 寄存器表生成器（--write 才会真正写文件）。
+
+    ⚠️ 这个生成器以前【不在】gen_all 里 —— 于是"跑 gen_all 就全都生成好了"
+       是个错觉：改了 WM8960 的表，直接跑 gen_all 不会重新生成，
+       而 rtl/wm8960/WM8960_init_table.v 静静地保持着旧版本，
+       编译照过、上板就是不对。（和账本第 48 条"旧报告冒充新报告"同族。）
+
+    ⚠️ 另外注意它需要 **--write**，不加只打印预览。
+       第一次加寄存器时就是漏了这个参数，白跑一趟。
+    """
+    import subprocess
+    here = os.path.dirname(os.path.abspath(__file__))
+    r = subprocess.run(
+        [sys.executable, os.path.join(here, "gen_wm8960_table.py"), "--write"],
+        capture_output=True, text=True,
+    )
+    if r.returncode != 0:
+        raise SystemExit("gen_wm8960_table.py 失败：\n" + r.stderr)
+    # 它的 stderr 里是 Markdown 表格（给 docs/09 抄的），这里只挑第一行状态
+    for ln in r.stderr.splitlines():
+        if ln.startswith("已写入"):
+            print("  " + ln)
+            break
+    else:
+        raise SystemExit("gen_wm8960_table.py 没有报告写入，可能参数不对")
+
+
 def main():
-    print("[1/3] 生成测试向量 ...")
+    print("[1/4] 生成测试向量 ...")
     gen_vectors()
-    print("[2/3] 生成系数 ROM ...")
+    print("[2/4] 生成系数 ROM ...")
     gen_rom()
-    print("[3/3] 生成冲激响应参考 ...")
+    print("[3/4] 生成冲激响应参考 ...")
     gen_ir()
+    print("[4/4] 生成 WM8960 初始化寄存器表 ...")
+    gen_wm8960()
     print("完成。")
 
 

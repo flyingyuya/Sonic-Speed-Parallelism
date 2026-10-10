@@ -34,7 +34,13 @@ module WM8960_init #(
     //-------------------------------------------------------------------------
     // 寄存器表（内容由 scripts/golden/gen_wm8960_table.py 生成）
     //-------------------------------------------------------------------------
-    localparam integer LUT_SIZE = 20;              // 本表实际条数
+    // 条数来自生成的头文件，**不再自己写一个数**。
+    //   ⚠️ 原来这里硬编码 20，而 WM8960_init_table.v 里是 24 —— 加寄存器时
+    //      表变了、这里没变，于是只发出前 20 条，报错却是"最后一条不是 R4"。
+    //      这种"同一个事实写两遍"的魔数，迟早会分家；分家之后的报错还特别难查。
+    `include "wm8960_nreg.vh"
+
+    localparam integer LUT_SIZE = WM8960_NREG;     // 本表实际条数
     localparam integer TBL_AW   = $clog2(LUT_SIZE);// 恰好装得下 LUT_SIZE 的位宽
     localparam integer DLY_CNT  = CLK_FREQ_HZ / 1000 * DLY_MS;
     localparam        ADDR_MODE = 1'b0;
