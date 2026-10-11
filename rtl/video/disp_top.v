@@ -110,6 +110,7 @@ module disp_top #(
     input  wire signed [23:0]    wave_din,      // = audio_top 的 rx_l
     input  wire                  wave_we,       // = audio_top 的 rx_valid
     input  wire signed [23:0]    wave_th,      // 自适应触发门限（来自 env_track）
+    input  wire [23:0]           dbg_adc,      // 诊断：原始 ADC 值（直通显示）
     input  wire [7:0]            ui_wave_gain,  // 来自 ui_ctrl：波形增益（G 命令）
     input  wire [7:0]            ui_demo,       // 来自 ui_ctrl：演示图案（T 命令）
 
@@ -510,6 +511,7 @@ module disp_top #(
         .tp_x          (tp_x_s),
         .tp_y          (tp_y_s),
         .tp_edges      (tp_edges_s),
+        .dbg_adc  (dbg_adc),
         .tp_low        (tp_low_s),
         .we            (text_we),
         .waddr         (text_waddr),

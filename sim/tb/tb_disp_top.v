@@ -80,6 +80,8 @@ module tb_disp_top;
     // 自适应门限：TB 里给个固定值即可（DUT 的 wave_buf 用 ADAPT=1 读它，
     // 参照那边用 ADAPT=0 走参数 TH，两边门限相同 -> 行为一致）
     reg signed [23:0] wave_th_v = 24'sd131072;
+    // 诊断口：TB 给个固定值即可（两边必须用同一个值）
+    reg [23:0] dbg_adc_v = 24'h00ABCD;
     integer wave_tri = 0;
     reg               wave_we  = 1'b0;
 
@@ -143,7 +145,8 @@ module tb_disp_top;
         .tp_edges  (12'd7),
         .tp_low    (1'b1),
         .wave_din  (wave_din),
-        .wave_th   (wave_th_v),   // ⚠️ 漏接的话阈值变 X，波形整段对不上
+        .wave_th   (wave_th_v),
+        .dbg_adc   (dbg_adc_v),
         .wave_we   (wave_we),
         .lcd_rgb   (lcd_rgb),
         .lcd_hs    (lcd_hs),
@@ -251,7 +254,8 @@ module tb_disp_top;
         .cfg_view({5'b0, view_en}), .cfg_style(8'd0),
         .cfg_hue_spd(hue_spd), .cfg_wave_gain(wave_gain),
         .cfg_bg_mode(8'd0), .cfg_demo(ui_demo_v),
-        .tp_x(tp_x_v), .tp_y(tp_y_v), .tp_edges(12'd7), .tp_low(1'b1),
+        .tp_x(tp_x_v), .tp_y(tp_y_v), .tp_edges(12'd7), .dbg_adc(dbg_adc_v),
+ .tp_low(1'b1),
         .we(e_t_we), .waddr(e_t_addr), .wdata(e_t_data)
     );
 

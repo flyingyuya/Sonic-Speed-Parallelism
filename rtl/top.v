@@ -573,6 +573,7 @@ module top #(
         .tp_low     (tp_low),
         .wave_din   (wave_din_sel),         // 波形显示左声道（或自检图案）
         .wave_th    (wave_th),              // 自适应触发门限（来自 env_track）
+        .dbg_adc    (rx_l),                 // 诊断：原始 ADC 值（不经 dc_block）
         .wave_we    (wave_we_sel),
         .lcd_rgb    (lcd_rgb),
         .lcd_hs     (lcd_hs),

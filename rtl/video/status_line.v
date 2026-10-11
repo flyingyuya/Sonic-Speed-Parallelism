@@ -48,6 +48,12 @@ module status_line #(
     input  wire [11:0] tp_edges,        // 诊断：最近一次转换 DOUT 跳变次数
     input  wire        tp_low,          // 诊断：DOUT 是否出现过低电平
 
+    // 诊断：原始 ADC 采样值（**直接从 audio_top 的 rx_l 引过来，不经任何处理**）
+    //   显示成 6 位十六进制，占满原来 "TX4095" 那 6 个字符的位置 ——
+    //   【故意做成长度不变的】，因为 status_line 的 TB 用定长 68 字符的
+    //   期望串比较；一改长度整串就错位，会报几十处假失败（已经栽过一次）。
+    input  wire [23:0] dbg_adc,
+
     //--------------------- 写 text_buf ---------------------
     output reg         we,
     output reg  [15:0] waddr,
@@ -61,6 +67,7 @@ module status_line #(
     reg [11:0] tx_d, ty_d;
     reg [11:0] te_d;
     reg        tl_d;
+    reg [23:0] ad_d;
 
     // ⚠️ 必须用 != 而不是 !==。
     //   `!==` 是【仿真专用】运算符（会比较 X/Z），**不可综合** ——
@@ -71,7 +78,8 @@ module status_line #(
                    (cfg_hue_spd   != h_d) || (cfg_wave_gain != g_d) ||
                    (cfg_bg_mode   != b_d) || (cfg_demo      != m_d) ||
                    (tp_x != tx_d) || (tp_y != ty_d) ||
-                   (tp_edges != te_d) || (tp_low != tl_d);
+                   (tp_edges != te_d) || (tp_low != tl_d) ||
+                   (dbg_adc != ad_d);
 
     //=========================================================================
     // 2. 逐字符写入
@@ -159,7 +167,7 @@ module status_line #(
     end
 
     // 敏感列表写全：数组（nm）不能进列表，所以只能用显式清单
-    always @(cnt or li or ci or vrow or tp_x or tp_edges or tp_low or
+    always @(cnt or li or ci or vrow or dbg_adc or tp_x or tp_edges or tp_low or
              cfg_view or cfg_style or cfg_hue_spd or cfg_wave_gain or
              cfg_bg_mode or cfg_demo) begin
         li = cnt / NLEN;        // 0..7
@@ -175,10 +183,15 @@ module status_line #(
             else if (ci == 6)
                 ch = hexc(vrow[3:0]);
         end else if (li == 6) begin
-            // ---- 第 7 行 "TX4095" ----
-            if (ci == 0)      ch = "T";
-            else if (ci == 1) ch = "X";
-            else if (ci >= 2 && ci <= 5) ch = dec4(tp_x, ci[2:0] - 3'd2);
+            // ---- 第 7 行：原始 ADC 值的 6 位十六进制（**不是十进制**）----
+            //   例：01F2C4 表示 rx_l = 0x1F2C4（Q1.23 有符号，补码）
+            //       FF8000 表示一个不大的负值（高 6 位全 1 = 符号扩展）
+            //
+            //   怎么看：
+            //     数字完全不动          -> 没数据 / 顶死在某个电平
+            //     只在最低几位随机跳     -> 幅度极小，基本是量化噪声
+            //     说话时高几位明显变化   -> 通路是好的，问题在显示链
+            if (ci <= 5) ch = hexc(dbg_adc[(5-ci)*4 +: 4]);
         end else begin
             // ---- 诊断 "E0000 L0" ----
             if (ci == 0)      ch = "E";
@@ -194,7 +207,7 @@ module status_line #(
             v_d <= 8'hFF; s_d <= 8'hFF; h_d <= 8'hFF;
             g_d <= 8'hFF; b_d <= 8'hFF; m_d <= 8'hFF;   // 上电必触发一次
             tx_d <= 12'hFFF; ty_d <= 12'hFFF;
-            te_d <= 12'hFFF; tl_d <= 1'b1;
+            te_d <= 12'hFFF; tl_d <= 1'b1; ad_d <= 24'hFFFFFF;
             cnt <= 8'd0;
             busy <= 1'b0;
             we <= 1'b0;
@@ -225,6 +238,7 @@ module status_line #(
                     b_d <= cfg_bg_mode;   m_d <= cfg_demo;
                     tx_d <= tp_x;         ty_d <= tp_y;
                     te_d <= tp_edges;     tl_d <= tp_low;
+                    ad_d <= dbg_adc;
                 end else begin
                     cnt <= cnt + 1'b1;
                 end

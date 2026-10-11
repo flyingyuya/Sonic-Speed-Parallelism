@@ -22,6 +22,7 @@ module tb_status_line;
     reg [11:0] tp_x = 12'd123, tp_y = 12'd456;
     reg [11:0] tp_edges = 12'd7;        // 诊断量（固定值，TB 只验字符串格式）
     reg        tp_low   = 1'b1;
+    reg [23:0] dbg_adc  = 24'h00ABCD;
     wire       we;
     wire [15:0] waddr;
     wire [7:0]  wdata;
@@ -34,7 +35,8 @@ module tb_status_line;
         .cfg_view(cfg_view), .cfg_style(cfg_style), .cfg_hue_spd(cfg_hue_spd),
         .cfg_wave_gain(cfg_wave_gain), .cfg_bg_mode(cfg_bg_mode),
         .cfg_demo(cfg_demo), .tp_x(tp_x), .tp_y(tp_y),
-        .tp_edges(tp_edges), .tp_low(tp_low),
+        .tp_edges(tp_edges), .dbg_adc(dbg_adc),
+ .tp_low(tp_low),
         .we(we), .waddr(waddr), .wdata(wdata)
     );
 
@@ -112,7 +114,7 @@ module tb_status_line;
             $display("  [ok ] 上电自动写入 %0d 个字符", n_wr);
         show();
         want_line({"VIEW  7          STYLE 0          HUE   6          GAIN  8          ",
-                   "BG    0          DEMO  0          TX0123           E0007 L1         "});
+                   "BG    0          DEMO  0          00ABCD           E0007 L1         "});
         if (n_err == 0) $display("  [ok ] 内容与期望 'V7 S0 H6 G8 B0 D0' 一致");
 
         //---------------------------------------------------------------------
@@ -136,21 +138,21 @@ module tb_status_line;
         repeat (400) @(posedge clk);
         show();
         want_line({"VIEW  2          STYLE 0          HUE   6          GAIN  8          ",
-                   "BG    0          DEMO  0          TX0123           E0007 L1         "});
+                   "BG    0          DEMO  0          00ABCD           E0007 L1         "});
         if (n_err == 0) $display("  [ok ] V 变成 2");
 
         cfg_wave_gain = 8'h0F;      // 也测一下 A-F 的十六进制
         repeat (400) @(posedge clk);
         show();
         want_line({"VIEW  2          STYLE 0          HUE   6          GAIN  F          ",
-                   "BG    0          DEMO  0          TX0123           E0007 L1         "});
+                   "BG    0          DEMO  0          00ABCD           E0007 L1         "});
         if (n_err == 0) $display("  [ok ] 增益 0F 显示成 'F'（十六进制大写）");
 
         cfg_demo = 8'h03;
         repeat (400) @(posedge clk);
         show();
         want_line({"VIEW  2          STYLE 0          HUE   6          GAIN  F          ",
-                   "BG    0          DEMO  3          TX0123           E0007 L1         "});
+                   "BG    0          DEMO  3          00ABCD           E0007 L1         "});
         if (n_err == 0) $display("  [ok ] D 字段跟着变");
 
         // 触摸读数变化也要触发重写（上板验证管脚就靠这条）
@@ -166,7 +168,7 @@ module tb_status_line;
                 $display("  [ok ] 触摸读数变化触发了重写");
                 show();
                 want_line({"VIEW  2          STYLE 0          HUE   6          GAIN  F          ",
-                   "BG    0          DEMO  3          TX0987           E0007 L1         "});
+                   "BG    0          DEMO  3          00ABCD           E0007 L1         "});
                 if (n_err == 0) $display("  [ok ] 第二行按十进制显示，个位补零");
             end
         end
