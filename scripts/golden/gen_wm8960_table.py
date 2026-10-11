@@ -54,10 +54,17 @@ SPEC = [
     #      所以 PGA 内部 boost +20dB、音量 +24dB，合计约 +44dB。
     #      增益不够时先加大这两个，不要先怀疑接线。
     #------------------------------------------------------------------------
-    (0x20, 0x120, "ADCL path: LINPUT1 single-ended, PGA boost +20dB"),
-    (0x21, 0x120, "ADCR path: RINPUT1 single-ended, PGA boost +20dB"),
-    (0x00, 0x137, "L in PGA: IPVU=1 LINMUTE=0 LINVOL +24dB"),
-    (0x01, 0x137, "R in PGA: IPVU=1 RINMUTE=0 RINVOL +24dB"),
+    #  ⚠️ 增益【不要】在这里拉满。上板实测的坑：
+    #     一开始设成 boost +20dB + LINVOL +24dB = +44dB，
+    #     结果话筒和 PGA 的【本底噪声】一起被放大 44dB ——
+    #     屏幕上是"满屏噪声、吹一口气才看得见波形"。
+    #     正确做法：**模拟增益只给够，剩下的在数字域补**。
+    #     数字域放大不引入模拟噪声；而 boost 那一级是整条链最吵的一级，
+    #     所以 boost 直接关掉（+0dB），只用 LINVOL 那级。
+    (0x20, 0x100, "ADCL path: LINPUT1 single-ended, PGA boost +0dB"),
+    (0x21, 0x100, "ADCR path: RINPUT1 single-ended, PGA boost +0dB"),
+    (0x00, 0x127, "L in PGA: IPVU=1 LINMUTE=0 LINVOL +12dB"),
+    (0x01, 0x127, "R in PGA: IPVU=1 RINMUTE=0 RINVOL +12dB"),
     (0x2F, 0x00C, "PWRMGMT3: LOMIX ROMIX"),
     (0x1A, 0x1E0, "PWRMGMT2: DACL DACR LOUT1 ROUT1"),
     (0x08, 0x1C4, "CLOCKING2: BCLKDIV=0100 (/4)"),

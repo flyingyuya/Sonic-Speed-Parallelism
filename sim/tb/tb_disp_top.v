@@ -87,7 +87,7 @@ module tb_disp_top;
     //           之后会临时关掉几个做"开关真的生效"的抽查。
     reg [2:0] view_en  = 3'b111;
     reg [7:0] hue_spd  = 8'd6;      // 与 ui_ctrl 的默认值一致
-    reg [7:0] wave_gain = 8'd8;     // G 命令：8 = 1.0 倍（与 ui_ctrl 默认一致）
+    reg [7:0] wave_gain = 8'd0;     // G 命令：现在是指数，0 = ×1（与 ui_ctrl 默认一致）
     reg [7:0] ui_demo_v = 8'd0;     // T 命令：演示图案（默认关）
     reg [11:0] tp_x_v = 12'd4095, tp_y_v = 12'd4095;  // 未触摸（上下限都贴住）
     // 触摸原始读数固定成"完全没触摸"（>4000 判为未按下），
@@ -544,78 +544,97 @@ module tb_disp_top;
         //---------------------------------------------------------------------
         // [3b] 波形增益（G 命令）—— 它以前是个【死控件】，这里专门守住
         //---------------------------------------------------------------------
-        // ⚠️ 这里【不能】把 dut.wave_adj / dut.wave_sample 当成有符号数比较。
-        //   Verilog-2001 的层次引用（dut.xxx）不带 signed 属性，iverilog 会
-        //   按无符号解释 —— 于是 -6291456 被读成 10485760，判据全错，
-        //   看上去像"输出变成了 -采样"（其实 DUT 是好的，是 TB 读错了）。
-        //   所以下面一律【只看位】：用 bit[23] 判符号，自己算绝对值。
+        // 【G 的语义在 2026-10 改过】原来是线性 G/8（×0.125 ~ ×1.875），
+        //   现在是【指数】增益 = 2^G（×1 ~ ×256）。
+        //   改的原因见 disp_top.v 5b 节的注释（模拟增益不能拉满，要在数字域补）。
+        //   ⚠️ 改语义时【必须同时改这里】—— 否则测的是已经不存在的旧行为。
         //
-        // 【判据】（不做"扫帧抓峰值"——那要扫满 150150 拍一帧，TB 会超时）
-        //   · G=8 和 G=0 都必须是精确 1.0 倍：|wave_adj| 逐拍 == |wave_sample|
-        //   · G=8 时符号位也必须逐拍相同
-        //   · G=4 的绝对值 <= G=8 的（真在衰减）
-        //   · G=12/15 的绝对值 >= G=8 的（真在放大）
+        // ⚠️ 层次引用 dut.wave_adj / dut.wave_sample 【不带 signed 属性】，
+        //   iverilog 会按无符号解释。所以下面一律【只看位】：用 bit[23] 判符号，
+        //   自己算绝对值。（这条以前栽过，见账本。）
         //---------------------------------------------------------------------
         $display("");
-        $display(" [3b] 波形增益（G 命令）");
+        $display(" [3b] 波形增益（G 命令，指数：增益 = 2^G）");
         begin : gain_test
             integer g, j;
-            integer n_mag, n_sgn, n_dir;
+            integer n_err1, n_err2, n_sat, n_sgn;
             reg [23:0] ma, ms;
+            reg [31:0] exp_ma;      // 期望幅度（32 位，够放 2^23 * 256）
 
-            // ---- 判据①：G=0/G=8 精确 1.0 倍（比绝对值 + 比符号位）----
-            n_mag = 0; n_sgn = 0;
-            for (g = 0; g < 2; g = g + 1) begin
-                wave_gain = (g == 0) ? 8'd0 : 8'd8;
+            // ---- 判据①：G=0 必须【精确】×1（幅度和符号都逐拍相同）----
+            wave_gain = 8'd0;
+            repeat (3) @(posedge clk_pix);
+            n_err1 = 0; n_sgn = 0;
+            for (j = 0; j < 8000; j = j + 1) begin
+                @(posedge clk_pix);
+                if (dut.wave_adj !== dut.wave_sample) n_err1 = n_err1 + 1;
+            end
+            if (n_err1 != 0) begin
+                n_err = n_err + 1;
+                $display("  [ERR] G=0 不是精确 ×1（%0d 拍不符）", n_err1);
+            end else
+                $display("  [ok ] G=0 逐拍精确等于原始采样（8000 次比对）");
+
+            // ---- 判据②：G=1/G=3 的幅度 = 饱和( |sample| << G ) ----
+            n_err2 = 0; n_sat = 0;
+            for (g = 1; g <= 3; g = g + 1) begin
+                wave_gain = g[7:0];
                 repeat (3) @(posedge clk_pix);
-                for (j = 0; j < 6000; j = j + 1) begin
+                for (j = 0; j < 8000; j = j + 1) begin
                     @(posedge clk_pix);
                     ma = dut.wave_adj[23]    ? (~dut.wave_adj[23:0] + 1'b1)
                                              : dut.wave_adj[23:0];
                     ms = dut.wave_sample[23] ? (~dut.wave_sample[23:0] + 1'b1)
                                              : dut.wave_sample[23:0];
-                    if (ma !== ms) n_mag = n_mag + 1;
-                    if (ma !== 24'd0 && (dut.wave_adj[23] !== dut.wave_sample[23]))
+                    // 期望：|sample| << G，超过 2^23 就饱和
+                    // ⚠️ 饱和上限是【不对称】的：正侧是 2^23-1，负侧是 2^23。
+                    //    统写成 8388608 的话，正侧会差 1 —— 报 8290 拍不符，
+                    //    看上去像放大器坏了，其实只是参照的常数差一。
+                    exp_ma = ms << g;
+                    if (dut.wave_sample[23]) begin          // 负采样
+                        if (exp_ma > 32'd8388608) begin
+                            exp_ma = 32'd8388608; n_sat = n_sat + 1;
+                        end
+                    end else begin                          // 正采样
+                        if (exp_ma > 32'd8388607) begin
+                            exp_ma = 32'd8388607; n_sat = n_sat + 1;
+                        end
+                    end
+                    if (ma !== exp_ma[23:0]) n_err2 = n_err2 + 1;
+                    // 符号必须和原采样一致（除非原采样正好是 0）
+                    if ((ms !== 24'd0) && (dut.wave_adj[23] !== dut.wave_sample[23]))
                         n_sgn = n_sgn + 1;
                 end
             end
-            if (n_mag != 0) begin
+            if (n_err2 != 0) begin
                 n_err = n_err + 1;
-                $display("  [ERR] G=0/G=8 的幅度不是精确 1.0 倍（%0d 拍不符）", n_mag);
+                $display("  [ERR] G=1..3 的幅度不等于饱和( |sample| << G )（%0d 拍）", n_err2);
             end else
-                $display("  [ok ] G=0 与 G=8 幅度精确等于 1.0 倍（逐拍 12000 次比对）");
+                $display("  [ok ] G=1/2/3 幅度 == 饱和(|sample| << G)（其中 %0d 拍触到饱和）",
+                         n_sat);
+
+            // ---- 判据③：G=8 必须【饱和而不是符号翻转】 ----
+            wave_gain = 8'd8;
+            repeat (3) @(posedge clk_pix);
+            n_err1 = 0;
+            for (j = 0; j < 8000; j = j + 1) begin
+                @(posedge clk_pix);
+                if ((dut.wave_sample[23] !== dut.wave_adj[23]) &&
+                    (dut.wave_sample[23:0] !== 24'd0))
+                    n_err1 = n_err1 + 1;
+            end
+            if (n_err1 != 0) begin
+                n_err = n_err + 1;
+                $display("  [ERR] G=8 出现符号翻转 %0d 拍（饱和逻辑有问题）", n_err1);
+            end else
+                $display("  [ok ] G=8（×256）只饱和、不符号翻转");
             if (n_sgn != 0) begin
                 n_err = n_err + 1;
-                $display("  [ERR] G=8 时符号翻转了 %0d 拍（饱和逻辑有问题）", n_sgn);
+                $display("  [ERR] 增益过程中符号翻转了 %0d 拍", n_sgn);
             end else
-                $display("  [ok ] G=8 无符号翻转");
+                $display("  [ok ] 各档位符号均与原采样一致");
 
-            // ---- 判据②：衰减/放大方向 ----
-            n_dir = 0;
-            for (g = 0; g < 3; g = g + 1) begin
-                wave_gain = (g == 0) ? 8'd4 : ((g == 1) ? 8'd12 : 8'd15);
-                repeat (3) @(posedge clk_pix);
-                for (j = 0; j < 6000; j = j + 1) begin
-                    @(posedge clk_pix);
-                    ma = dut.wave_adj[23]    ? (~dut.wave_adj[23:0] + 1'b1)
-                                             : dut.wave_adj[23:0];
-                    ms = dut.wave_sample[23] ? (~dut.wave_sample[23:0] + 1'b1)
-                                             : dut.wave_sample[23:0];
-                    if (g == 0) begin
-                        if (ma > ms) n_dir = n_dir + 1;      // 0.5 倍不该更大
-                    end else begin
-                        if (ma < ms) n_dir = n_dir + 1;      // 放大不该更小
-                    end
-                end
-            end
-            if (n_dir != 0) begin
-                n_err = n_err + 1;
-                $display("  [ERR] 增益方向不对（%0d 拍）—— 这正是 G 当死控件时的老毛病",
-                         n_dir);
-            end else
-                $display("  [ok ] 增益方向正确：G4 衰减、G12/G15 放大");
-
-            wave_gain = 8'd8;      // 还原
+            wave_gain = 8'd0;      // 还原到新默认
         end
 
         //---------------------------------------------------------------------

@@ -160,10 +160,10 @@ module tb_wm8960_init;
         // ★ 输入通路（原来漏了这 4 条 -> ADC 一直在转静音）。
         //   R32/R33 复位默认值本来就是单端话筒配置，写它只为设 PGA boost。
         //   R0/R1 【必须写】：复位默认 LINMUTE/RINMUTE = 1，出厂就是静音。
-        exp_reg[ 2] = 7'h20; exp_dat[ 2] = 9'h120; exp_note[ 2] = "ADCL path +20dB";
-        exp_reg[ 3] = 7'h21; exp_dat[ 3] = 9'h120; exp_note[ 3] = "ADCR path +20dB";
-        exp_reg[ 4] = 7'h00; exp_dat[ 4] = 9'h137; exp_note[ 4] = "L in PGA unmute";
-        exp_reg[ 5] = 7'h01; exp_dat[ 5] = 9'h137; exp_note[ 5] = "R in PGA unmute";
+        exp_reg[ 2] = 7'h20; exp_dat[ 2] = 9'h100; exp_note[ 2] = "ADCL path +0dB";
+        exp_reg[ 3] = 7'h21; exp_dat[ 3] = 9'h100; exp_note[ 3] = "ADCR path +0dB";
+        exp_reg[ 4] = 7'h00; exp_dat[ 4] = 9'h127; exp_note[ 4] = "L in PGA unmute";
+        exp_reg[ 5] = 7'h01; exp_dat[ 5] = 9'h127; exp_note[ 5] = "R in PGA unmute";
         exp_reg[ 6] = 7'h2F; exp_dat[ 6] = 9'h00C; exp_note[ 6] = "PWRMGMT3";
         exp_reg[ 7] = 7'h1A; exp_dat[ 7] = 9'h1E0; exp_note[ 7] = "PWRMGMT2 (PLLEN=0)";
         exp_reg[ 8] = 7'h08; exp_dat[ 8] = 9'h1C4; exp_note[ 8] = "BCLKDIV=/4";

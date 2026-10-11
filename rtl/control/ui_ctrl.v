@@ -120,8 +120,10 @@ module ui_ctrl #(
             cfg_style     <= 8'd0;
             cfg_hue_spd   <= 8'd6;              // 每 2^(8-6) = 4 帧滚一级
                                                 // （等价于旧映射的 H=2，见 disp_top.v）
-            cfg_wave_gain <= 8'd8;              // 8 = 1.0 倍（G 原来是死控件，
-                                                // 所以改成 8 不会改变画面）
+            // G 现在是【指数】：增益 = 2^G。默认 0 = ×1。
+            //   （原来是线性 G/8、默认 8=×1；改成指数后 8 会变成 ×256，
+            //    所以默认值必须跟着改成 0，否则一上电波形就是满幅方块。）
+            cfg_wave_gain <= 8'd0;
             cfg_bg_mode   <= 8'd0;
             cfg_auto      <= 8'd0;
             cfg_demo      <= 8'd0;              // 上电关（走真实音频）
@@ -157,9 +159,9 @@ module ui_ctrl #(
                 // HUESPD 0..7，0 = 停住
                 4'h2: cfg_hue_spd   <= (cfg_hue_spd[3:0] >= 4'd7) ? 8'd0
                                                                  : cfg_hue_spd + 1'b1;
-                // WAVEG 1..15（0 会被当成 8，干脆跳过，免得看着像没反应）
-                4'h3: cfg_wave_gain <= (cfg_wave_gain[3:0] >= 4'd15) ? 8'd1
-                                                                     : cfg_wave_gain + 1'b1;
+                // WAVEG 0..8（指数：增益 = 2^G，×1 ~ ×256）
+                4'h3: cfg_wave_gain <= (cfg_wave_gain[3:0] >= 4'd8) ? 8'd0
+                                                                    : cfg_wave_gain + 1'b1;
                 // BGMODE 0..1
                 4'h4: cfg_bg_mode   <= (cfg_bg_mode[3:0] >= 4'd1) ? 8'd0
                                                                   : cfg_bg_mode + 1'b1;

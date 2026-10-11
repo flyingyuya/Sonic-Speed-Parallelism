@@ -50,10 +50,10 @@ module WM8960_init_table #(
     initial begin
         rom[ 0] = {7'h0f, 9'b0_0000_0000};  // software reset (must be 1st)
         rom[ 1] = {7'h19, 9'b1_1111_1100};  // PWRMGMT1: VMIDSEL=11 VREF AINL AINR
-        rom[ 2] = {7'h20, 9'b1_0010_0000};  // ADCL path: LINPUT1 single-ended, PGA boost +20dB
-        rom[ 3] = {7'h21, 9'b1_0010_0000};  // ADCR path: RINPUT1 single-ended, PGA boost +20dB
-        rom[ 4] = {7'h00, 9'b1_0011_0111};  // L in PGA: IPVU=1 LINMUTE=0 LINVOL +24dB
-        rom[ 5] = {7'h01, 9'b1_0011_0111};  // R in PGA: IPVU=1 RINMUTE=0 RINVOL +24dB
+        rom[ 2] = {7'h20, 9'b1_0000_0000};  // ADCL path: LINPUT1 single-ended, PGA boost +0dB
+        rom[ 3] = {7'h21, 9'b1_0000_0000};  // ADCR path: RINPUT1 single-ended, PGA boost +0dB
+        rom[ 4] = {7'h00, 9'b1_0010_0111};  // L in PGA: IPVU=1 LINMUTE=0 LINVOL +12dB
+        rom[ 5] = {7'h01, 9'b1_0010_0111};  // R in PGA: IPVU=1 RINMUTE=0 RINVOL +12dB
         rom[ 6] = {7'h2f, 9'b0_0000_1100};  // PWRMGMT3: LOMIX ROMIX
         rom[ 7] = {7'h1a, 9'b1_1110_0000};  // PWRMGMT2: DACL DACR LOUT1 ROUT1
         rom[ 8] = {7'h08, 9'b1_1100_0100};  // CLOCKING2: BCLKDIV=0100 (/4)

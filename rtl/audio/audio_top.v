@@ -6,11 +6,11 @@
 // 时序恢复由 i2s_slave_clk 完成，输出契约与原来的 i2s_clkgen 完全一致，
 // 所以 i2s_rx / i2s_tx / eq_cascade / audio_fifo 一个字都没改。
 //
-//                           ┌──────────────┐
+//                          ┌────────────────┐
 //   sdin ─▶ i2s_rx ─▶ fifo ─▶ eq_cascade L ─┐
-//                           └▶ eq_cascade R ─┴─▶ fifo ─▶ i2s_tx ─▶ sdout
+//                          └▶ eq_cascade R ─┴─▶ fifo ─▶ i2s_tx ──▶ sdout
 //                ▲                                              │
-//                └──── i2s_slave_clk（从 bclk/lrclk 恢复时序）────┘
+//                └──── i2s_slave_clk（从 bclk/lrclk 恢复时序）──┘
 //
 // 单一时钟域：clk = clk_sys = 48 MHz。在从模式下本模块不再需要
 // "BCLK = clk/4" 这种整数关系 —— i2s_slave_clk 靠过采样恢复边沿，
