@@ -27,71 +27,77 @@ SPEC = [
     # 注释全部用短 ASCII —— 中文说明放在生成文件的头部。
     # 原因是 Verible 的行宽按终端列数算，CJK 字符通常占 2 列，
     # 用 Python len() 无法准确预估，干脆避免。
-    # (寄存器地址, 9 位数据, 短注释)
+    #
+    #=========================================================================
+    # ★ 2026-10 按【已知能用的参考例程】重写了输入通路
+    #=========================================================================
+    #   参考：小梅哥 ACG525_audio_loopback_mic（同一个 WM8960 模块 ✗ 能录能放 ✓）
+    #   关键差异（我们原来是错的）：
+    #
+    #   ① R25 的 MICB 位 = 0 -> **MICBIAS 一直是关的**
+    #      参考是 1（使能 MICBIAS ✗ 给话筒提供参考电压）✓
+    #      而且 VMIDSEL 参考用 01（2x50k）✗ 我们用 11（2x5k）✗ 一起改过来 ✓
+    #
+    #   ② R32/R33（ADC 输入选择）：参考用 0x078
+    #        bit7 LMP3=1  bit6 LMP2=1  bits5:4 LMICBOOST=11(+29dB)  bit8 LMN1=0
+    #      -> **话筒接在 LINPUT2/LINPUT3（非反相输入）✗ 走 boost 级 ✗
+    #         LINPUT1（反相输入）是断开的** ✓
+    #      我们原来写 0x100（只有 LINPUT1 ✗ boost 0dB）✗ 正好接错了脚 ✓
+    #      论坛帖原文："话筒为单端输入 ✗ 输入为 LINPUT2"
+    #
+    #   ③ R23 (17h) bits[3:2] = DATSEL ✗ **我们原来完全没写**
+    #        DATSEL=01: left data = left ADC; right data = left ADC
+    #      -> **单声道话筒的数据复制到左右两路** ✓ 不写的话右路一直是空的 ✓
+    #      参考值 0x0C4：bit8 TSDEN=1 ✗ bits7:6 VSEL=10 ✗ DATSEL=01 ✓
+    #
+    #   ④ 参考【不写 R0/R1】-> 所以输入 PGA 的 LINMUTE 保持默认的 1（静音）
+    #      **说明话筒信号走的是 boost 级 ✗ 不经过 PGA 的音量级** ✓
+    #      所以我们原来那两条"解静音"是**没必要**的 ✗ 去掉 ✓
+    #
+    #   ⚠️ 保留我们自己的：PLL（为 24MHz MCLK 推导）✗ 24bit 字长 ✗ 寄存器顺序
+    #      （顺序约束见 docs/09 §2.5 ✗ CLKSEL=1 必须最后 ✓）
+    #=========================================================================
     (0x0F, 0x000, "software reset (must be 1st)"),
-    (0x19, 0x1FC, "PWRMGMT1: VMIDSEL=11 VREF AINL AINR"),
 
-    #------------------------------------------------------------------------
-    # ★★★ 输入通路：原来【漏掉了这 4 条】，是"说话没反应"的根因 ★★★
-    #------------------------------------------------------------------------
-    #  R32/R33 = ADC 输入选择。板载话筒接在 LINPUT1（见模块原理图：
-    #      MIC1(AOS3729A) -> L1 磁珠 -> C15(10uF 交流耦合) -> INPUT_L1 -> LINPUT1）。
-    #      datasheet §"Input Signal Path"：
-    #        "In single-ended microphone input configuration the microphone signal
-    #         should be input to LINPUT1 or RINPUT1 and the internal non-inverting
-    #         input of the input PGA should be switched to VMID."
-    #      -> 单端配置就是 LMN1=1 / LMP2=LMP3=0（**这正是 R32 的复位默认值**）。
-    #      这里显式写出来，一是为了"配置是自解释的"，二是为了设 LMICBOOST。
-    #
-    #  R0/R1 = 输入 PGA 音量。**复位默认值里 LINMUTE/RINMUTE = 1，也就是出厂静音！**
-    #      datasheet R0 bit7 原文："LINMUTE  DEFAULT 1  1 = Enable Mute"，
-    #      并注明 "IPVU must be set to un-mute"。
-    #      -> 不写这两条，ADC 永远在转换静音：波形是直的、柱状谱一根都没有。
-    #      （这一条是上板实测"说话无反应"的直接原因。）
-    #
-    #  增益怎么定：板载模拟 MEMS 话筒灵敏度约 -38 dBV/Pa，正常说话到它那儿
-    #      只有零点几 mV，而 WM8960 输入满量程约 1 Vrms -> 差着 60 dB 以上。
-    #      所以 PGA 内部 boost +20dB、音量 +24dB，合计约 +44dB。
-    #      增益不够时先加大这两个，不要先怀疑接线。
-    #------------------------------------------------------------------------
-    #  ⚠️ 增益【不要】在这里拉满。上板实测的坑：
-    #     一开始设成 boost +20dB + LINVOL +24dB = +44dB，
-    #     结果话筒和 PGA 的【本底噪声】一起被放大 44dB ——
-    #     屏幕上是"满屏噪声、吹一口气才看得见波形"。
-    #     正确做法：**模拟增益只给够，剩下的在数字域补**。
-    #     数字域放大不引入模拟噪声；而 boost 那一级是整条链最吵的一级，
-    #     所以 boost 直接关掉（+0dB），只用 LINVOL 那级。
-    (0x20, 0x100, "ADCL path: LINPUT1 single-ended, PGA boost +0dB"),
-    (0x21, 0x100, "ADCR path: RINPUT1 single-ended, PGA boost +0dB"),
-    (0x00, 0x127, "L in PGA: IPVU=1 LINMUTE=0 LINVOL +12dB"),
-    (0x01, 0x127, "R in PGA: IPVU=1 RINMUTE=0 RINVOL +12dB"),
+    # PWRMGMT1: VMIDSEL=01 VREF AINL AINR ADCL ADCR **MICB=1** DIGENB=0
+    #   bit1 MICB = 1 是关键：使能 MICBIAS 给话筒提供参考电压
+    (0x19, 0x0FE, "PWRMGMT1: VMIDSEL=01 VREF AINL AINR MICB=1"),
+
     (0x2F, 0x00C, "PWRMGMT3: LOMIX ROMIX"),
+
+    # ★ DAC -> 输出混音器。默认是断开的（见下一条注释）
+    (0x22, 0x100, "L out mixer: LD2LO=1 (DAC -> L mixer)"),
+    (0x25, 0x100, "R out mixer: RD2RO=1 (DAC -> R mixer)"),
+
     (0x1A, 0x1E0, "PWRMGMT2: DACL DACR LOUT1 ROUT1"),
     (0x08, 0x1C4, "CLOCKING2: BCLKDIV=0100 (/4)"),
     (0x07, 0x04A, "IFACE1: MS=1 I2S 24bit"),
+
     (0x34, 0x038, "PLL N: PRESCALE=1 SDM=1 N=8"),
     (0x35, 0x031, "PLL K[23:16]"),
     (0x36, 0x026, "PLL K[15:8]"),
     (0x37, 0x0E9, "PLL K[7:0] -> K=0x3126E9"),
     (0x1A, 0x1E1, "PWRMGMT2 + PLLEN=1 -> PLL ON"),
-    #  ★ 输出混音器：DAC -> 输出混音器 这条路默认是【断开的】！
-    #    datasheet R34(22h) bit8 原文："LD2LO  Left DAC to Left Output Mixer
-    #                                 0 = Disable (Mute)  1 = Enable Path"
-    #    右边在 R37(25h) bit8 "RD2RO"，同样的默认值。
-    #    两条都不写的话：LOUT1/ROUT1 是开着的、音量也设了，但【DAC 的信号
-    #    根本进不到输出混音器】-> 插耳机永远没声音，而且一点报错都没有。
-    #    （这一条是上板做"DAC 测试音"实验时查出来的：
-    #      如果不先补上，测试音听不到会让人误判成"I2C 坏了"。）
-    (0x22, 0x100, "L out mixer: LD2LO=1 (DAC -> L mixer)"),
-    (0x25, 0x100, "R out mixer: RD2RO=1 (DAC -> R mixer)"),
+
+    # ★ ADC 输入通路：话筒在 LINPUT2/LINPUT3 + boost +29dB
+    (0x20, 0x078, "ADCL path: LMP3+LMP2, boost +29dB, LINPUT1 off"),
+    (0x21, 0x078, "ADCR path: RMP3+RMP2, boost +29dB, RINPUT1 off"),
+
+    # ★ DATSEL = 01：单声道话筒数据复制到左右两路
+    (0x17, 0x0C4, "R23 DATSEL=01 (left ADC -> L and R data)"),
+
+    (0x05, 0x000, "DAC CTL1 (default)"),
+    (0x09, 0x000, "IFACE2 (default)"),
+
     (0x02, 0x1F9, "LOUT1 vol +0dB"),
     (0x03, 0x1F9, "ROUT1 vol +0dB"),
     (0x15, 0x1C3, "L ADC vol 0dB"),
     (0x16, 0x1C3, "R ADC vol 0dB"),
     (0x2D, 0x080, "L mixer bypass 0dB"),
     (0x2E, 0x080, "R mixer bypass 0dB"),
-    (0x2B, 0x150, "L input boost LIN3 = 0dB"),
-    (0x2C, 0x00A, "R input boost RIN2 = 0dB"),
+    (0x2B, 0x050, "L input boost 0dB"),
+    (0x2C, 0x00A, "R input boost 0dB"),
+
     (0x04, 0x005, "CLOCKING1: SYSCLKDIV=/2 CLKSEL=PLL"),
 ]
 
