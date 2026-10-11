@@ -37,14 +37,14 @@
 
 module WM8960_init_table #(
     parameter DATA_WIDTH = 16,
-    parameter ADDR_WIDTH = 5          // 装得下 27 条即可
+    parameter ADDR_WIDTH = 5          // 装得下 29 条即可
 ) (
     input      [(ADDR_WIDTH-1):0] addr,
     input                         clk,
     output reg [(DATA_WIDTH-1):0] q
 );
 
-    localparam LUT_SIZE = 27;
+    localparam LUT_SIZE = 29;
     reg [DATA_WIDTH-1:0] rom [0:(2**ADDR_WIDTH)-1];
 
     initial begin
@@ -61,20 +61,22 @@ module WM8960_init_table #(
         rom[10] = {7'h36, 9'b0_0010_0110};  // PLL K[15:8]
         rom[11] = {7'h37, 9'b0_1110_1001};  // PLL K[7:0] -> K=0x3126E9
         rom[12] = {7'h1a, 9'b1_1110_0001};  // PWRMGMT2 + PLLEN=1 -> PLL ON
-        rom[13] = {7'h20, 9'b0_0111_1000};  // ADCL path: LMP3+LMP2, boost +29dB, LINPUT1 off
-        rom[14] = {7'h21, 9'b0_0111_1000};  // ADCR path: RMP3+RMP2, boost +29dB, RINPUT1 off
-        rom[15] = {7'h17, 9'b0_1100_0100};  // R23 DATSEL=01 (left ADC -> L and R data)
-        rom[16] = {7'h05, 9'b0_0000_0000};  // DAC CTL1 (default)
-        rom[17] = {7'h09, 9'b0_0000_0000};  // IFACE2 (default)
-        rom[18] = {7'h02, 9'b1_1111_1001};  // LOUT1 vol +0dB
-        rom[19] = {7'h03, 9'b1_1111_1001};  // ROUT1 vol +0dB
-        rom[20] = {7'h15, 9'b1_1100_0011};  // L ADC vol 0dB
-        rom[21] = {7'h16, 9'b1_1100_0011};  // R ADC vol 0dB
-        rom[22] = {7'h2d, 9'b0_1000_0000};  // L mixer bypass 0dB
-        rom[23] = {7'h2e, 9'b0_1000_0000};  // R mixer bypass 0dB
-        rom[24] = {7'h2b, 9'b0_0101_0000};  // L input boost 0dB
-        rom[25] = {7'h2c, 9'b0_0000_1010};  // R input boost 0dB
-        rom[26] = {7'h04, 9'b0_0000_0101};  // CLOCKING1: SYSCLKDIV=/2 CLKSEL=PLL
+        rom[13] = {7'h20, 9'b1_0011_0000};  // ADCL path: LINPUT1 single-ended, boost +29dB
+        rom[14] = {7'h21, 9'b1_0011_0000};  // ADCR path: RINPUT1 single-ended, boost +29dB
+        rom[15] = {7'h00, 9'b1_0011_0111};  // L in PGA: IPVU=1 LINMUTE=0 LINVOL +24dB
+        rom[16] = {7'h01, 9'b1_0011_0111};  // R in PGA: IPVU=1 RINMUTE=0 RINVOL +24dB
+        rom[17] = {7'h17, 9'b0_1100_0100};  // R23 DATSEL=01 (left ADC -> L and R data)
+        rom[18] = {7'h05, 9'b0_0000_0000};  // DAC CTL1 (default)
+        rom[19] = {7'h09, 9'b0_0000_0000};  // IFACE2 (default)
+        rom[20] = {7'h02, 9'b1_1111_1001};  // LOUT1 vol +0dB
+        rom[21] = {7'h03, 9'b1_1111_1001};  // ROUT1 vol +0dB
+        rom[22] = {7'h15, 9'b1_1100_0011};  // L ADC vol 0dB
+        rom[23] = {7'h16, 9'b1_1100_0011};  // R ADC vol 0dB
+        rom[24] = {7'h2d, 9'b0_1000_0000};  // L mixer bypass 0dB
+        rom[25] = {7'h2e, 9'b0_1000_0000};  // R mixer bypass 0dB
+        rom[26] = {7'h2b, 9'b0_0101_0000};  // L input boost 0dB
+        rom[27] = {7'h2c, 9'b0_0000_1010};  // R input boost 0dB
+        rom[28] = {7'h04, 9'b0_0000_0101};  // CLOCKING1: SYSCLKDIV=/2 CLKSEL=PLL
     end
 
     // 读端口（综合成分布式 ROM）

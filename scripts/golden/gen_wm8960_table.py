@@ -79,9 +79,23 @@ SPEC = [
     (0x37, 0x0E9, "PLL K[7:0] -> K=0x3126E9"),
     (0x1A, 0x1E1, "PWRMGMT2 + PLLEN=1 -> PLL ON"),
 
-    # ★ ADC 输入通路：话筒在 LINPUT2/LINPUT3 + boost +29dB
-    (0x20, 0x078, "ADCL path: LMP3+LMP2, boost +29dB, LINPUT1 off"),
-    (0x21, 0x078, "ADCR path: RMP3+RMP2, boost +29dB, RINPUT1 off"),
+    # ★ ADC 输入通路：**我们这块话筒在 LINPUT1**（原理图：MIC1 -> L1 -> C15 -> INPUT_L1 -> pin4）
+    #     LMN1=1（LINPUT1 接 PGA 反相输入）
+    #     LMP2=LMP3=0 -> 非反相输入内部接 VMID（datasheet 的单端话筒配置）
+    #     LMICBOOST=11（+29dB，话筒信号很小，这一级必须要）
+    (0x20, 0x130, "ADCL path: LINPUT1 single-ended, boost +29dB"),
+    (0x21, 0x130, "ADCR path: RINPUT1 single-ended, boost +29dB"),
+
+    # ★★ 输入 PGA 必须【解静音】★★
+    #   R0/R1 的复位默认值里 LINMUTE/RINMUTE = 1（出厂静音），
+    #   而且 datasheet 注明 "IPVU must be set to un-mute"（bit8 必须写 1 才生效）。
+    #
+    #   ⚠️ 参考例程【不写这两条】却能用 —— 因为它的话筒走 LINPUT2 的 **boost 级**，
+    #      那条路不经过 PGA 的音量级。**我们的话筒走 LINPUT1（PGA 反相输入）**
+    #      ，不解静音的话 ADC 读回来永远是 ~0（-90dBFS 的数字静音）。
+    #      这是"两个模块话筒接的脚不同"导致的、不能照抄的地方。
+    (0x00, 0x137, "L in PGA: IPVU=1 LINMUTE=0 LINVOL +24dB"),
+    (0x01, 0x137, "R in PGA: IPVU=1 RINMUTE=0 RINVOL +24dB"),
 
     # ★ DATSEL = 01：单声道话筒数据复制到左右两路
     (0x17, 0x0C4, "R23 DATSEL=01 (left ADC -> L and R data)"),

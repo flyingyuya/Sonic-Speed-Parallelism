@@ -168,20 +168,22 @@ module tb_wm8960_init;
         exp_reg[10] = 7'h36; exp_dat[10] = 9'h026; exp_note[10] = "PLL K[15:8]";
         exp_reg[11] = 7'h37; exp_dat[11] = 9'h0E9; exp_note[11] = "PLL K[7:0] -> K=0x3126E9";
         exp_reg[12] = 7'h1A; exp_dat[12] = 9'h1E1; exp_note[12] = "PWRMGMT2 + PLLEN=1 -> PLL ";
-        exp_reg[13] = 7'h20; exp_dat[13] = 9'h078; exp_note[13] = "ADCL path: LMP3+LMP2, boos";
-        exp_reg[14] = 7'h21; exp_dat[14] = 9'h078; exp_note[14] = "ADCR path: RMP3+RMP2, boos";
-        exp_reg[15] = 7'h17; exp_dat[15] = 9'h0C4; exp_note[15] = "R23 DATSEL=01 (left ADC ->";
-        exp_reg[16] = 7'h05; exp_dat[16] = 9'h000; exp_note[16] = "DAC CTL1 (default)";
-        exp_reg[17] = 7'h09; exp_dat[17] = 9'h000; exp_note[17] = "IFACE2 (default)";
-        exp_reg[18] = 7'h02; exp_dat[18] = 9'h1F9; exp_note[18] = "LOUT1 vol +0dB";
-        exp_reg[19] = 7'h03; exp_dat[19] = 9'h1F9; exp_note[19] = "ROUT1 vol +0dB";
-        exp_reg[20] = 7'h15; exp_dat[20] = 9'h1C3; exp_note[20] = "L ADC vol 0dB";
-        exp_reg[21] = 7'h16; exp_dat[21] = 9'h1C3; exp_note[21] = "R ADC vol 0dB";
-        exp_reg[22] = 7'h2D; exp_dat[22] = 9'h080; exp_note[22] = "L mixer bypass 0dB";
-        exp_reg[23] = 7'h2E; exp_dat[23] = 9'h080; exp_note[23] = "R mixer bypass 0dB";
-        exp_reg[24] = 7'h2B; exp_dat[24] = 9'h050; exp_note[24] = "L input boost 0dB";
-        exp_reg[25] = 7'h2C; exp_dat[25] = 9'h00A; exp_note[25] = "R input boost 0dB";
-        exp_reg[26] = 7'h04; exp_dat[26] = 9'h005; exp_note[26] = "CLOCKING1: SYSCLKDIV=/2 CL";
+        exp_reg[13] = 7'h20; exp_dat[13] = 9'h130; exp_note[13] = "ADCL path: LINPUT1 single-";
+        exp_reg[14] = 7'h21; exp_dat[14] = 9'h130; exp_note[14] = "ADCR path: RINPUT1 single-";
+        exp_reg[15] = 7'h00; exp_dat[15] = 9'h137; exp_note[15] = "L in PGA: IPVU=1 LINMUTE=0";
+        exp_reg[16] = 7'h01; exp_dat[16] = 9'h137; exp_note[16] = "R in PGA: IPVU=1 RINMUTE=0";
+        exp_reg[17] = 7'h17; exp_dat[17] = 9'h0C4; exp_note[17] = "R23 DATSEL=01 (left ADC ->";
+        exp_reg[18] = 7'h05; exp_dat[18] = 9'h000; exp_note[18] = "DAC CTL1 (default)";
+        exp_reg[19] = 7'h09; exp_dat[19] = 9'h000; exp_note[19] = "IFACE2 (default)";
+        exp_reg[20] = 7'h02; exp_dat[20] = 9'h1F9; exp_note[20] = "LOUT1 vol +0dB";
+        exp_reg[21] = 7'h03; exp_dat[21] = 9'h1F9; exp_note[21] = "ROUT1 vol +0dB";
+        exp_reg[22] = 7'h15; exp_dat[22] = 9'h1C3; exp_note[22] = "L ADC vol 0dB";
+        exp_reg[23] = 7'h16; exp_dat[23] = 9'h1C3; exp_note[23] = "R ADC vol 0dB";
+        exp_reg[24] = 7'h2D; exp_dat[24] = 9'h080; exp_note[24] = "L mixer bypass 0dB";
+        exp_reg[25] = 7'h2E; exp_dat[25] = 9'h080; exp_note[25] = "R mixer bypass 0dB";
+        exp_reg[26] = 7'h2B; exp_dat[26] = 9'h050; exp_note[26] = "L input boost 0dB";
+        exp_reg[27] = 7'h2C; exp_dat[27] = 9'h00A; exp_note[27] = "R input boost 0dB";
+        exp_reg[28] = 7'h04; exp_dat[28] = 9'h005; exp_note[28] = "CLOCKING1: SYSCLKDIV=/2 CL";
     end
 
     //=========================================================================
