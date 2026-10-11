@@ -24,52 +24,55 @@ import sys, os
 # 关键推导见 docs/09-wm8960-module.md §2.5
 # =============================================================================
 SPEC = [
-    # 注释全部用短 ASCII —— 中文说明放在生成文件的头部。
-    # 原因是 Verible 的行宽按终端列数算，CJK 字符通常占 2 列，
-    # 用 Python len() 无法准确预估，干脆避免。
-    #
     #=========================================================================
-    # ★ 2026-10 按【已知能用的参考例程】重写了输入通路
+    # ★ 2026-10 按【官方 C 例程】重写（Open103Z_I2S/WM8960_Record）
     #=========================================================================
-    #   参考：小梅哥 ACG525_audio_loopback_mic（同一个 WM8960 模块 ✗ 能录能放 ✓）
-    #   关键差异（我们原来是错的）：
+    #   官方例程（board mic）的关键配置：
+    #     R25(19h)=0x0E8   R26(1A)=0x1F8   R47(2F)=0x03C
+    #     R4 (04h)=0x000   R7 (07h)=0x002   R0/R1=0x13F
+    #     R20(20h)=0x108   R21(21h)=0x000   R43/R44=0x000
+    #     R5 (05h)=0x00C   R21/R22(15/16)=0x1C3   R23(17h)=0x1C4
+    #     R49(31h)=0x0F7   ← "Enable Left and right speakers"
     #
-    #   ① R25 的 MICB 位 = 0 -> **MICBIAS 一直是关的**
-    #      参考是 1（使能 MICBIAS ✗ 给话筒提供参考电压）✓
-    #      而且 VMIDSEL 参考用 01（2x50k）✗ 我们用 11（2x5k）✗ 一起改过来 ✓
+    #   ★★ 三个我们原来【漏掉/配错】的致命项 ★★
     #
-    #   ② R32/R33（ADC 输入选择）：参考用 0x078
-    #        bit7 LMP3=1  bit6 LMP2=1  bits5:4 LMICBOOST=11(+29dB)  bit8 LMN1=0
-    #      -> **话筒接在 LINPUT2/LINPUT3（非反相输入）✗ 走 boost 级 ✗
-    #         LINPUT1（反相输入）是断开的** ✓
-    #      我们原来写 0x100（只有 LINPUT1 ✗ boost 0dB）✗ 正好接错了脚 ✓
-    #      论坛帖原文："话筒为单端输入 ✗ 输入为 LINPUT2"
+    #   ① R32 (20h)：**必需 LMIC2B = 1**（bit3）
+    #        "Connect Left Input PGA to Left Input Boost Mixer"
+    #        WM8960 的 ADC 输入取的是【输入 Boost 混音器的输出】，
+    #        不是直接取 PGA。LMIC2B=0 -> PGA 的输出进不去 -> ADC 恒为 0。
+    #        -> 这就是我们读到"±256 / -90dBFS 数字静音"的真正原因。
+    #        官方值 0x108 = LMN1=1(LINPUT1) + LMICBOOST=00 + 【LMIC2B=1】
+    #        （我们上一版写 0x130，boost=11 但 LMIC2B=0，正好踩坑）
     #
-    #   ③ R23 (17h) bits[3:2] = DATSEL ✗ **我们原来完全没写**
-    #        DATSEL=01: left data = left ADC; right data = left ADC
-    #      -> **单声道话筒的数据复制到左右两路** ✓ 不写的话右路一直是空的 ✓
-    #      参考值 0x0C4：bit8 TSDEN=1 ✗ bits7:6 VSEL=10 ✗ DATSEL=01 ✓
+    #   ② R26 (1Ah)：**必需 SPKL/SPKR**（bit4/bit3）
+    #        官方 0x1F8 = DACL DACR LOUT1 ROUT1 **SPKL SPKR**
+    #        （我们原来 0x1E1 没有喇叭位 -> 喇叭永远不响）
     #
-    #   ④ 参考【不写 R0/R1】-> 所以输入 PGA 的 LINMUTE 保持默认的 1（静音）
-    #      **说明话筒信号走的是 boost 级 ✗ 不经过 PGA 的音量级** ✓
-    #      所以我们原来那两条"解静音"是**没必要**的 ✗ 去掉 ✓
+    #   ③ R49 (31h) = 0x0F7 【类 D 功放的控制寄存器，我们完全没写过】
+    #        官方注释原文："Analogue Output Control / Enable Left and right speakers"
     #
-    #   ⚠️ 保留我们自己的：PLL（为 24MHz MCLK 推导）✗ 24bit 字长 ✗ 寄存器顺序
-    #      （顺序约束见 docs/09 §2.5 ✗ CLKSEL=1 必须最后 ✓）
+    #   ⚠️ 保留我们自己的：
+    #     · PLL（本模块是 24MHz 晶振 + 我们让 WM8960 当 I2S 主）
+    #     · 24bit 字长（官方是 16bit 从模式 + MCU 提供 MCLK，和我们的板子不同）
+    #     · 寄存器顺序（CLKSEL=1 必须最后）
     #=========================================================================
     (0x0F, 0x000, "software reset (must be 1st)"),
 
-    # PWRMGMT1: VMIDSEL=01 VREF AINL AINR ADCL ADCR **MICB=1** DIGENB=0
-    #   bit1 MICB = 1 是关键：使能 MICBIAS 给话筒提供参考电压
-    (0x19, 0x0FE, "PWRMGMT1: VMIDSEL=01 VREF AINL AINR MICB=1"),
+    # PWRMGMT1: VMIDSEL=01 VREF AINL AINR ADCL ADCR MICB DIGENB
+    #   我们保留 MICB=1（本模块话筒由 VCC_3V3 供电，MICBIAS 接不接都行）
+    (0x19, 0x0FE, "PWRMGMT1: VMIDSEL=01 VREF AINL AINR ADCL ADCR MICB=1"),
 
-    (0x2F, 0x00C, "PWRMGMT3: LOMIX ROMIX"),
+    # PWRMGMT3: LOMIX ROMIX LMIC RMIC（官方 0x03C 全开）
+    #   LMIC/RMIC = 左右输入 Boost 混音器使能，**不打开的话 ADC 也是死的**
+    (0x2F, 0x03C, "PWRMGMT3: LOMIX ROMIX LMIC RMIC"),
 
-    # ★ DAC -> 输出混音器。默认是断开的（见下一条注释）
+    # ★ DAC -> 输出混音器（默认断开）
     (0x22, 0x100, "L out mixer: LD2LO=1 (DAC -> L mixer)"),
     (0x25, 0x100, "R out mixer: RD2RO=1 (DAC -> R mixer)"),
 
-    (0x1A, 0x1E0, "PWRMGMT2: DACL DACR LOUT1 ROUT1"),
+    # ★ PWRMGMT2: 含 SPKL/SPKR（喇叭）—— 官方 0x1F8 的关键就在这两位
+    (0x1A, 0x1E0, "PWRMGMT2: DACL DACR LOUT1 ROUT1 SPKL SPKR"),
+
     (0x08, 0x1C4, "CLOCKING2: BCLKDIV=0100 (/4)"),
     (0x07, 0x04A, "IFACE1: MS=1 I2S 24bit"),
 
@@ -77,40 +80,38 @@ SPEC = [
     (0x35, 0x031, "PLL K[23:16]"),
     (0x36, 0x026, "PLL K[15:8]"),
     (0x37, 0x0E9, "PLL K[7:0] -> K=0x3126E9"),
-    (0x1A, 0x1E1, "PWRMGMT2 + PLLEN=1 -> PLL ON"),
+    (0x1A, 0x1F9, "PWRMGMT2 + PLLEN=1 -> PLL ON (SPKL/SPKR kept)"),
 
-    # ★ ADC 输入通路：**我们这块话筒在 LINPUT1**（原理图：MIC1 -> L1 -> C15 -> INPUT_L1 -> pin4）
-    #     LMN1=1（LINPUT1 接 PGA 反相输入）
-    #     LMP2=LMP3=0 -> 非反相输入内部接 VMID（datasheet 的单端话筒配置）
-    #     LMICBOOST=11（+29dB，话筒信号很小，这一级必须要）
-    (0x20, 0x130, "ADCL path: LINPUT1 single-ended, boost +29dB"),
-    (0x21, 0x130, "ADCR path: RINPUT1 single-ended, boost +29dB"),
+    # ★★ 输入通路：LINPUT1 + 【LMIC2B=1】★★
+    (0x20, 0x108, "ADCL path: LINPUT1 single-ended + LMIC2B=1"),
+    (0x21, 0x000, "ADCR path: off (mono mic, DATSEL copies L to R)"),
 
-    # ★★ 输入 PGA 必须【解静音】★★
-    #   R0/R1 的复位默认值里 LINMUTE/RINMUTE = 1（出厂静音），
-    #   而且 datasheet 注明 "IPVU must be set to un-mute"（bit8 必须写 1 才生效）。
-    #
-    #   ⚠️ 参考例程【不写这两条】却能用 —— 因为它的话筒走 LINPUT2 的 **boost 级**，
-    #      那条路不经过 PGA 的音量级。**我们的话筒走 LINPUT1（PGA 反相输入）**
-    #      ，不解静音的话 ADC 读回来永远是 ~0（-90dBFS 的数字静音）。
-    #      这是"两个模块话筒接的脚不同"导致的、不能照抄的地方。
-    (0x00, 0x137, "L in PGA: IPVU=1 LINMUTE=0 LINVOL +24dB"),
-    (0x01, 0x137, "R in PGA: IPVU=1 RINMUTE=0 RINVOL +24dB"),
+    # ★ DATSEL=01：单声道话筒数据复制到左右两路（官方 0x1C4）
+    (0x17, 0x1C4, "R23: TSDEN=1, DATSEL=01 (left ADC -> L and R)"),
 
-    # ★ DATSEL = 01：单声道话筒数据复制到左右两路
-    (0x17, 0x0C4, "R23 DATSEL=01 (left ADC -> L and R data)"),
+    # Input PGA：IPVU=1 LINMUTE=0 LINVOL +30dB（官方 0x13F）
+    (0x00, 0x13F, "L in PGA: IPVU=1 LINMUTE=0 LINVOL +30dB"),
+    (0x01, 0x13F, "R in PGA: IPVU=1 RINMUTE=0 RINVOL +30dB"),
 
-    (0x05, 0x000, "DAC CTL1 (default)"),
-    (0x09, 0x000, "IFACE2 (default)"),
+    # 输入 boost 混音器：官方不 boost（0x000）
+    (0x2B, 0x000, "L input boost: 0dB"),
+    (0x2C, 0x000, "R input boost: 0dB"),
+
+    # ADC 高通滤波（官方先 0x00C 再 0x000，这里取 HPF 那条）
+    (0x05, 0x00C, "ADC high-pass filter enable"),
+
+    (0x15, 0x1C3, "L ADC digital vol 0dB"),
+    (0x16, 0x1C3, "R ADC digital vol 0dB"),
+    (0x0A, 0x1FF, "L DAC digital vol 0dB (update)"),
+    (0x0B, 0x1FF, "R DAC digital vol 0dB (update)"),
 
     (0x02, 0x1F9, "LOUT1 vol +0dB"),
     (0x03, 0x1F9, "ROUT1 vol +0dB"),
-    (0x15, 0x1C3, "L ADC vol 0dB"),
-    (0x16, 0x1C3, "R ADC vol 0dB"),
     (0x2D, 0x080, "L mixer bypass 0dB"),
     (0x2E, 0x080, "R mixer bypass 0dB"),
-    (0x2B, 0x050, "L input boost 0dB"),
-    (0x2C, 0x00A, "R input boost 0dB"),
+
+    # ★★ R49 (31h)：类 D 功放控制 —— 官方原文 "Enable Left and right speakers" ★★
+    (0x31, 0x0F7, "ClassD ctl: enable speakers"),
 
     (0x04, 0x005, "CLOCKING1: SYSCLKDIV=/2 CLKSEL=PLL"),
 ]
