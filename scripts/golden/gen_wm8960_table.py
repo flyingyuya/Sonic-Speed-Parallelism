@@ -74,6 +74,16 @@ SPEC = [
     (0x36, 0x026, "PLL K[15:8]"),
     (0x37, 0x0E9, "PLL K[7:0] -> K=0x3126E9"),
     (0x1A, 0x1E1, "PWRMGMT2 + PLLEN=1 -> PLL ON"),
+    #  ★ 输出混音器：DAC -> 输出混音器 这条路默认是【断开的】！
+    #    datasheet R34(22h) bit8 原文："LD2LO  Left DAC to Left Output Mixer
+    #                                 0 = Disable (Mute)  1 = Enable Path"
+    #    右边在 R37(25h) bit8 "RD2RO"，同样的默认值。
+    #    两条都不写的话：LOUT1/ROUT1 是开着的、音量也设了，但【DAC 的信号
+    #    根本进不到输出混音器】-> 插耳机永远没声音，而且一点报错都没有。
+    #    （这一条是上板做"DAC 测试音"实验时查出来的：
+    #      如果不先补上，测试音听不到会让人误判成"I2C 坏了"。）
+    (0x22, 0x100, "L out mixer: LD2LO=1 (DAC -> L mixer)"),
+    (0x25, 0x100, "R out mixer: RD2RO=1 (DAC -> R mixer)"),
     (0x02, 0x1F9, "LOUT1 vol +0dB"),
     (0x03, 0x1F9, "ROUT1 vol +0dB"),
     (0x15, 0x1C3, "L ADC vol 0dB"),
