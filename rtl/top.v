@@ -178,6 +178,9 @@ module top #(
     wire aud_rst_n = rst_sys_n & init_done;
 
     wire signed [23:0] rx_l, rx_r;
+    wire               dacdat_audio;
+    wire               dbg_bclk_fall, dbg_frame_start;
+    wire [5:0]         dbg_bit_idx;
     wire               rx_valid;
 
     //=========================================================================
@@ -221,17 +224,17 @@ module top #(
         .bclk       (aud_bclk),
         .lrclk      (aud_lrclk),
         .sdin       (aud_adcdat),
-        .sdout      (aud_dacdat),
+        .sdout      (dacdat_audio),
         .band_gain  (25'd0),                // 全频段 0 dB（后续由 ui_ctrl 驱动）
         .cfg_load   (1'b0),
         .bypass     (1'b0),
         .cfg_busy   (),
         .running    (),
         .dbg_bclk_rise   (),
-        .dbg_bclk_fall   (),
-        .dbg_frame_start (),
+        .dbg_bclk_fall   (dbg_bclk_fall),
+        .dbg_frame_start (dbg_frame_start),
         .dbg_half_start  (),
-        .dbg_bit_idx     (),
+        .dbg_bit_idx     (dbg_bit_idx),
         .dbg_sample_stb  (),
         .dbg_rx_l        (rx_l),
         .dbg_rx_r        (rx_r),
@@ -419,6 +422,60 @@ module top #(
     wire               demo_wr;
     wire signed [23:0] demo_wave;
     wire               demo_wave_we;
+
+    //=========================================================================
+    // 6c-2. DAC 测试音（验证 I2C / I2S / 时钟的"整条 codec 链路"）
+    //-----------------------------------------------------------------------------
+    //   【为什么需要这个】ADC 读回来是 -90dBFS 的"数字静音"，
+    //   这说明 WM8960 的 ADC 根本没在转换。可能的原因只有两类：
+    //     ① I2C 配置没生效（或 PLL/SYSCLK 不对）
+    //     ② 模拟输入侧的问题
+    //   而这两类的【分界线】就是：往 DAC 送一个已知的音，看能不能听到。
+    //
+    //     听得到 -> I2C ✓ I2S ✓ 时钟 ✓ 全是好的 -> 问题纯在模拟输入侧
+    //     听不到 -> 配置/时钟是坏的
+    //
+    //   【怎么产生】不加新模块 —— 直接复用已经逐位验证过的 i2s_tx，
+    //   用它需要的时序信号 audio_top 早就通过 dbg_* 导出来了。
+    //   音频数据用 1 kHz 三角波（48kHz / 48 = 1000Hz），幅度约 75% 满量程。
+    //
+    //   【怎么开】UART 敲 T08（ui_demo[3]=1）；T00 关掉。
+    // =========================================================================
+    reg  [5:0]        tone_ph;
+    reg  signed [23:0] tone_val;
+
+    wire signed [6:0] tph7 = {1'b0, tone_ph};
+    // 三角波：ph 0..47 -> 值 -12..+11..-12（一个完整周期）
+    wire signed [6:0] tri7 = (tph7 < 7'sd24) ? (tph7 - 7'sd12) : (7'sd35 - tph7);
+    wire signed [25:0] tsh = tri7 <<< 19;          // 约 ±0.75 满量程
+
+    always @(posedge clk_sys) begin
+        if (!rst_sys_n) begin
+            tone_ph  <= 6'd0;
+            tone_val <= 24'sd0;
+        end else if (dbg_frame_start) begin       // 每帧一个采样 = 48 kHz
+            tone_ph  <= (tone_ph == 6'd47) ? 6'd0 : tone_ph + 1'b1;
+            tone_val <= tsh[23:0];
+        end
+    end
+
+    wire dacdat_tone;
+    wire tone_on = ui_demo[3];
+
+    i2s_tx #(.SLOT(32), .DATA_BITS(24), .DW(24)) u_tone_tx (
+        .clk         (clk_sys),
+        .rst_n       (rst_sys_n),
+        .bclk_fall   (dbg_bclk_fall),
+        .frame_start (dbg_frame_start),
+        .bit_idx     (dbg_bit_idx),
+        .l_data      (tone_val),
+        .r_data      (tone_val),
+        .data_en     (1'b1),
+        .sdout       (dacdat_tone)
+    );
+
+    // 测试音打开时接管 DACDAT，否则走正常音频
+    assign aud_dacdat = tone_on ? dacdat_tone : dacdat_audio;
 
     wire demo_on = (ui_demo[1:0] != 2'd0);
 
