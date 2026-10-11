@@ -13,7 +13,22 @@
 module i2s_rx #(
     parameter integer SLOT      = 32,   // 槽位宽
     parameter integer DATA_BITS = 24,   // 有效数据位
-    parameter integer DW        = 24    // 输出样本位宽（Q1.(DW-1)）
+    parameter integer DW        = 24,   // 输出样本位宽（Q1.(DW-1)）
+
+    //-------------------------------------------------------------------------
+    // 帧内位偏移：数据在 SLOT 位槽里是【左对齐】还是【右对齐】
+    //-----------------------------------------------------------------------------
+    //   I2S 标准（WM8960 手册）：24bit 数据 MSB 先出、紧跟 LRCLK 跳变，
+    //   后面补 0 填满槽 -> **左对齐** -> OFF = 0。
+    //
+    //   ⚠️ 但上板实测"说话完全没反应、只有吹气/手靠近才有变化"，
+    //      而"幅度小 256 倍 + 恒定直流 + 全频段量化噪声"正好是
+    //      **读到了 8 个零 + 高 16 位数据** 的特征（= 右对齐）
+    //      -> 所以这里做成参数，OFF = SLOT - DATA_BITS = 8 就是右对齐。
+    //
+    //   这是【上板调试用】的开关：改这一行（0 或 8）、重新综合，就能排除
+    //   "对齐方式和我以为的不一样"这个可能。确认之后把正确值固定下来。
+    parameter integer OFF       = 0
 ) (
     input  wire clk,
     input  wire rst_n,
@@ -37,9 +52,13 @@ module i2s_rx #(
     reg [NFRAME-1:0] sr;
     wire [NFRAME-1:0] sr_nxt = {sr[NFRAME-2:0], sdin};
 
-    // 槽内高 DATA_BITS 位 -> DW 位满量程
-    wire [DATA_BITS-1:0] l_raw = sr_nxt[NFRAME-1 -: DATA_BITS];
-    wire [DATA_BITS-1:0] r_raw = sr_nxt[SLOT-1   -: DATA_BITS];
+    // 槽内取 DATA_BITS 位。OFF 是"从槽的最高位往下数、跳过几位"：
+    //   OFF = 0            -> 取槽的高 DATA_BITS 位（左对齐，I2S 标准）
+    //   OFF = SLOT-DATA_BITS -> 取槽的低 DATA_BITS 位（右对齐）
+    // sr 是左移进来的，sr[63] 是帧的第 0 位，所以"帧第 k 位" = sr[63-k]。
+    //   左声道占帧的 [0, SLOT)，右声道占 [SLOT, 2*SLOT)。
+    wire [DATA_BITS-1:0] l_raw = sr_nxt[NFRAME-1-OFF -: DATA_BITS];
+    wire [DATA_BITS-1:0] r_raw = sr_nxt[SLOT-1-OFF   -: DATA_BITS];
 
     generate
         if (UP == 0) begin : g_same
