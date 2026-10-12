@@ -22,7 +22,7 @@
 // 检查项：
 //   ① 跨时钟域快照   30 根柱高跨域后逐根一致
 //   ② 颜色           【全部 130560 个有效像素】逐一比对
-//   ③ 柱状区像素数   每根柱点亮数 = (bh*3/16) * (8-BAR_GAP)
+//   ③ 柱状区像素数   每根柱点亮数 = (bh*3/8) * (8-BAR_GAP)
 //   ④ 极坐标覆盖     30 根辐条都要有像素
 //   ⑤ 帧内不撕裂     非 sof 拍 bars 不允许变化
 //   ⑥ 色相滚动       跨帧 hue_off 递增（波形也用 rb_pol 上色）
@@ -178,10 +178,10 @@ module tb_disp_top;
     // ---- 柱状 ----
     wire [5:0]    e_bbar = {1'b0, x_d[8:3]};
     wire [HW-1:0] e_bbh  = bars_d[e_bbar*HW +: HW];
-    // 系数必须和 disp_mix 里一致：BARS_H=96 -> bh*3/16
-    //   （按钮带改成可折叠后柱状区恢复全高，系数也就回到 3/16）
+    // 系数必须和 disp_mix 里一致：BARS_H=192 -> bh*3/8
+    //   （柱子从 96px 抬到 192px，系数从 3/16 变成 3/8）
     wire [10:0]   e_bmul = (e_bbh << 1) + e_bbh;
-    wire [7:0]    e_bhpx = e_bmul[10:4];
+    wire [7:0]    e_bhpx = e_bmul[10:3];
     wire [8:0]    e_bfb  = VDISP[8:0] - 9'd1 - y_d;
     wire e_b_hit = (y_d >= BARS_Y0[8:0]) && (e_bfb < {2'b00, e_bhpx})
                    && (x_d[2:0] >= BAR_GAP[2:0]);
@@ -489,7 +489,7 @@ module tb_disp_top;
         n_err_bar = 0;
         for (k = 0; k < NBARS; k = k + 1) begin
             // 系数必须和 disp_mix 一致：BARS_H=58 时是 bh*29/256（原来是 bh*3/16）
-            exp_px = (got_bars[k] * 3) / 16 * NBAR_W;
+            exp_px = (got_bars[k] * 3) / 8 * NBAR_W;
             if (bar_cnt[k] != exp_px) begin
                 n_err_bar = n_err_bar + 1;
                 if (n_err_bar <= 6)

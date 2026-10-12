@@ -132,8 +132,11 @@ module disp_mix #(
     //   系数按 BARS_H 算：BARS_H=96 时是 bh*3/16（96*16/3 ≈ 512）。
     //   按钮带改成【可折叠、不占垂直空间】之后，柱状区恢复全高 96 px，
     //   所以系数也回到 3/16。
+    //   ⚠️ 系数必须和 `DISP_BARS_H 同步改：系数 = BARS_H / 512。
+    //      原来是 96/512 = 3/16（右移 4）；现在是 192/512 = 3/8（右移 3）。
+    //      忘了改的话柱子不是超高被切、就是只长到一半。
     wire [HW+1:0] bmul = (bbh_a << 1) + bbh_a;       // bh * 3
-    wire [YW-1:0] bhpx = bmul[HW+1 : 4];             // /16 -> 0..95
+    wire [YW-1:0] bhpx = bmul[HW+1 : 3];             // /8 -> 0..191
 
     wire [YW-1:0] b_from_bot = VDISP_L - 1'b1 - y;
     wire          b_area     = (y >= Y0_L);

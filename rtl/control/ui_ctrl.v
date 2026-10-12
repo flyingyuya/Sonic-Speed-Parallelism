@@ -83,7 +83,9 @@ module ui_ctrl #(
     reg [7:0] preset [0:NPRESET-1];
 
     initial begin
-        preset[0] = 8'b0000_0101;       // 柱状 + 波形
+        // 【2026-10】用户反馈极坐标图平时用不上，默认藏起来。
+        //   preset[0] 就是"柱状 + 波形"，把它设成上电默认。
+        preset[0] = 8'b0000_0101;       // 柱状 + 波形  <- 上电默认
         preset[1] = 8'b0000_0110;       // 极坐标 + 波形
         preset[2] = 8'b0000_0111;       // 三个全开
         preset[3] = 8'b0000_0001;       // 只柱状
@@ -127,7 +129,7 @@ module ui_ctrl #(
             cfg_bg_mode   <= 8'd0;
             cfg_auto      <= 8'd0;
             cfg_demo      <= 8'd0;              // 上电关（走真实音频）
-            view_idx      <= 4'd2;              // 对应 preset[2]（全开）
+            view_idx      <= 4'd0;              // 对应 preset[0]（柱状+波形，极坐标隐藏）
         end else if (wr_en) begin
             case (wr_addr)
                 4'h0: cfg_view      <= wr_data;
