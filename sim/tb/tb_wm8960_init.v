@@ -156,36 +156,36 @@ module tb_wm8960_init;
 
     initial begin
         exp_reg[ 0] = 7'h0F; exp_dat[ 0] = 9'h000; exp_note[ 0] = "software reset (must be 1st)";
-        exp_reg[ 1] = 7'h19; exp_dat[ 1] = 9'h0FE; exp_note[ 1] = "PWRMGMT1: VMIDSEL=01 VREF AI";
-        exp_reg[ 2] = 7'h2F; exp_dat[ 2] = 9'h03C; exp_note[ 2] = "PWRMGMT3: LOMIX ROMIX LMIC R";
-        exp_reg[ 3] = 7'h22; exp_dat[ 3] = 9'h100; exp_note[ 3] = "L out mixer: LD2LO=1 (DAC ->";
-        exp_reg[ 4] = 7'h25; exp_dat[ 4] = 9'h100; exp_note[ 4] = "R out mixer: RD2RO=1 (DAC ->";
-        exp_reg[ 5] = 7'h1A; exp_dat[ 5] = 9'h1E0; exp_note[ 5] = "PWRMGMT2: DACL DACR LOUT1 RO";
+        exp_reg[ 1] = 7'h19; exp_dat[ 1] = 9'h0FE; exp_note[ 1] = "PWRMGMT1: VMIDSEL=01 VREF AINL";
+        exp_reg[ 2] = 7'h2F; exp_dat[ 2] = 9'h03C; exp_note[ 2] = "PWRMGMT3: LOMIX ROMIX LMIC RMI";
+        exp_reg[ 3] = 7'h22; exp_dat[ 3] = 9'h100; exp_note[ 3] = "L out mixer: LD2LO=1 (DAC -> L";
+        exp_reg[ 4] = 7'h25; exp_dat[ 4] = 9'h100; exp_note[ 4] = "R out mixer: RD2RO=1 (DAC -> R";
+        exp_reg[ 5] = 7'h1A; exp_dat[ 5] = 9'h1E0; exp_note[ 5] = "PWRMGMT2: DACL DACR LOUT1 ROUT";
         exp_reg[ 6] = 7'h08; exp_dat[ 6] = 9'h1C4; exp_note[ 6] = "CLOCKING2: BCLKDIV=0100 (/4)";
         exp_reg[ 7] = 7'h07; exp_dat[ 7] = 9'h04A; exp_note[ 7] = "IFACE1: MS=1 I2S 24bit";
         exp_reg[ 8] = 7'h34; exp_dat[ 8] = 9'h038; exp_note[ 8] = "PLL N: PRESCALE=1 SDM=1 N=8";
         exp_reg[ 9] = 7'h35; exp_dat[ 9] = 9'h031; exp_note[ 9] = "PLL K[23:16]";
         exp_reg[10] = 7'h36; exp_dat[10] = 9'h026; exp_note[10] = "PLL K[15:8]";
         exp_reg[11] = 7'h37; exp_dat[11] = 9'h0E9; exp_note[11] = "PLL K[7:0] -> K=0x3126E9";
-        exp_reg[12] = 7'h1A; exp_dat[12] = 9'h1F9; exp_note[12] = "PWRMGMT2 + PLLEN=1 -> PLL ON";
-        exp_reg[13] = 7'h20; exp_dat[13] = 9'h108; exp_note[13] = "ADCL path: LINPUT1 single-en";
-        exp_reg[14] = 7'h21; exp_dat[14] = 9'h000; exp_note[14] = "ADCR path: off (mono mic, DA";
-        exp_reg[15] = 7'h17; exp_dat[15] = 9'h1C4; exp_note[15] = "R23: TSDEN=1, DATSEL=01 (lef";
-        exp_reg[16] = 7'h00; exp_dat[16] = 9'h13F; exp_note[16] = "L in PGA: IPVU=1 LINMUTE=0 L";
-        exp_reg[17] = 7'h01; exp_dat[17] = 9'h13F; exp_note[17] = "R in PGA: IPVU=1 RINMUTE=0 R";
+        exp_reg[12] = 7'h1A; exp_dat[12] = 9'h1F9; exp_note[12] = "PWRMGMT2 + PLLEN=1 -> PLL ON (";
+        exp_reg[13] = 7'h20; exp_dat[13] = 9'h108; exp_note[13] = "ADCL path: LINPUT1 single-ende";
+        exp_reg[14] = 7'h21; exp_dat[14] = 9'h000; exp_note[14] = "ADCR path: off (mono mic, DATS";
+        exp_reg[15] = 7'h17; exp_dat[15] = 9'h1C4; exp_note[15] = "R23: TSDEN=1, DATSEL=01 (left ";
+        exp_reg[16] = 7'h00; exp_dat[16] = 9'h117; exp_note[16] = "L in PGA: IPVU=1 LINMUTE=0 LIN";
+        exp_reg[17] = 7'h01; exp_dat[17] = 9'h117; exp_note[17] = "R in PGA: IPVU=1 RINMUTE=0 RIN";
         exp_reg[18] = 7'h2B; exp_dat[18] = 9'h000; exp_note[18] = "L input boost: 0dB";
         exp_reg[19] = 7'h2C; exp_dat[19] = 9'h000; exp_note[19] = "R input boost: 0dB";
-        exp_reg[20] = 7'h05; exp_dat[20] = 9'h00C; exp_note[20] = "ADC high-pass filter enable";
+        exp_reg[20] = 7'h05; exp_dat[20] = 9'h000; exp_note[20] = "R5: DACMU=0 (unmute DAC!), ADC";
         exp_reg[21] = 7'h15; exp_dat[21] = 9'h1C3; exp_note[21] = "L ADC digital vol 0dB";
         exp_reg[22] = 7'h16; exp_dat[22] = 9'h1C3; exp_note[22] = "R ADC digital vol 0dB";
-        exp_reg[23] = 7'h0A; exp_dat[23] = 9'h1FF; exp_note[23] = "L DAC digital vol 0dB (updat";
-        exp_reg[24] = 7'h0B; exp_dat[24] = 9'h1FF; exp_note[24] = "R DAC digital vol 0dB (updat";
+        exp_reg[23] = 7'h0A; exp_dat[23] = 9'h1FF; exp_note[23] = "L DAC digital vol 0dB (update)";
+        exp_reg[24] = 7'h0B; exp_dat[24] = 9'h1FF; exp_note[24] = "R DAC digital vol 0dB (update)";
         exp_reg[25] = 7'h02; exp_dat[25] = 9'h1F9; exp_note[25] = "LOUT1 vol +0dB";
         exp_reg[26] = 7'h03; exp_dat[26] = 9'h1F9; exp_note[26] = "ROUT1 vol +0dB";
         exp_reg[27] = 7'h2D; exp_dat[27] = 9'h080; exp_note[27] = "L mixer bypass 0dB";
         exp_reg[28] = 7'h2E; exp_dat[28] = 9'h080; exp_note[28] = "R mixer bypass 0dB";
         exp_reg[29] = 7'h31; exp_dat[29] = 9'h0F7; exp_note[29] = "ClassD ctl: enable speakers";
-        exp_reg[30] = 7'h04; exp_dat[30] = 9'h005; exp_note[30] = "CLOCKING1: SYSCLKDIV=/2 CLKS";
+        exp_reg[30] = 7'h04; exp_dat[30] = 9'h005; exp_note[30] = "CLOCKING1: SYSCLKDIV=/2 CLKSEL";
     end
 
     //=========================================================================

@@ -89,16 +89,30 @@ SPEC = [
     # ★ DATSEL=01：单声道话筒数据复制到左右两路（官方 0x1C4）
     (0x17, 0x1C4, "R23: TSDEN=1, DATSEL=01 (left ADC -> L and R)"),
 
-    # Input PGA：IPVU=1 LINMUTE=0 LINVOL +30dB（官方 0x13F）
-    (0x00, 0x13F, "L in PGA: IPVU=1 LINMUTE=0 LINVOL +30dB"),
-    (0x01, 0x13F, "R in PGA: IPVU=1 RINMUTE=0 RINVOL +30dB"),
+    # Input PGA：IPVU=1 LINMUTE=0 ＋ 【0dB】
+    #   官方用 +30dB -> 那是给它那颗【驻极体】话筒的（灵敏度低）。
+    #   我们板上是 MEMS 话筒（AOS3729A-T42）✗ 灵敏度高得多 ✗
+    #   照抄 +30dB 的实测现象是："不说话也有一大片噪声 ✗ 波形几乎失真 ✗
+    #   频谱全频段都是高柱子" —— 底噪被放大了 30dB，把信号淹掉了。
+    #   正确做法：**模拟增益只给够 ✗ 剩下在数字域补**（显示侧的 G 命令能到 x256，
+    #   数字域放大不引入模拟噪声）。所以这里先用 0dB，需要时按 G 加大。
+    (0x00, 0x117, "L in PGA: IPVU=1 LINMUTE=0 LINVOL 0dB"),
+    (0x01, 0x117, "R in PGA: IPVU=1 RINMUTE=0 RINVOL 0dB"),
 
     # 输入 boost 混音器：官方不 boost（0x000）
     (0x2B, 0x000, "L input boost: 0dB"),
     (0x2C, 0x000, "R input boost: 0dB"),
 
-    # ADC 高通滤波（官方先 0x00C 再 0x000，这里取 HPF 那条）
-    (0x05, 0x00C, "ADC high-pass filter enable"),
+    # ★★ R5 (05h)：DACMU 必须 = 0，否则 DAC 一直静音 ★★
+    #   datasheet 原文（P41）："The DAC is soft-muted by default. To play back
+    #   an audio signal, this function must first be disabled by setting the
+    #   DACMU bit to zero."
+    #     bit3 DACMU  默认 1 -> 【出厂静音】
+    #     bit0 ADCHPD 默认 0 -> ADC 高通【开启】（这正是我们要的，去直流）
+    #   ⚠️ 官方例程写两条：先 0x00C（配 HPF/去加重）再 0x0000（解静音）。
+    #      我上一版只抄了第一条 -> DACMU 一直是 1 -> DAC 永远静音。
+    #      这就是"喇叭/耳机接了也没声音"的直接原因。
+    (0x05, 0x000, "R5: DACMU=0 (unmute DAC!), ADCHPD=0 (ADC HPF on)"),
 
     (0x15, 0x1C3, "L ADC digital vol 0dB"),
     (0x16, 0x1C3, "R ADC digital vol 0dB"),
