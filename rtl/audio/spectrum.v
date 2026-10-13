@@ -43,7 +43,16 @@ module spectrum #(
     parameter integer DW      = 25,     // fft_core 的 y_mag 位宽
     parameter integer HW      = 9,      // 柱高位宽
     parameter integer DECAY   = 6,      // 每帧衰减量（0 = 不衰减，只保持峰值）
-    parameter integer DB_OFFS = 64,     // log2 偏移（Q5.3）；mag < 2^(OFFS/8) 显示为 0
+    // DB_OFFS：多小的信号算"没有信号"（显示成 0）。
+    //   单位是 log2 的 Q5.3，所以 64 = 2^8、80 = 2^10、96 = 2^12。
+    //
+    //   【2026-10 从 64 调到 80】用户反馈"安静时全频段都有柱子 ✗ 高频也是"。
+    //   根因是【话筒的 SNR 天生比线路输入差 30~40 dB】（Music-Spectrum 那个
+    //   项目用的是 Line In ✗ 信噪比 90~100dB ✗ 我们是 MEMS 话筒 ✗ 只有 50~60dB）。
+    //   把门槛抬高 4 倍（2^8 -> 2^10）等于把底噪那一层直接判成 0，
+    //   画面立刻干净很多；代价是**比 2^10 还弱的真实信号也不显示了**。
+    //   想再干净就往 96 调，想更灵敏就回到 64 —— 这个数是【观感旋钮】。
+    parameter integer DB_OFFS = 80,     // log2 偏移（Q5.3）；mag < 2^(OFFS/8) 显示为 0
     parameter integer SCALE_SH= 2,
 
     //-------------------------------------------------------------------------
