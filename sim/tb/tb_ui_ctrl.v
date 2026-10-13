@@ -154,7 +154,7 @@ module tb_ui_ctrl;
         // ③ 复位后的默认值
         //---------------------------------------------------------------------
         $display("");
-        if (cfg_view !== 8'b0000_0111 || cfg_hue_spd !== 8'd6 ||
+        if (cfg_view !== 8'b0000_0101 || cfg_hue_spd !== 8'd6 ||
             cfg_style !== 8'd0 || cfg_bg_mode !== 8'd0 || cfg_auto !== 8'd0 ||
             cfg_demo !== 8'd0 || cfg_wave_gain !== 8'd0) begin
             n_err = n_err + 1;

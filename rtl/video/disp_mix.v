@@ -68,7 +68,7 @@ module disp_mix #(
 
     // ---- 波形区 ----
     parameter integer WAVE_CY  = `DISP_WAVE_CY,
-    parameter integer WAVE_AMP = `DISP_WAVE_AMP,
+    parameter integer WAVE_AMP = `DISP_WAVE_AMP,   // 上限必须 <= 2^(24-SH)-1
     parameter integer WAVE_TH  = `DISP_WAVE_TH
 ) (
     input  wire [XW-1:0]        x,
@@ -135,8 +135,7 @@ module disp_mix #(
     //   ⚠️ 系数必须和 `DISP_BARS_H 同步改：系数 = BARS_H / 512。
     //      原来是 96/512 = 3/16（右移 4）；现在是 192/512 = 3/8（右移 3）。
     //      忘了改的话柱子不是超高被切、就是只长到一半。
-    wire [HW+1:0] bmul = (bbh_a << 1) + bbh_a;       // bh * 3
-    wire [YW-1:0] bhpx = bmul[HW+1 : 3];             // /8 -> 0..191
+    wire [YW-1:0] bhpx = bbh_a[HW-1:1];              // /2 -> 0..255（= BARS_H-1）
 
     wire [YW-1:0] b_from_bot = VDISP_L - 1'b1 - y;
     wire          b_area     = (y >= Y0_L);
@@ -178,7 +177,8 @@ module disp_mix #(
     //   ⚠️ 一开始写的是 >>20，满量程只剩 ±8 像素，波形几乎是一条直线。
     //      移位量要按"满量程映射到 WAVE_AMP"来算，不能凭感觉。
     wire [24:0] wabs = wave[23] ? ({1'b0, ~wave} + 1'b1) : {1'b0, wave};
-    wire [5:0]  wraw = wabs[23:18];                  // 0..31
+    //   右移量 = `DISP_WAVE_SH（18 -> 满量程 31；17 -> 63）
+    wire [5:0]  wraw = wabs[23:`DISP_WAVE_SH];       // 0..63
     wire [5:0]  wclamp = (wraw > WAVE_AMP[5:0]) ? WAVE_AMP[5:0] : wraw;
 
     // × pres_wav/128（右移 7 位）—— 切换波形视图时振幅平滑地长出来
