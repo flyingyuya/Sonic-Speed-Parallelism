@@ -96,8 +96,8 @@ SPEC = [
     #   频谱全频段都是高柱子" —— 底噪被放大了 30dB，把信号淹掉了。
     #   正确做法：**模拟增益只给够 ✗ 剩下在数字域补**（显示侧的 G 命令能到 x256，
     #   数字域放大不引入模拟噪声）。所以这里先用 0dB，需要时按 G 加大。
-    (0x00, 0x117, "L in PGA: IPVU=1 LINMUTE=0 LINVOL 0dB"),
-    (0x01, 0x117, "R in PGA: IPVU=1 RINMUTE=0 RINVOL 0dB"),
+    (0x00, 0x127, "L in PGA: IPVU=1 LINMUTE=0 LINVOL +12dB"),
+    (0x01, 0x127, "R in PGA: IPVU=1 RINMUTE=0 RINVOL +12dB"),
 
     # 输入 boost 混音器：官方不 boost（0x000）
     (0x2B, 0x000, "L input boost: 0dB"),

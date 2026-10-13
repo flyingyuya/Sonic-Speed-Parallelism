@@ -191,8 +191,12 @@ module disp_top #(
         .clk(clk_pix), .rst_n(rst_pix_n), .din(ui_mode), .dout(ui_mode_s));
     cdc_sync #(.WIDTH(4), .RESET_VAL(4'd0)) u_sync_style (
         .clk(clk_pix), .rst_n(rst_pix_n), .din(ui_style), .dout(ui_style_s));
-    // 复位值取 ui_ctrl 的上电默认（三视图全开），免得第一帧闪成“什么都没有”
-    cdc_sync #(.WIDTH(3), .RESET_VAL(3'b111)) u_sync_view (
+    // ⚠️ 复位值必须和 ui_ctrl 的上电默认【一致】。ui_ctrl 现在默认 preset[0]
+    //    = 3'b101（柱状+波形，极坐标隐藏），这里还写 3'b111 的话，
+    //    上电头几帧是三个全开 —— 而且【如果 ui_ctrl 的值一直没变过，
+    //    它就不会重发，画面会永久停在复位值上】，极坐标关不掉。
+    //    （和 wave_gain 那次是同一个坑：改了默认值，忘了改这里的复位值。）
+    cdc_sync #(.WIDTH(3), .RESET_VAL(3'b101)) u_sync_view (
         .clk(clk_pix), .rst_n(rst_pix_n), .din(ui_view), .dout(ui_view_s));
     cdc_sync #(.WIDTH(8), .RESET_VAL(8'd6)) u_sync_hue (
         .clk(clk_pix), .rst_n(rst_pix_n), .din(ui_hue_spd), .dout(ui_hue_spd_s));
