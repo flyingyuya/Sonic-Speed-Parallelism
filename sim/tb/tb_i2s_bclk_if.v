@@ -63,14 +63,34 @@ module tb_i2s_bclk_if;
     reg     lrclk = 1'b0;
     integer mb    = 0;
 
+    // ⚠️⚠️ BCLK 和 LRCLK 必须【分开】产生！
+    //   第一版把 `bclk = 0` 和 `lrclk = ...` 写在同一个 initial 块的同一时刻，
+    //   于是 LRCLK 的变化和 negedge bclk 在【同一个时间步】发生 ——
+    //   激励块里那个 `a_lr_chg = lrclk ^ a_lr_d` 永远看不到 1
+    //   （要么 lrclk 还没变，要么 a_lr_d 已经在同一 delta 被更新了）。
+    //   症状：激励从装载逻辑一次都不触发，adcdat 恒 0，
+    //        看起来却像"DUT 收不到数据"。
+    //
+    //   现在：bclk 用 initial 产生，lrclk 用 always @(negedge bclk) 产生。
+    //   两者顺序就确定了 —— 激励块在同一时刻看到的是【旧的 lrclk】，
+    //   下一个 negedge 才看到变化，边沿检测稳定成立。
     initial begin
         forever begin
             #(TBCLK/2.0);
             bclk = 1'b1;
             #(TBCLK/2.0);
-            bclk = 1'b0;
-            mb   = (mb == 2*SLOT - 1) ? 0 : mb + 1;
-            lrclk = (mb >= SLOT);          // ← LRCK 在下降沿翻转（标准 I2S）
+            bclk = 1'b0;                   // 只翻 BCLK
+        end
+    end
+
+    // LRCK 在 BCLK 下降沿翻转（标准 I2S），独立成块 -> 无竞态
+    always @(negedge bclk) begin
+        if (!rst_n) begin
+            mb    <= 0;
+            lrclk <= 1'b0;
+        end else begin
+            mb    <= (mb == 2*SLOT - 1) ? 0 : mb + 1;
+            lrclk <= ((mb == 2*SLOT - 1) ? 0 : mb + 1) >= SLOT;
         end
     end
 
@@ -125,12 +145,18 @@ module tb_i2s_bclk_if;
         d_lr_r    <= lrclk;
         cap_valid <= 1'b0;
         if (d_lr_chg) begin
+            // ⚠️ 这一拍【既要把刚结束的那一路锁存，又要开始收新的一路】。
+            //    I2S 的约定是"LRCK 变、下一个上升沿接收方就采 MSB"，
+            //    而这里就是那个上升沿 —— 所以 dacdat 上此刻已经是【新声道的 MSB】，
+            //    不能清零，必须把它当成第一位收进来。
+            //    （第一版写成 `d_sh <= 0` —— 等于把每一路的 MSB 丢掉了，
+            //      整整差一位，症状是"收回来的值全是原值的 1/2 再错过一位"。）
             if (d_lr_r == 1'b0) cap_l <= d_sh[SLOT-1 -: DW];   // 左声道收完
             else begin
                 cap_r     <= d_sh[SLOT-1 -: DW];               // 右声道收完 = 一帧完成
                 cap_valid <= 1'b1;
             end
-            d_sh <= {SLOT{1'b0}};
+            d_sh <= {{(SLOT-1){1'b0}}, dacdat};                // 新一路的第 1 位
         end else begin
             d_sh <= {d_sh[SLOT-2:0], dacdat};
         end
