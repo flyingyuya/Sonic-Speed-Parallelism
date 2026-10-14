@@ -150,6 +150,21 @@ module tb_i2s_bclk_if;
     );
 
     //=========================================================================
+    // 调试：每帧起点（LRCK 下降沿）打印一次 DUT 内部状态
+    //   这一类问题（收不到数据）光看接口是看不出来的，必须把内部打出来。
+    //=========================================================================
+    integer dbg_n = 0;
+    always @(negedge lrclk) begin
+        if (rst_n && dbg_n < 12) begin
+            dbg_n = dbg_n + 1;
+            $display("    [dbg%0d] lr_d=%b rbit=%0d sr=%06h l_acc=%06h r_acc=%06h rx_tog=%b | tsr=%08h tlrdn=%b txhen=%06h | adcdat=%b",
+                     dbg_n, u_dut.lr_d, u_dut.rbit,
+                     u_dut.sr[23:0], u_dut.l_acc, u_dut.r_acc, u_dut.rx_tog,
+                     u_dut.tsr, u_dut.tlr_dn, u_dut.tx_l_hold, adcdat);
+        end
+    end
+
+    //=========================================================================
     // 工具任务
     //=========================================================================
     // 等在 clk 域收到 n 帧
