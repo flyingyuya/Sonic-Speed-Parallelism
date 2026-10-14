@@ -224,6 +224,19 @@ module tb_i2s_bclk_if;
                      tx_l, tx_r, u_dut.tx_l_hold[DW-1:0], rst_n);
     end
 
+    // 逐位对齐：围绕一次 TX 换声道，把 DUT 和 TB 两侧的位流都打出来
+    //   只在 tx_l_hold 有值之后开始打，打满 40 拍
+    integer bit_n = 0;
+    reg     bit_on = 1'b0;
+    always @(posedge bclk) begin
+        if (u_dut.tx_l_hold[DW-1:0] !== 24'd0) bit_on <= 1'b1;
+        if (bit_on && bit_n < 40) begin
+            $display("  [bit%02d] lrclk=%b dacdat=%b | dut.tsr=%032b | tb.d_sh=%032b",
+                     bit_n, lrclk, dacdat, u_dut.tsr, d_sh);
+            bit_n = bit_n + 1;
+        end
+    end
+
     //=========================================================================
     // 工具任务
     //=========================================================================
