@@ -112,7 +112,7 @@ RTL="rtl/fft/fft_addr_gen.v rtl/fft/fft_twiddle_rom.v rtl/fft/fft_butterfly.v rt
      rtl/control/ui_ctrl.v \
      rtl/control/uart_rx.v rtl/control/uart_tx.v rtl/control/cmd_proc.v \
      rtl/audio/i2s_clkgen.v rtl/audio/i2s_rx.v rtl/audio/i2s_tx.v \
-     rtl/audio/i2s_slave_clk.v \
+     rtl/audio/i2s_slave_clk.v rtl/audio/i2s_bclk_if.v \
      rtl/audio/eq_cascade.v rtl/audio/eq_coeff_rom.v rtl/audio/audio_top.v \
      rtl/audio/spectrum.v rtl/audio/spectrum_map.v \
      rtl/common/dc_block.v rtl/common/fir_sym.v rtl/common/env_track.v \
