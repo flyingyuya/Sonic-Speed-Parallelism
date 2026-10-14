@@ -64,8 +64,8 @@ module WM8960_init_table #(
         rom[13] = {7'h20, 9'b1_0000_1000};  // ADCL path: LINPUT1 single-ended + LMIC2B=1
         rom[14] = {7'h21, 9'b0_0000_0000};  // ADCR path: off (mono mic, DATSEL copies L to R)
         rom[15] = {7'h17, 9'b1_1100_0100};  // R23: TSDEN=1, DATSEL=01 (left ADC -> L and R)
-        rom[16] = {7'h00, 9'b1_0010_0111};  // L in PGA: IPVU=1 LINMUTE=0 LINVOL +12dB
-        rom[17] = {7'h01, 9'b1_0010_0111};  // R in PGA: IPVU=1 RINMUTE=0 RINVOL +12dB
+        rom[16] = {7'h00, 9'b1_1001_0111};  // L in PGA: IPVU=1 LINMUTE=1 (MUTED for test A)
+        rom[17] = {7'h01, 9'b1_1001_0111};  // R in PGA: IPVU=1 RINMUTE=1 (MUTED for test A)
         rom[18] = {7'h2b, 9'b0_0000_0000};  // L input boost: 0dB
         rom[19] = {7'h2c, 9'b0_0000_0000};  // R input boost: 0dB
         rom[20] = {7'h05, 9'b0_0000_0000};  // R5: DACMU=0 (unmute DAC!), ADCHPD=0 (ADC HPF on)
