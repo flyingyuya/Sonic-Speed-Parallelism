@@ -168,14 +168,18 @@ module tb_i2s_bclk_if;
         end
     end
 
-    // 前 40 个 BCLK 逐个打印：看清 TB 的激励到底出了什么
+    // 逐 BCLK 打印：窗口要【覆盖一个完整帧】（帧 = 2*SLOT = 64 拍）。
+    //   ⚠️ 第一版只打了前 40 拍，而 lrclk 的前 32 拍都在【左半帧】——
+    //      窗口还没到"数据该出现"的地方就结束了，白打一屏。
+    //      加 $display 之前先算清楚"我关心的那个事件发生在第几拍"。
     integer pcn = 0;
     always @(negedge bclk) begin
-        if (pcn < 40) begin
-            $display("      [bclk%02d] lrclk=%b a_lr_chg=%b a_new31=%b adcdat=%b a_sh=%08h",
-                     pcn, lrclk, a_lr_chg, a_new[SLOT-1], adcdat, a_sh);
-            pcn = pcn + 1;
+        if (pcn >= 26 && pcn < 78) begin   // 窗口覆盖第 0 帧前后（想看别的帧就改这个基准）
+            $display("  [b%02d] lrclk=%b adcdat=%b a_sh31=%b a_sh=%08h | dut rbit=%0d sr=%06h",
+                     pcn, lrclk, adcdat, a_sh[SLOT-1], a_sh,
+                     u_dut.rbit, u_dut.sr[23:0]);
         end
+        pcn = pcn + 1;
     end
 
     //=========================================================================
