@@ -60,6 +60,16 @@ module i2s_bclk_if #(
 
     localparam integer UP = DW - DATA_BITS;
 
+    // ⚠️ UP 在本工程里是 0（DW=24 == DATA_BITS=24）。
+    //    写成 {{UP{1'b0}}, v} 会变成【零宽重复】—— 旧的 i2s_rx 专门用
+    //    generate if (UP==0) 绕开它，我这里用左移，UP=0 时天然是原值。
+    function signed [DW-1:0] fit;
+        input [DATA_BITS-1:0] v;
+        begin
+            fit = v <<< UP;
+        end
+    endfunction
+
     //=========================================================================
     // 1. RX（BCLK 域）
     //=========================================================================
@@ -112,8 +122,8 @@ module i2s_bclk_if #(
         end else begin
             rx_valid <= rx_take;
             if (rx_take) begin
-                rx_l <= {{UP{1'b0}}, l_acc};
-                rx_r <= {{UP{1'b0}}, r_acc};
+                rx_l <= fit(l_acc);
+                rx_r <= fit(r_acc);
             end
         end
     end
