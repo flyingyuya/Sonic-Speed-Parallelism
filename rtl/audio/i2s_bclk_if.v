@@ -89,10 +89,20 @@ module i2s_bclk_if #(
         //    全是 X，而 rx_tog 的 X 会顺着两级同步器传到 clk 域，让 rx_take 变成 X
         //    -> 测试里 `while (!rx_valid)` 在 X 上会【立刻通过】-> 根本等不到数据。
         //    独立 TB 里就是这个症状：读回全 0，而且 adcdat 一直是 x。
+        //   ⚠️⚠️ 【rx_tog 也必须复位！】它写的是 `rx_tog <= ~rx_tog`，
+        //        而 ~X 还是 X —— 不复位的话它【永远变不成真实值】，
+        //        进而让 rx_take / rx_valid 一直是 X。
+        //        TB 里 `while (!rx_valid)` 遇到 X 会立刻通过，于是"读回全 0"
+        //        看起来像 DUT 坏了，其实是这里漏了一个复位。
+        //        （l_acc / r_acc 同理，它们虽然只被赋真值，但上电是 X，
+        //          在第一次赋值之前就被读走就是 X。）
         if (!rst_n) begin
-            lr_d <= 1'b0;
-            rbit <= 6'd0;
-            sr   <= {DATA_BITS{1'b0}};
+            lr_d   <= 1'b0;
+            rbit   <= 6'd0;
+            sr     <= {DATA_BITS{1'b0}};
+            l_acc  <= {DATA_BITS{1'b0}};
+            r_acc  <= {DATA_BITS{1'b0}};
+            rx_tog <= 1'b0;
         end else begin
         lr_d <= lrclk;
 

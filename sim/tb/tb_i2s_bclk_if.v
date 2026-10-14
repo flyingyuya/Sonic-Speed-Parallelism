@@ -194,6 +194,11 @@ module tb_i2s_bclk_if;
                 @(posedge clk);
                 while (!rx_valid) @(posedge clk);
                 @(negedge clk);              // 让 rx_l/rx_r 稳定后再读
+                // ★ 就打在"测试真正读回的那一刻" —— 不按帧号猜窗口。
+                //   上一版把 $display 放在固定帧号上，结果打的是第 0 帧
+                //   （那时测试还没设 adc_l），白看一屏。
+                $display("      [wait_rx k=%0d] 激励 adc_l=%0d adc_r=%0d | dut l_acc=%06h r_acc=%06h | rx_l=%0d rx_r=%0d",
+                         k, adc_l, adc_r, u_dut.l_acc, u_dut.r_acc, rx_l, rx_r);
             end
         end
     endtask
