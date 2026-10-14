@@ -88,9 +88,18 @@ module tb_i2s_bclk_if;
     wire           a_lr_chg = (lrclk ^ a_lr_d);
     wire [SLOT-1:0] a_new   = lrclk ? {adc_r, {PAD{1'b0}}} : {adc_l, {PAD{1'b0}}};
 
+    integer ld_n = 0;
+
     always @(negedge bclk) begin
         a_lr_d <= lrclk;
         if (a_lr_chg) begin
+            // ★ 就在【装载那一拍】打印 —— 这才是"我关心的那个事件"所在的位置。
+            //   按帧号猜窗口已经错过一次了（打到了测试还没设值的第 0 帧）。
+            if (ld_n < 8) begin
+                $display("      [load%0d] lrclk=%b a_lr_d=%b adc_l=%0d adc_r=%0d a_new=%08h",
+                         ld_n, lrclk, a_lr_d, adc_l, adc_r, a_new);
+                ld_n = ld_n + 1;
+            end
             adcdat <= a_new[SLOT-1];
             a_sh   <= {a_new[SLOT-2:0], 1'b0};
         end else begin
