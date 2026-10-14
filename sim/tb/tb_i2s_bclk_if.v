@@ -253,7 +253,10 @@ module tb_i2s_bclk_if;
                 //   上一版把 $display 放在固定帧号上，结果打的是第 0 帧
                 //   （那时测试还没设 adc_l），白看一屏。
             $display("  [bit%02d] lrclk=%b dacdat=%b", bit_n, lrclk, dacdat);
-                         k, adc_l, adc_r, u_dut.l_acc, u_dut.r_acc, rx_l, rx_r);
+            $display("            dut.tsr=%032b  tb.d_sh=%032b", u_dut.tsr, d_sh);
+                $display("      [wait_rx k=%0d] 激励 L=%0d R=%0d", k, adc_l, adc_r);
+                $display("                   dut l_acc=%06h r_acc=%06h | rx_l=%0d rx_r=%0d",
+                         u_dut.l_acc, u_dut.r_acc, rx_l, rx_r);
             end
         end
     endtask
