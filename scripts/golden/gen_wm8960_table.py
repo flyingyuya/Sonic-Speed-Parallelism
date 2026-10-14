@@ -96,14 +96,13 @@ SPEC = [
     #   频谱全频段都是高柱子" —— 底噪被放大了 30dB，把信号淹掉了。
     #   正确做法：**模拟增益只给够 ✗ 剩下在数字域补**（显示侧的 G 命令能到 x256，
     #   数字域放大不引入模拟噪声）。所以这里先用 0dB，需要时按 G 加大。
-    # ⚠️⚠️ 【上板诊断实验 A：输入 PGA 静音】⚠️⚠️
-    #   0x197 = 1_1001_0111 : IPVU=1, **LINMUTE=1（静音）**, LINVOL 0dB
-    #   目的：把【模拟输入侧】整个掐断，看 ADC 还读不读得到东西。
-    #     · 频谱变干净了    -> 噪声来自模拟侧（话筒/偏置/环境）
-    #     · 频谱还是脏      -> 噪声来自数字侧（I2S 对齐 / BCLK 质量 / 板级干扰）
-    #   一键切回正常：把下面两行的 0x197 改回 0x127，再跑 gen_all.py。
-    (0x00, 0x197, "L in PGA: IPVU=1 LINMUTE=1 (MUTED for test A)"),
-    (0x01, 0x197, "R in PGA: IPVU=1 RINMUTE=1 (MUTED for test A)"),
+    # Input PGA：IPVU=1 LINMUTE=0 ＋ 【+12dB】
+    #   0 dB   -> 听不见说话（话筒输出很小）
+    #   +30 dB -> 底噪被放大 30dB，一片噪声
+    #   +12 dB -> 中间值。还不够就用显示侧的 G 命令补（能到 x256，
+    #             数字域放大不引入模拟噪声）。
+    (0x00, 0x127, "L in PGA: IPVU=1 LINMUTE=0 LINVOL +12dB"),
+    (0x01, 0x127, "R in PGA: IPVU=1 RINMUTE=0 RINVOL +12dB"),
 
     # 输入 boost 混音器：官方不 boost（0x000）
     (0x2B, 0x000, "L input boost: 0dB"),
