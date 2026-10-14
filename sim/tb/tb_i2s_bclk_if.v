@@ -80,8 +80,11 @@ module tb_i2s_bclk_if;
     reg signed [DW-1:0] adc_l = 24'sd0, adc_r = 24'sd0;
     reg                 adcdat = 1'b0;
 
-    reg [SLOT-1:0] a_sh;
-    reg            a_lr_d;
+    // ⚠️ 这两个寄存器【必须初始化】。不初始化的话 a_sh 是 X，
+    //    adcdat 就一直是 X，DUT 那边 sr 也全是 X —— 症状是"读回全 0"，
+    //    但根本原因在激励侧，不在 DUT。这个 TB 第一版就栽在这儿。
+    reg [SLOT-1:0] a_sh   = {SLOT{1'b0}};
+    reg            a_lr_d = 1'b0;
     wire           a_lr_chg = (lrclk ^ a_lr_d);
     wire [SLOT-1:0] a_new   = lrclk ? {adc_r, {PAD{1'b0}}} : {adc_l, {PAD{1'b0}}};
 
@@ -102,8 +105,8 @@ module tb_i2s_bclk_if;
     //=========================================================================
     // 本 TB 扮演 codec 的 DAC：按 I2S 时序从 DUT 的 dacdat 收回数据
     //=========================================================================
-    reg [SLOT-1:0]      d_sh;
-    reg                 d_lr_r;
+    reg [SLOT-1:0]      d_sh   = {SLOT{1'b0}};
+    reg                 d_lr_r = 1'b0;
     reg signed [DW-1:0] cap_l, cap_r;
     reg                 cap_valid;
 
@@ -157,10 +160,21 @@ module tb_i2s_bclk_if;
     always @(negedge lrclk) begin
         if (rst_n && dbg_n < 12) begin
             dbg_n = dbg_n + 1;
-            $display("    [dbg%0d] lr_d=%b rbit=%0d sr=%06h l_acc=%06h r_acc=%06h rx_tog=%b | tsr=%08h tlrdn=%b txhen=%06h | adcdat=%b",
+            $display("    [dbg%0d] lr_d=%b rbit=%0d sr=%06h l_acc=%06h r_acc=%06h",
                      dbg_n, u_dut.lr_d, u_dut.rbit,
-                     u_dut.sr[23:0], u_dut.l_acc, u_dut.r_acc, u_dut.rx_tog,
-                     u_dut.tsr, u_dut.tlr_dn, u_dut.tx_l_hold, adcdat);
+                     u_dut.sr[23:0], u_dut.l_acc, u_dut.r_acc);
+            $display("            rx_tog=%b | tsr=%08h | adcdat=%b",
+                     u_dut.rx_tog, u_dut.tsr, adcdat);
+        end
+    end
+
+    // 前 40 个 BCLK 逐个打印：看清 TB 的激励到底出了什么
+    integer pcn = 0;
+    always @(negedge bclk) begin
+        if (pcn < 40) begin
+            $display("      [bclk%02d] lrclk=%b a_lr_chg=%b a_new31=%b adcdat=%b a_sh=%08h",
+                     pcn, lrclk, a_lr_chg, a_new[SLOT-1], adcdat, a_sh);
+            pcn = pcn + 1;
         end
     end
 

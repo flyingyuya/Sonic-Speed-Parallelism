@@ -85,6 +85,15 @@ module i2s_bclk_if #(
     wire rx_lr_chg = (lrclk ^ lr_d);
 
     always @(posedge bclk) begin
+        // ⚠️ BCLK 域的寄存器【必须有复位】。少了这一段，上电时 lr_d / sr / rx_tog
+        //    全是 X，而 rx_tog 的 X 会顺着两级同步器传到 clk 域，让 rx_take 变成 X
+        //    -> 测试里 `while (!rx_valid)` 在 X 上会【立刻通过】-> 根本等不到数据。
+        //    独立 TB 里就是这个症状：读回全 0，而且 adcdat 一直是 x。
+        if (!rst_n) begin
+            lr_d <= 1'b0;
+            rbit <= 6'd0;
+            sr   <= {DATA_BITS{1'b0}};
+        end else begin
         lr_d <= lrclk;
 
         if (rx_lr_chg) begin
@@ -99,6 +108,7 @@ module i2s_bclk_if #(
         end else if (rbit < DATA_BITS[5:0]) begin
             sr   <= {sr[DATA_BITS-2:0], adcdat};
             rbit <= rbit + 6'd1;
+        end
         end
     end
 
@@ -159,6 +169,14 @@ module i2s_bclk_if #(
     wire signed [DW-1:0] tx_new = lrclk ? tx_r_hold : tx_l_hold;
 
     always @(negedge bclk) begin
+        // ⚠️ 和 RX 同理：BCLK 域的寄存器必须有复位。
+        //    少了这段，tsr/tlr_dn 上电是 X -> dacdat 一直是 X
+        //    -> 接收端（TB 或 WM8960）收回来全是 X。
+        if (!rst_n) begin
+            tlr_dn <= 1'b0;
+            tsr    <= {SLOT{1'b0}};
+            dacdat <= 1'b0;
+        end else begin
         tlr_dn <= lrclk;
 
         if (tx_lr_chg) begin
@@ -174,6 +192,7 @@ module i2s_bclk_if #(
         end else begin
             dacdat <= tsr[SLOT-1];
             tsr    <= tsr <<< 1;
+        end
         end
     end
 
