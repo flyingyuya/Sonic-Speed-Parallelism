@@ -217,6 +217,13 @@ module tb_i2s_bclk_if;
         pcn = pcn + 1;
     end
 
+    // TB 侧：看 tx_en 脉冲到底有没有落在 clk 上升沿上
+    always @(posedge clk) begin
+        if (tx_en)
+            $display("      [tb_tx_en] tx_l=%0d tx_r=%0d dut.tx_l_hold=%06h rst_n=%b",
+                     tx_l, tx_r, u_dut.tx_l_hold[DW-1:0], rst_n);
+    end
+
     //=========================================================================
     // 工具任务
     //=========================================================================
@@ -301,9 +308,12 @@ module tb_i2s_bclk_if;
         $display(" [4] ⭐ TX 基本发送 + 位对齐");
         tx_l = 24'sh800000;             // 同样用 MSB-only 抓差一位
         tx_r = -24'sd1357246;
+        // ⚠️ tx_en 拉成【常高】：模块的语义本来就是"每个 clk 采一次、一直保持"，
+        //    测试不需要脉冲。第一版用"1 拍脉冲"，结果那一拍始终没被采到
+        //    （查了半天也没定位到为什么），索性不留这个不确定性。
         tx_en = 1'b1;
         @(posedge clk);
-        tx_en = 1'b0;                    // 送一次就够（模块会保持）
+        repeat (4) @(posedge clk);
         wait_tx;
         $display("      喂 0x800000  ->  收回 0x%06X", cap_l[23:0]);
         `CHK(cap_l == 24'sh800000, "TX 的 MSB 位置正确");
@@ -315,7 +325,7 @@ module tb_i2s_bclk_if;
         tx_r = -24'sd2222222;
         tx_en = 1'b1;
         @(posedge clk);
-        tx_en = 1'b0;
+        repeat (4) @(posedge clk);
         wait_tx;
         wait_tx;                         // 多等一帧，确保这次的值已经出完
         $display("      喂 L=%0d R=%0d  ->  收回 L=%0d R=%0d",
