@@ -231,8 +231,8 @@ module tb_i2s_bclk_if;
     always @(posedge bclk) begin
         if (u_dut.tx_l_hold[DW-1:0] !== 24'd0) bit_on <= 1'b1;
         if (bit_on && bit_n < 40) begin
-            $display("  [bit%02d] lrclk=%b dacdat=%b | dut.tsr=%032b | tb.d_sh=%032b",
-                     bit_n, lrclk, dacdat, u_dut.tsr, d_sh);
+                $display("  [bit%02d] lrclk=%b dacdat=%b | dut.tsr=%032b | tb.d_sh=%032b",
+                                  bit_n, lrclk, dacdat, u_dut.tsr, d_sh);
             bit_n = bit_n + 1;
         end
     end
@@ -252,7 +252,7 @@ module tb_i2s_bclk_if;
                 // ★ 就打在"测试真正读回的那一刻" —— 不按帧号猜窗口。
                 //   上一版把 $display 放在固定帧号上，结果打的是第 0 帧
                 //   （那时测试还没设 adc_l），白看一屏。
-                $display("      [wait_rx k=%0d] 激励 adc_l=%0d adc_r=%0d | dut l_acc=%06h r_acc=%06h | rx_l=%0d rx_r=%0d",
+            $display("  [bit%02d] lrclk=%b dacdat=%b", bit_n, lrclk, dacdat);
                          k, adc_l, adc_r, u_dut.l_acc, u_dut.r_acc, rx_l, rx_r);
             end
         end

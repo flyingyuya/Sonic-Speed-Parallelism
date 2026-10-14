@@ -109,13 +109,40 @@ module audio_top #(
     );
 
     //-------------------------------------------------------------------------
-    // I2S 接收
+    // I2S 接收（**换成直接拿 BCLK 当采样时钟**）—— 2026-10
     //-------------------------------------------------------------------------
-    i2s_rx #(.SLOT(SLOT), .DATA_BITS(DW), .DW(DW)) u_rx (
-        .clk(clk), .rst_n(rst_n),
-        .bclk_rise(bclk_rise), .bclk_fall(bclk_fall), .bit_idx(bit_idx),
-        .sdin(sdin),
-        .l_data(rx_l), .r_data(rx_r), .sample_valid(rx_valid)
+    //   【为什么只换 RX】
+    //     原来 RX 用 i2s_slave_clk 在 clk_sys 域过采样 BCLK、自己纠正帧对齐。
+    //     上板实测：把输入 PGA 静音（ADC 必然输出 0）时读到的却是一串快速
+    //     跳动的数字 -> 接收器读到的根本不是 ADCDAT 上的电平。
+    //     换成教科书写法（posedge bclk 直接当采样沿）后，
+    //     sim/tb/tb_i2s_bclk_if.v 里 RX 四项全部通过。
+    //
+    //   【为什么 TX 暂时不动】
+    //     新模块的 TX 还差一个 BCLK（见那个 TB 的注释）。为了把迁移量降到最小：
+    //       · i2s_slave_clk 和 i2s_tx【原样保留】-> 它们继续产生/使用
+    //         bclk_rise / bclk_fall / frame_start / bit_idx
+    //       · codec_model 和 tb_audio_top 的 DAC 侧一个字都不用改
+    //     新模块的 dacdat 输出【空接】不驱动（旧 i2s_tx 仍然是 sdout 的驱动源）。
+    //
+    //   注意：这里不要给 bclk/lrclk 加 create_clock —— 它们仍被 i2s_slave_clk
+    //   当普通信号过采样，加了反而会引入一场假违例。
+    //-------------------------------------------------------------------------
+    i2s_bclk_if #(.SLOT(SLOT), .DATA_BITS(DW), .DW(DW)) u_i2s_rxnew (
+        .bclk       (bclk),
+        .lrclk      (lrclk),
+        .adcdat     (sdin),
+        .dacdat     (),                 // 发送侧仍由下面的 i2s_tx 负责
+        .clk        (clk),
+        .rst_n      (rst_n),
+        .rx_l       (rx_l),
+        .rx_r       (rx_r),
+        .rx_valid   (rx_valid),
+        .tx_l       ({DW{1'b0}}),
+        .tx_r       ({DW{1'b0}}),
+        .tx_en      (1'b0),             // 不让它发送
+        .dbg_rx_seen(),
+        .dbg_tx_lr  ()
     );
 
     //-------------------------------------------------------------------------
