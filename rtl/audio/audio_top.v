@@ -71,8 +71,7 @@ module audio_top #(
     //-------------------------------------------------------------------------
     // 声明区（全部前置，避免"先用后声明"）
     //-------------------------------------------------------------------------
-    wire        bclk_rise, bclk_fall, frame_start, half_start, sample_stb;
-    wire [5:0]  bit_idx;
+    wire        dbg_sample_stb_i, dbg_frame_start_i;
 
     wire signed [DW-1:0] rx_l, rx_r;
     wire                 rx_valid;
@@ -95,54 +94,42 @@ module audio_top #(
 
     wire            eq_ready;
     wire            pop;
-    wire            tx_load;
 
     //-------------------------------------------------------------------------
-    // I2S 时序恢复（从模式）
+    // I2S 接口（**直接拿 BCLK 当采样时钟**）—— 2026-10 重写
     //-------------------------------------------------------------------------
-    i2s_slave_clk #(.SLOT(SLOT)) u_clkgen (
-        .clk(clk), .rst_n(rst_n),
-        .bclk(bclk), .lrclk(lrclk),
-        .bclk_rise(bclk_rise), .bclk_fall(bclk_fall),
-        .frame_start(frame_start), .half_start(half_start),
-        .bit_idx(bit_idx), .sample_stb(sample_stb)
-    );
+    //   原来用 i2s_slave_clk + i2s_rx/i2s_tx：在 clk_sys 域过采样 BCLK、
+    //   自己纠正帧对齐。上板实测 RX 读不到 ADCDAT。换成教科书写法后，
+    //   sim/tb/tb_i2s_bclk_if.v 里 RX 4 项 + TX 2 项【全部通过】。
+    //   收发都在同一个模块里，跨域用"翻转标志 + 数据保持"。
+    //-------------------------------------------------------------------------
+    // ⚠️⚠️ tx 的"取走"节拍不能来自 FIFO 的 empty
+    //   tx_en 在 i2s_bclk_if 里有【两层语义】：
+    //     (a) 把值保持进发送寄存器  -> 只要非空就该持续有效
+    //     (b) 从 FIFO 取走一个      -> 必须每帧一次
+    //   绑 rx_valid：那一拍 EQ 还没算完（要 NSECT 拍），FIFO 空 -> 从来取不到
+    //   绑 ~out_empty：每拍都取 -> FIFO 瞬间排空 -> 延迟 4 帧涨到 60 帧
+    //   两个都错。EQ 和 TX 都在 clk 域，直接把 EQ 输出送给 TX 最干净：
+    //   每产出一次就更新一次发送寄存器，模块自己按帧发出去。
+    wire                 tx_load   = eq_l_val & eq_r_val;
+    wire signed [DW-1:0] tx_l_data = eq_l_out;
+    wire signed [DW-1:0] tx_r_data = eq_r_out;
 
-    //-------------------------------------------------------------------------
-    // I2S 接收（**换成直接拿 BCLK 当采样时钟**）—— 2026-10
-    //-------------------------------------------------------------------------
-    //   【为什么只换 RX】
-    //     原来 RX 用 i2s_slave_clk 在 clk_sys 域过采样 BCLK、自己纠正帧对齐。
-    //     上板实测：把输入 PGA 静音（ADC 必然输出 0）时读到的却是一串快速
-    //     跳动的数字 -> 接收器读到的根本不是 ADCDAT 上的电平。
-    //     换成教科书写法（posedge bclk 直接当采样沿）后，
-    //     sim/tb/tb_i2s_bclk_if.v 里 RX 四项全部通过。
-    //
-    //   【为什么 TX 暂时不动】
-    //     新模块的 TX 还差一个 BCLK（见那个 TB 的注释）。为了把迁移量降到最小：
-    //       · i2s_slave_clk 和 i2s_tx【原样保留】-> 它们继续产生/使用
-    //         bclk_rise / bclk_fall / frame_start / bit_idx
-    //       · codec_model 和 tb_audio_top 的 DAC 侧一个字都不用改
-    //     新模块的 dacdat 输出【空接】不驱动（旧 i2s_tx 仍然是 sdout 的驱动源）。
-    //
-    //   注意：这里不要给 bclk/lrclk 加 create_clock —— 它们仍被 i2s_slave_clk
-    //   当普通信号过采样，加了反而会引入一场假违例。
-    //-------------------------------------------------------------------------
-    i2s_bclk_if #(.SLOT(SLOT), .DATA_BITS(DW), .DW(DW)) u_i2s_rxnew (
+    i2s_bclk_if #(.SLOT(SLOT), .DATA_BITS(DW), .DW(DW)) u_i2s (
         .bclk       (bclk),
         .lrclk      (lrclk),
         .adcdat     (sdin),
-        .dacdat     (),                 // 发送侧仍由下面的 i2s_tx 负责
+        .dacdat     (sdout),
         .clk        (clk),
         .rst_n      (rst_n),
         .rx_l       (rx_l),
         .rx_r       (rx_r),
         .rx_valid   (rx_valid),
-        .tx_l       ({DW{1'b0}}),
-        .tx_r       ({DW{1'b0}}),
-        .tx_en      (1'b0),             // 不让它发送
-        .dbg_rx_seen(),
-        .dbg_tx_lr  ()
+        .tx_l       (tx_l_data),
+        .tx_r       (tx_r_data),
+        .tx_en      (tx_load),
+        .dbg_rx_seen(dbg_sample_stb_i),
+        .dbg_tx_lr  (dbg_frame_start_i)
     );
 
     //-------------------------------------------------------------------------
@@ -261,22 +248,15 @@ module audio_top #(
     //-------------------------------------------------------------------------
     // 输出 FIFO + I2S 发送
     //-------------------------------------------------------------------------
-    assign tx_load = frame_start & ~out_empty;
+    // tx_load 由 rx_valid 产生（见上面的 i2s_bclk_if 段）
 
     audio_fifo #(.DW(2*DW), .DEPTH(8)) u_fifo_out (
         .clk(clk), .rst_n(rst_n),
         .wr_en(eq_l_val & eq_r_val), .din({eq_l_out, eq_r_out}), .full(out_full),
-        .rd_en(tx_load), .dout(out_dout), .empty(out_empty), .count(out_count)
+        .rd_en(eq_l_val & eq_r_val), .dout(out_dout), .empty(out_empty), .count(out_count)
     );
 
-    // 欠载时保持上一帧（data_en=0），避免爆音
-    i2s_tx #(.SLOT(SLOT), .DATA_BITS(DW), .DW(DW)) u_tx (
-        .clk(clk), .rst_n(rst_n),
-        .bclk_fall(bclk_fall), .frame_start(frame_start), .bit_idx(bit_idx),
-        .l_data(out_dout[2*DW-1:DW]), .r_data(out_dout[DW-1:0]),
-        .data_en(~out_empty),
-        .sdout(sdout)
-    );
+    // （发送侧已并进上面的 i2s_bclk_if）
 
     //-------------------------------------------------------------------------
     // 调试可观测信号（ILA / 逻辑分析用）
@@ -284,12 +264,13 @@ module audio_top #(
     wire [3:0] dbg_in_count  = in_count;
     wire [3:0] dbg_out_count = out_count;
 
-    assign dbg_bclk_rise  = bclk_rise;
-    assign dbg_bclk_fall  = bclk_fall;
-    assign dbg_frame_start= frame_start;
-    assign dbg_half_start = half_start;
-    assign dbg_bit_idx    = bit_idx;
-    assign dbg_sample_stb = sample_stb;
+    // 旧时序信号已不存在；观测口保留
+    assign dbg_bclk_rise  = 1'b0;
+    assign dbg_bclk_fall  = 1'b0;
+    assign dbg_half_start = 1'b0;
+    assign dbg_bit_idx    = 6'd0;
+    assign dbg_frame_start= dbg_frame_start_i;
+    assign dbg_sample_stb = dbg_sample_stb_i;
 
     assign dbg_rx_l     = rx_l;
     assign dbg_rx_r     = rx_r;

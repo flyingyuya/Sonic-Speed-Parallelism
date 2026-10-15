@@ -84,8 +84,7 @@ module tb_audio_top;
 
     codec_model #(.DW(DW), .SLOT(SLOT)) u_codec (
         .clk(clk), .rst_n(rst_n),
-        .bclk_rise(bclk_rise), .bclk_fall(bclk_fall),
-        .frame_start(frame_start), .bit_idx(bit_idx),
+        .bclk(bclk), .lrclk(lrclk),
         .adc_l(adc_l), .adc_r(adc_r), .sdin(sdin_w),
         .sdout(sdout_w), .cap_l(cap_l), .cap_r(cap_r), .cap_valid(cap_valid)
     );
@@ -113,7 +112,7 @@ module tb_audio_top;
             adc_r   <= {DW{1'b0}};
             n_sent  <= 0;
             sent_idx<= 0;
-        end else if (half_start && running && n_sent < NSEND) begin
+        end else if (sample_stb && running && n_sent < NSEND) begin   // 每帧一次
             // 第 8 个样本是冲激，其余为静音
             if (sent_idx == 8) begin
                 adc_l <=  IMP;

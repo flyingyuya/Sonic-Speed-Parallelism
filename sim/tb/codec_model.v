@@ -1,11 +1,13 @@
 //=============================================================================
-// codec_model.v - 行为级 I2S codec 模型（ADC + DAC），供各 testbench 复用
+// codec_model.v - 行为级 I2S codec 模型（ADC + DAC）
 //-----------------------------------------------------------------------------
-// ADC 侧：在 BCLK 下降沿按 I2S 时序把 adc_l/adc_r 串行推到 sdin
-// DAC 侧：在 BCLK 上升沿从 sdout 采样，整帧结束时拼回 cap_l/cap_r
+// 【2026-10 改写：只看 bclk / lrclk 两个真实引脚】
+//   旧版吃 i2s_slave_clk 派生的 bclk_rise/bclk_fall/frame_start/bit_idx。
+//   audio_top 换成 i2s_bclk_if 之后那些信号不存在了。
 //
-// 注意：本模型的换沿/采样行为与真实 codec 一致（下降沿发送、上升沿采样），
-//       因此可以直接用来检查 FPGA 侧的 I2S 时序是否符合标准。
+// 【时序】LRCK 在 BCLK 下降沿翻转；低=左，高=右。
+//   ADC（发送）：下降沿更新 sdin，MSB 在换沿后第一个上升沿有效。
+//   DAC（接收）：上升沿采样 sdout。
 //=============================================================================
 `timescale 1ns/1ps
 
@@ -15,82 +17,59 @@ module codec_model #(
 ) (
     input  wire clk,
     input  wire rst_n,
+    input  wire bclk,
+    input  wire lrclk,
 
-    // 来自 i2s_clkgen 的时序信号
-    input  wire bclk_rise,
-    input  wire bclk_fall,
-    input  wire frame_start,
-    input  wire [5:0] bit_idx,
-
-    // ADC：要发送的样本
     input  wire signed [DW-1:0] adc_l,
     input  wire signed [DW-1:0] adc_r,
-    output wire                 sdin,
+    output reg                  sdin,
 
-    // DAC：收到的样本
     input  wire                 sdout,
     output reg  signed [DW-1:0] cap_l,
     output reg  signed [DW-1:0] cap_r,
     output reg                  cap_valid
 );
 
-    localparam integer NFRAME = 2 * SLOT;
+    localparam integer PAD = SLOT - DW;
 
-    // 本模型假定 DW <= SLOT（24bit 数据装在 32bit 槽的高位）
-    initial begin
-        if (DW > SLOT) begin
-            $display("codec_model: 参数错误 DW(%0d) > SLOT(%0d)", DW, SLOT);
-            $finish;
-        end
-    end
+    //----------------- ADC（发送，下降沿更新）-----------------
+    reg [SLOT-1:0] ash  = {SLOT{1'b0}};
+    reg            lr_d = 1'b0;
+    wire            adc_lr_chg = (lrclk ^ lr_d);
+    // 换沿那一刻：lrclk=0（H->L，帧起点）接下来发左 -> else 装 adc_l
+    wire [SLOT-1:0] tx_new = lrclk ? {adc_r, {PAD{1'b0}}} : {adc_l, {PAD{1'b0}}};
 
-    //-------------------------------------------------------------------------
-    // ADC
-    //-------------------------------------------------------------------------
-    wire [SLOT-1:0]     l_slot = {adc_l, {(SLOT-DW){1'b0}}};
-    wire [SLOT-1:0]     r_slot = {adc_r, {(SLOT-DW){1'b0}}};
-    wire [NFRAME-1:0]   adc_frame = {l_slot, r_slot};
-
-    reg  [NFRAME-1:0]   adc_sr;
-    reg                 sdin_r;
-
-    wire [5:0]          idx_nxt = frame_start ? 6'd0 : (bit_idx + 6'd1);
-    wire [NFRAME-1:0]   adc_nxt = frame_start ? adc_frame : adc_sr;
-
-    assign sdin = sdin_r;
-
-    always @(posedge clk or negedge rst_n) begin
+    always @(negedge bclk or negedge rst_n) begin
         if (!rst_n) begin
-            adc_sr <= {NFRAME{1'b0}};
-            sdin_r <= 1'b0;
-        end else if (bclk_fall) begin
-            adc_sr <= adc_nxt;
-            sdin_r <= adc_nxt[NFRAME-1 - idx_nxt];
-        end
-    end
-
-    //-------------------------------------------------------------------------
-    // DAC
-    //-------------------------------------------------------------------------
-    reg  [NFRAME-1:0] dac_sr;
-    wire [NFRAME-1:0] dac_nxt = {dac_sr[NFRAME-2:0], sdout};
-
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            dac_sr    <= {NFRAME{1'b0}};
-            cap_l     <= {DW{1'b0}};
-            cap_r     <= {DW{1'b0}};
-            cap_valid <= 1'b0;
+            lr_d <= 1'b0; ash <= {SLOT{1'b0}}; sdin <= 1'b0;
         end else begin
-            cap_valid <= 1'b0;
-            if (bclk_rise) begin
-                dac_sr <= dac_nxt;
-                if (bit_idx == NFRAME-1) begin
-                    cap_l     <= dac_nxt[NFRAME-1 -: DW];
-                    cap_r     <= dac_nxt[SLOT-1   -: DW];
-                    cap_valid <= 1'b1;
-                end
+            lr_d <= lrclk;
+            if (adc_lr_chg) begin
+                sdin <= tx_new[SLOT-1];
+                ash  <= {tx_new[SLOT-2:0], 1'b0};
+            end else begin
+                sdin <= ash[SLOT-1];
+                ash  <= {ash[SLOT-2:0], 1'b0};
             end
+        end
+    end
+
+    //----------------- DAC（接收，上升沿采样）-----------------
+    reg [SLOT-1:0] dsh  = {SLOT{1'b0}};
+    reg            lr_r = 1'b0;
+    wire dac_lr_chg = (lrclk ^ lr_r);
+
+    always @(posedge bclk or negedge rst_n) begin
+        if (!rst_n) begin
+            lr_r <= 1'b0; dsh <= {SLOT{1'b0}};
+            cap_l <= {DW{1'b0}}; cap_r <= {DW{1'b0}}; cap_valid <= 1'b0;
+        end else begin
+            lr_r <= lrclk; cap_valid <= 1'b0;
+            if (dac_lr_chg) begin
+                if (lr_r == 1'b0) cap_l <= dsh[SLOT-1 -: DW];
+                else begin cap_r <= dsh[SLOT-1 -: DW]; cap_valid <= 1'b1; end
+                dsh <= {{(SLOT-1){1'b0}}, sdout};
+            end else dsh <= {dsh[SLOT-2:0], sdout};
         end
     end
 
