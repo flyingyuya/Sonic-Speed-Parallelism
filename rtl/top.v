@@ -640,7 +640,11 @@ module top #(
         .tp_low     (tp_low),
         .wave_din   (wave_din_sel),         // 波形显示左声道（或自检图案）
         .wave_th    (wave_th),              // 自适应触发门限（来自 env_track）
-        .dbg_adc    (rx_l),                 // 诊断：原始 ADC 值（不经 dc_block）
+        // 诊断显示：状态行那一行 6 位十六进制 = {触摸X, 触摸Y}
+        //   ⚠️ 原来接的是音频的原始 ADC（rx_l）—— 音频调好后就没用了，
+        //      而触摸正需要"看见坐标"，所以换回触摸。
+        //      拼成 24 位就能一次显示 X 和 Y（各 3 位十六进制）。
+        .dbg_adc    ({tp_x, tp_y}),
         .wave_we    (wave_we_sel),
         .lcd_rgb    (lcd_rgb),
         .lcd_hs     (lcd_hs),
