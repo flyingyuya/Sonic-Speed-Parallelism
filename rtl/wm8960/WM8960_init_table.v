@@ -45,7 +45,11 @@ module WM8960_init_table #(
 );
 
     localparam LUT_SIZE = 33;
-    reg [DATA_WIDTH-1:0] rom [0:(2**ADDR_WIDTH)-1];
+    // ⚠️ 强制分布式 RAM（LUTRAM），不要 BRAM。
+    //   表只有 33 条 x 16bit，用 BRAM 是浪费；而且一旦推断成 BRAM，
+    //   ADDRARDADDR/ENARDEN 就会被带异步复位的寄存器驱动 -> [DRC REQP-1840]。
+    //   （条目 31->33 时地址位 5->6，Vivado 突然改推 BRAM，警告就是这么冒出来的。）
+    (* rom_style = "distributed" *) reg [DATA_WIDTH-1:0] rom [0:(2**ADDR_WIDTH)-1];
 
     initial begin
         rom[ 0] = {7'h0f, 9'b0_0000_0000};  // software reset (must be 1st)

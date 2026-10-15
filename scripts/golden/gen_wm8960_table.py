@@ -249,7 +249,11 @@ def gen_verilog():
     A(");")
     A("")
     A(f"    localparam LUT_SIZE = {n};")
-    A("    reg [DATA_WIDTH-1:0] rom [0:(2**ADDR_WIDTH)-1];")
+    A("    // ⚠️ 强制分布式 RAM（LUTRAM），不要 BRAM。")
+    A("    //   表只有 33 条 x 16bit，用 BRAM 是浪费；而且一旦推断成 BRAM，")
+    A("    //   ADDRARDADDR/ENARDEN 就会被带异步复位的寄存器驱动 -> [DRC REQP-1840]。")
+    A("    //   （条目 31->33 时地址位 5->6，Vivado 突然改推 BRAM，警告就是这么冒出来的。）")
+    A("    (* rom_style = \"distributed\" *) reg [DATA_WIDTH-1:0] rom [0:(2**ADDR_WIDTH)-1];")
     A("")
     A("    initial begin")
     for i, (reg, dat, cmt) in enumerate(SPEC):
