@@ -37,14 +37,14 @@
 
 module WM8960_init_table #(
     parameter DATA_WIDTH = 16,
-    parameter ADDR_WIDTH = 5          // 装得下 31 条即可
+    parameter ADDR_WIDTH = 6          // 装得下 33 条即可
 ) (
     input      [(ADDR_WIDTH-1):0] addr,
     input                         clk,
     output reg [(DATA_WIDTH-1):0] q
 );
 
-    localparam LUT_SIZE = 31;
+    localparam LUT_SIZE = 33;
     reg [DATA_WIDTH-1:0] rom [0:(2**ADDR_WIDTH)-1];
 
     initial begin
@@ -78,7 +78,9 @@ module WM8960_init_table #(
         rom[27] = {7'h2d, 9'b0_1000_0000};  // L mixer bypass 0dB
         rom[28] = {7'h2e, 9'b0_1000_0000};  // R mixer bypass 0dB
         rom[29] = {7'h31, 9'b0_1111_0111};  // ClassD ctl: enable speakers
-        rom[30] = {7'h04, 9'b0_0000_0101};  // CLOCKING1: SYSCLKDIV=/2 CLKSEL=PLL
+        rom[30] = {7'h28, 9'b1_0111_1111};  // L spk vol: SPKVU=1 +6dB (rst=MUTE)
+        rom[31] = {7'h29, 9'b1_0111_1111};  // R spk vol: SPKVU=1 +6dB (rst=MUTE)
+        rom[32] = {7'h04, 9'b0_0000_0101};  // CLOCKING1: SYSCLKDIV=/2 CLKSEL=PLL
     end
 
     // 读端口（综合成分布式 ROM）
