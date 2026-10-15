@@ -146,6 +146,25 @@ SPEC = [
     # ★★ R49 (31h)：类 D 功放控制 —— 官方原文 "Enable Left and right speakers" ★★
     (0x31, 0x0F7, "ClassD ctl: enable speakers"),
 
+    # ★★★ R40/R41：左右【喇叭音量】★★★
+    #   datasheet 原文（R40 28h 的 SPKLVOL[6:0]）：
+    #       1111111 = +6dB ... 0110000 = -73dB
+    #       0101111 到 0000000 = 【Analogue MUTE】
+    #   复位默认值是 0000000，正好落在 MUTE 区间 => 喇叭出厂就是静音的。
+    #
+    #   ⚠️ 这一条以前【一直漏着】，而且它的症状极具迷惑性：
+    #       · 上电时喇叭会"噗"一声（功放和喇叭都是好的）
+    #       · 但任何音频都出不来
+    #       · 而且 T08（走 top.v 里另一个 i2s_tx）和新的 i2s_bclk_if 都试过，
+    #         两条完全独立的发送路径都不响 -> 说明公共环节不是"发送"
+    #   => 遇到"两条独立通路都不工作"，要去找它们的【公共下游】
+    #      （这里是 WM8960 的音量/静音位），而不是继续怀疑上游。
+    #
+    #   值 0x17F = SPKVU(bit8)=1 更新 + SPKLVOL=1111111 (+6dB)
+    #   （官方放音例程就是 0x007F | 0x0100）
+    (0x28, 0x17F, "L spk vol: SPKVU=1 +6dB (rst=MUTE)"),
+    (0x29, 0x17F, "R spk vol: SPKVU=1 +6dB (rst=MUTE)"),
+
     (0x04, 0x005, "CLOCKING1: SYSCLKDIV=/2 CLKSEL=PLL"),
 ]
 

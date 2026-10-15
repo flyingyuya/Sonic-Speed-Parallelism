@@ -185,7 +185,9 @@ module tb_wm8960_init;
         exp_reg[27] = 7'h2D; exp_dat[27] = 9'h080; exp_note[27] = "L mixer bypass 0dB";
         exp_reg[28] = 7'h2E; exp_dat[28] = 9'h080; exp_note[28] = "R mixer bypass 0dB";
         exp_reg[29] = 7'h31; exp_dat[29] = 9'h0F7; exp_note[29] = "ClassD ctl: enable speakers";
-        exp_reg[30] = 7'h04; exp_dat[30] = 9'h005; exp_note[30] = "CLOCKING1: SYSCLKDIV=/2 CLKSEL";
+        exp_reg[30] = 7'h28; exp_dat[30] = 9'h17F; exp_note[30] = "L spk vol: SPKVU=1 +6dB (rst=M";
+        exp_reg[31] = 7'h29; exp_dat[31] = 9'h17F; exp_note[31] = "R spk vol: SPKVU=1 +6dB (rst=M";
+        exp_reg[32] = 7'h04; exp_dat[32] = 9'h005; exp_note[32] = "CLOCKING1: SYSCLKDIV=/2 CLKSEL";
     end
 
     //=========================================================================
