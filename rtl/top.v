@@ -225,8 +225,18 @@ module top #(
         .lrclk      (aud_lrclk),
         .sdin       (aud_adcdat),
         .sdout      (dacdat_audio),
-        .band_gain  (25'd0),                // 全频段 0 dB（后续由 ui_ctrl 驱动）
-        .cfg_load   (1'b0),
+        // ⚠️⚠️ 【上板实测的真 bug：EQ 系数从来没装载过】
+        //   cfg_load 一直是 0，`coe` 寄存器就一直是初值 -> EQ 输出是垃圾
+        //   -> DAC 放出来是"刺耳的高频噪声"，安静时也不停。
+        //   （TB 里是 TB 自己驱动 cfg_load 的，所以仿真里完全看不出来 ——
+        //     典型的"仿真过了 ≠ 板上对"。）
+        //
+        //   band_gain 每个频段 5 bit，索引 0..20 映射 -10..+10 dB，
+        //   所以【0 dB = 索引 10】。原来写 25'd0 是 -10 dB（而且注释还写着 0 dB）。
+        //   cfg_load 用常高：audio_top 里是"band_gain != gain_reg 才装载"，
+        //   所以常高不会反复重载，但以后 band_gain 一改就会自动重载。
+        .band_gain  ({5{5'd10}}),           // 5 个频段都是 0 dB（index 10 = 0 dB）
+        .cfg_load   (1'b1),
         .bypass     (1'b0),
         .cfg_busy   (),
         .running    (),
