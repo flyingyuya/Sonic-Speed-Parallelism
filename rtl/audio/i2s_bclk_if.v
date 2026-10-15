@@ -169,40 +169,66 @@ module i2s_bclk_if #(
         end
     end
 
-    // 在 BCLK【下降沿】工作：I2S 惯例，发送方在下降沿变、接收方上升沿采。
-    reg             tlr_dn;
-    reg [SLOT-1:0]  tsr;
+    // 在 BCLK【下降沿】输出数据：I2S 惯例，发送方在下降沿变、接收方上升沿采。
+    //
+    //=========================================================================
+    // 【为什么要"预测"而不能"检测"】（推时序推出来的，不是调参调出来的）
+    //=========================================================================
+    //   接收方（真实 WM8960 / TB 的采集器）的行为是固定的：
+    //     LRCK 翻转后【第一个上升沿 P1】就把 dacdat 当成新声道的 MSB。
+    //     所以发送方必须在【LRCK 翻转那一刻 N0】就把 MSB 放上线。
+    //
+    //   而 N0 是 negedge。如果 TX 也在 negedge 去比较 LRCK：
+    //     产生 LRCK 的方和比较 LRCK 的方【在同一个时间步】——顺序不确定，
+    //     实际表现为"在下一个 negedge(N1) 才看到变化" -> 装载晚一整拍
+    //     -> 接收方在 P1 采到的是上一路的尾巴 -> 收回的值正好差一位
+    //        （实测：喂 0x800000 收回 0x3FFFFF、喂 1111111 收回 555555 = 一半）。
+    //
+    //   正确做法：
+    //     · 用 posedge 采样 LRCK（那时早已稳定，没有竞态）得到换沿事件 P1
+    //     · 从 P1 开始用【posedge 计数器】数位下标：P1 就是新声道的第 0 位
+    //     · 每个 negedge 输出"下一个 posedge 要采的那一位"
+    //       -> 当计数到 SLOT-1（左路最后一位）时，下一个 posedge 就是右路的 MSB，
+    //          所以这一拍 negedge 就要把【右路】的 MSB 放上线。帧尾同理。
+    //     · 计数器在 posedge 更新、输出在 negedge —— **不同沿，天然无竞态**
+    //=========================================================================
+    reg  [6:0]      bpos;           // posedge 计数：0 = 换沿后的第 1 个上升沿
+    reg             lr_p;
+    reg  [SLOT-1:0] tsr;
 
-    wire tx_lr_chg = (lrclk ^ tlr_dn);
+    wire lr_chg_p = (lrclk ^ lr_p); // 在 posedge 域成立
 
-    // 本拍要发送的声道数据
-    wire signed [DW-1:0] tx_new = lrclk ? tx_r_hold : tx_l_hold;
+    always @(posedge bclk) begin
+        if (!rst_n) begin
+            lr_p <= 1'b0;
+            bpos <= 7'd0;
+        end else begin
+            lr_p <= lrclk;
+            // ⚠️ 计数器是【半帧】计数：LRCK 每个半帧就翻一次，
+            //    所以每换沿都归零，bpos 只在 0..SLOT-1 之间。
+            //    第一版写成 `!= 2*SLOT-1`，结果永远数不到 63
+            //    -> 装载条件里的 `bpos == 2*SLOT-1` 从不成立
+            //    -> 左声道从来没装载过（实测：L 收回的总是 R 的值）。
+            if (lrclk ^ lr_p)          bpos <= 7'd0;
+            else if (bpos != SLOT-1)   bpos <= bpos + 7'd1;
+        end
+    end
+
+    // 本拍之后就要换到哪一路：lrclk=1 表示现在处在【右半帧】，
+    //   所以接下来该发的是【左】声道；反之亦然。
+    wire signed [DW-1:0] tx_new = lrclk ? tx_l_hold : tx_r_hold;
 
     always @(negedge bclk) begin
-        // ⚠️ 和 RX 同理：BCLK 域的寄存器必须有复位。
-        //    少了这段，tsr/tlr_dn 上电是 X -> dacdat 一直是 X
-        //    -> 接收端（TB 或 WM8960）收回来全是 X。
         if (!rst_n) begin
-            tlr_dn <= 1'b0;
             tsr    <= {SLOT{1'b0}};
             dacdat <= 1'b0;
-        end else begin
-        tlr_dn <= lrclk;
-
-        if (tx_lr_chg) begin
-            // LRCK 刚翻转：这一刻就要立刻呈现【新声道的 MSB】——
-            //   I2S 的约定是"LRCK 翻、下一个上升沿接收方就采 MSB"，
-            //   所以 MSB 必须在【本次下降沿】就出现在线上了。
-            //   剩下的 DW-1 位要【左对齐】放进 32 位移位寄存器的高位区，
-            //   这样后面每拍取 tsr[SLOT-1] 就正好是 MSB->LSB 的顺序。
-            //   ⚠️ 不能写 `tsr <= data <<< 1` —— data 是 24 位，零扩展后再左移，
-            //      最高位会变成 0，等于多发了一个假的 0 位（第一版就是这么错的）。
+        end else if (bpos == SLOT-1) begin
+            // 下一个 posedge 就是新声道的第 0 位 -> 现在把 MSB 放上线
             dacdat <= tx_new[DW-1];
             tsr    <= {tx_new[DW-2:0], {(SLOT-DW+1){1'b0}}};
         end else begin
             dacdat <= tsr[SLOT-1];
             tsr    <= tsr <<< 1;
-        end
         end
     end
 

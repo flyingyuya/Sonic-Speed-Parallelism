@@ -72,3 +72,25 @@ set_output_delay -clock clk_pix_fwd -max  2.000 \
     [get_ports {lcd_rgb[*] lcd_hs lcd_vs}]
 set_output_delay -clock clk_pix_fwd -min -1.000 \
     [get_ports {lcd_rgb[*] lcd_hs lcd_vs}]
+
+
+#-----------------------------------------------------------------------------
+# ★ BCLK：现在【真的被当时钟用了】
+#-----------------------------------------------------------------------------
+#   i2s_bclk_if 用 posedge aud_bclk 直接采样 ADCDAT（教科书 I2S 做法）。
+#   Vivado 会自动把它识别成时钟，但不写约束的话这条路径上的时序
+#   不受分析保护 —— 必须显式声明。
+#   BCLK = 3.072 MHz -> 325.52 ns
+#   （WM8960 主模式、SYSCLK=12.288MHz、BCLKDIV=0100 -> /4）
+#
+#   注意：i2s_slave_clk 仍然存在（发送侧还在用它恢复时序），
+#   所以这里【不要】把 bclk/lrclk 从它那边摘掉；两者是并存的。
+#-----------------------------------------------------------------------------
+create_clock -name clk_bclk -period 325.520 [get_ports aud_bclk]
+
+# BCLK 与 clk_sys / clk_pix 异步（同源于模块 24MHz 晶振，但分频不同、
+# 相位关系不做保证）。跨域靠"翻转标志 + 数据保持"。
+set_clock_groups -asynchronous \
+    -group [get_clocks clk_bclk] \
+    -group [get_clocks clk_sys] \
+    -group [get_clocks clk_pix]

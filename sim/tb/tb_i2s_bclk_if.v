@@ -330,6 +330,10 @@ module tb_i2s_bclk_if;
         tx_en = 1'b1;
         @(posedge clk);
         repeat (4) @(posedge clk);
+        // ⚠️ 要等【两帧】：tx_l_hold 更新到 clk 域、再由 BCLK 域取走、
+        //    再过一整帧才从 dacdat 上出完。只等一帧会读到上一帧（旧值 0）。
+        //    （[5] 本来就是等两帧的，所以它一直是对的 —— 这正好反证了 DUT 没问题。）
+        wait_tx;
         wait_tx;
         $display("      喂 0x800000  ->  收回 0x%06X", cap_l[23:0]);
         `CHK(cap_l == 24'sh800000, "TX 的 MSB 位置正确");
