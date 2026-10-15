@@ -83,7 +83,7 @@ SPEC = [
     (0x1A, 0x1F9, "PWRMGMT2 + PLLEN=1 -> PLL ON (SPKL/SPKR kept)"),
 
     # ★★ 输入通路：LINPUT1 + 【LMIC2B=1】★★
-    (0x20, 0x108, "ADCL path: LINPUT1 single-ended + LMIC2B=1"),
+    (0x20, 0x118, "ADCL path: LINPUT1 + LMIC2B=1 + PGA boost 13dB"),
     (0x21, 0x000, "ADCR path: off (mono mic, DATSEL copies L to R)"),
 
     # ★ DATSEL=01：单声道话筒数据复制到左右两路（官方 0x1C4）
@@ -97,12 +97,16 @@ SPEC = [
     #   正确做法：**模拟增益只给够 ✗ 剩下在数字域补**（显示侧的 G 命令能到 x256，
     #   数字域放大不引入模拟噪声）。所以这里先用 0dB，需要时按 G 加大。
     # Input PGA：IPVU=1 LINMUTE=0 ＋ 【+12dB】
-    #   0 dB   -> 听不见说话（话筒输出很小）
-    #   +30 dB -> 底噪被放大 30dB，一片噪声
-    #   +12 dB -> 中间值。还不够就用显示侧的 G 命令补（能到 x256，
-    #             数字域放大不引入模拟噪声）。
-    (0x00, 0x127, "L in PGA: IPVU=1 LINMUTE=0 LINVOL +12dB"),
-    (0x01, 0x127, "R in PGA: IPVU=1 RINMUTE=0 RINVOL +12dB"),
+    #   ⚠️ 模拟增益要给够！之前"加大模拟增益就一片噪声"的结论是【无效的】——
+    #      那是接收器还坏着的时候测的。接收器修好之后重新调：
+    #      0 dB  -> 波形几乎不动，必须靠 G 放大
+    #      +12dB -> 要 G05（数字 x32）才看得清
+    #      但【数字域放大会把噪声一起放大，触发点每次落在不同采样上，
+    #      屏幕上会出现"两条线"在动】—— 这是触发抖动的典型表现。
+    #      正确做法：模拟增益给够（这里 +13dB boost + +24dB LINVOL = +37dB），
+    #      数字侧 G 只做微调。
+    (0x00, 0x137, "L in PGA: IPVU=1 LINMUTE=0 LINVOL +24dB"),
+    (0x01, 0x137, "R in PGA: IPVU=1 RINMUTE=0 RINVOL +24dB"),
 
     # 输入 boost 混音器：官方不 boost（0x000）
     (0x2B, 0x000, "L input boost: 0dB"),

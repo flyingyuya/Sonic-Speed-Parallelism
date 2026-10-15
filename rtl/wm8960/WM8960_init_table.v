@@ -61,11 +61,11 @@ module WM8960_init_table #(
         rom[10] = {7'h36, 9'b0_0010_0110};  // PLL K[15:8]
         rom[11] = {7'h37, 9'b0_1110_1001};  // PLL K[7:0] -> K=0x3126E9
         rom[12] = {7'h1a, 9'b1_1111_1001};  // PWRMGMT2 + PLLEN=1 -> PLL ON (SPKL/SPKR kept)
-        rom[13] = {7'h20, 9'b1_0000_1000};  // ADCL path: LINPUT1 single-ended + LMIC2B=1
+        rom[13] = {7'h20, 9'b1_0001_1000};  // ADCL path: LINPUT1 + LMIC2B=1 + PGA boost 13dB
         rom[14] = {7'h21, 9'b0_0000_0000};  // ADCR path: off (mono mic, DATSEL copies L to R)
         rom[15] = {7'h17, 9'b1_1100_0100};  // R23: TSDEN=1, DATSEL=01 (left ADC -> L and R)
-        rom[16] = {7'h00, 9'b1_0010_0111};  // L in PGA: IPVU=1 LINMUTE=0 LINVOL +12dB
-        rom[17] = {7'h01, 9'b1_0010_0111};  // R in PGA: IPVU=1 RINMUTE=0 RINVOL +12dB
+        rom[16] = {7'h00, 9'b1_0011_0111};  // L in PGA: IPVU=1 LINMUTE=0 LINVOL +24dB
+        rom[17] = {7'h01, 9'b1_0011_0111};  // R in PGA: IPVU=1 RINMUTE=0 RINVOL +24dB
         rom[18] = {7'h2b, 9'b0_0000_0000};  // L input boost: 0dB
         rom[19] = {7'h2c, 9'b0_0000_0000};  // R input boost: 0dB
         rom[20] = {7'h05, 9'b0_0000_0000};  // R5: DACMU=0 (unmute DAC!), ADCHPD=0 (ADC HPF on)
