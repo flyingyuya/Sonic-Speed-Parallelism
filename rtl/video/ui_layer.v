@@ -30,7 +30,7 @@
 `include "disp_cfg.vh"
 
 module ui_layer #(
-    parameter integer NB    = 6,        // 按钮个数
+    parameter integer NB          = 7,        // 按钮个数
     parameter integer XW    = 10,       // 坐标位宽（与时序发生器一致）
     parameter integer YW    = 9,
 
@@ -110,6 +110,7 @@ module ui_layer #(
     initial begin
         for (i = 0; i < NB; i = i + 1) act_tab[i] = i[3:0];
         if (NB > 5) act_tab[5] = 4'h6;      // 第 6 个按钮对应 DEMO 寄存器
+        if (NB > 6) act_tab[6] = 4'h7;      // 第 7 个按钮对应"输入源"(I 命令)
     end
 
     //=========================================================================
@@ -125,38 +126,45 @@ module ui_layer #(
     //   字库复用 rtl/video/font_rom.v（脚本生成的那份）。
     //=========================================================================
     localparam integer LBL_COL0 = 1;    // 标签从第几个字符格开始
-    localparam integer LBL_NCH  = 8;    // 每个按钮放几个字符
+    localparam integer LBL_NCH  = 6;    // 每个按钮放几个字符（7 个按钮，BW=66，6x8=48px 居中）
     localparam integer LBL_ROWOFF = 2;  // 标签从第几个字符行开始（垂直居中）
 
+    //   标签用"6 字符常量字符串"定义，再用一个循环摊平到数组里。
+    //   比手写 7x6=42 条逐字符赋值清楚得多，也不容易漏填。
+    //   （改成这样的原因：按钮从 6 个加到了 7 个，标签宽度必须从 8 收到 6，
+    //     逐字符写的话要改 42 行，还容易改错。）
     reg [7:0] lbl [0:NB*LBL_NCH-1];
 
+    //   为什么用 function + case 而不是数组字面量：
+    //     `localparam [..] T [0:N] = '{...}` 是 SystemVerilog 的语法，
+    //     iverilog -g2005 / Vivado 的 Verilog-2001 都收不了。
+    //     用 case 返回一个常量字符串，纯 2001，两边都认。
+    function [8*LBL_NCH-1:0] lbl_of;
+        input integer i;
+        begin
+            case (i)
+                0: lbl_of = "VIEW  ";
+                1: lbl_of = "STYLE ";
+                2: lbl_of = "HUE   ";
+                3: lbl_of = "GAIN  ";
+                4: lbl_of = "BG    ";
+                5: lbl_of = "DEMO  ";
+                6: lbl_of = "IN    ";
+                default: lbl_of = "      ";
+            endcase
+        end
+    endfunction
+
+    integer bi, bk;
+    reg [8*LBL_NCH-1:0] lbl_tmp;
+
     initial begin
-        // 先把整张表填成空格，再覆盖有字的地方 —— 免得漏填时读出 X
-        for (i = 0; i < NB*LBL_NCH; i = i + 1) lbl[i] = 8'h20;
-        //          01234567
-        lbl[ 0*8+0] = " "; lbl[ 0*8+1] = "V"; lbl[ 0*8+2] = "I";
-        lbl[ 0*8+3] = "E"; lbl[ 0*8+4] = "W"; lbl[ 0*8+5] = " ";
-        lbl[ 0*8+6] = " "; lbl[ 0*8+7] = " ";
-
-        lbl[ 1*8+0] = "S"; lbl[ 1*8+1] = "T"; lbl[ 1*8+2] = "Y";
-        lbl[ 1*8+3] = "L"; lbl[ 1*8+4] = "E"; lbl[ 1*8+5] = " ";
-        lbl[ 1*8+6] = " "; lbl[ 1*8+7] = " ";
-
-        lbl[ 2*8+0] = " "; lbl[ 2*8+1] = " "; lbl[ 2*8+2] = "H";
-        lbl[ 2*8+3] = "U"; lbl[ 2*8+4] = "E"; lbl[ 2*8+5] = " ";
-        lbl[ 2*8+6] = " "; lbl[ 2*8+7] = " ";
-
-        lbl[ 3*8+0] = " "; lbl[ 3*8+1] = "G"; lbl[ 3*8+2] = "A";
-        lbl[ 3*8+3] = "I"; lbl[ 3*8+4] = "N"; lbl[ 3*8+5] = " ";
-        lbl[ 3*8+6] = " "; lbl[ 3*8+7] = " ";
-
-        lbl[ 4*8+0] = " "; lbl[ 4*8+1] = " "; lbl[ 4*8+2] = "B";
-        lbl[ 4*8+3] = "G"; lbl[ 4*8+4] = " "; lbl[ 4*8+5] = " ";
-        lbl[ 4*8+6] = " "; lbl[ 4*8+7] = " ";
-
-        lbl[ 5*8+0] = " "; lbl[ 5*8+1] = "D"; lbl[ 5*8+2] = "E";
-        lbl[ 5*8+3] = "M"; lbl[ 5*8+4] = "O"; lbl[ 5*8+5] = " ";
-        lbl[ 5*8+6] = " "; lbl[ 5*8+7] = " ";
+        for (bi = 0; bi < NB; bi = bi + 1) begin
+            lbl_tmp = lbl_of(bi);
+            for (bk = 0; bk < LBL_NCH; bk = bk + 1)
+                // 字符串最左字符在最高字节，所以倒着取
+                lbl[bi*LBL_NCH + bk] = lbl_tmp[8*(LBL_NCH-1-bk) +: 8];
+        end
     end
 
     //=========================================================================

@@ -477,7 +477,7 @@ module tb_top;
             sel_before = dut.sel_idx;
             key1_n = 1'b0; #3_000_000; key1_n = 1'b1; #3_000_000;
             #10_000_000;
-            if (dut.sel_idx === ((sel_before == 3'd0) ? 3'd5 : sel_before - 1'b1))
+            if (dut.sel_idx === ((sel_before == 3'd0) ? 3'd6 : sel_before - 1'b1))
                 $display("  [ok ] KEY1 单击：光标 %0d -> %0d（左移）", sel_before, dut.sel_idx);
             else begin
                 n_err = n_err + 1;
@@ -488,7 +488,7 @@ module tb_top;
             sel_before = dut.sel_idx;
             key2_n = 1'b0; #3_000_000; key2_n = 1'b1; #3_000_000;
             #10_000_000;
-            if (dut.sel_idx === ((sel_before == 3'd5) ? 3'd0 : sel_before + 1'b1))
+            if (dut.sel_idx === ((sel_before == 3'd6) ? 3'd0 : sel_before + 1'b1))
                 $display("  [ok ] KEY2 单击：光标 %0d -> %0d（右移）", sel_before, dut.sel_idx);
             else begin
                 n_err = n_err + 1;
@@ -496,7 +496,7 @@ module tb_top;
             end
 
             // ---- ④ KEY2 双击 -> 确认 ----
-            //   ②左移一次 + ③右移一次 = 净位移 0 ⟹ 光标应当回到 0（VIEW）
+            //   ②左移一次（0 环绕到 6）+ ③右移一次（6 环绕到 0）= 回到 0（VIEW）
             //   在 VIEW 上"确认"= 切视图，所以看 ui_view 变没变
             view_before = dut.ui_view;
             key2_n = 1'b0; #3_000_000; key2_n = 1'b1; #3_000_000;
@@ -630,7 +630,7 @@ module tb_top;
         //   结果上板时表现为：光标一直扫、配置一动不动。
         //
         //   换算：disp_top 里 screen = raw >> 3（x）、raw >> 4（y）。
-        //   按钮 3 中心 = x 3*80+39 = 279 -> raw_x = 279*8 = 2232
+        //   按钮 3 中心 = x 3*(BW+GAP)+BW/2
         //                y 234+19   = 253 -> raw_y = 253*16 = 4048
         //---------------------------------------------------------------------
         // [5b] 先点把手，把操作面板打开
@@ -662,7 +662,12 @@ module tb_top;
         begin : tp_e2e
             reg [7:0] g0;
             g0 = dut.ui_wave_gain;
-            tp_force_x = 12'd2232;      // 按钮 3 中心的原始 X
+            //   ⚠️ 这个数字会随【面板几何】变：
+            //     屏幕像素 x = BX0 + 3*(BW+GAP) + BW/2
+            //     BW=78 时 = 279 -> 原始 2232（改 7 个按钮之前的值）
+            //     BW=66 时 = 237 -> 原始 1896
+            //     改 UI_BW / DISP_UI_NB 之后这里必须跟着改，否则"点不到按钮"。
+            tp_force_x = 12'd1896;      // 按钮 3（GAIN）中心的原始 X
             tp_force_y = 12'd4048;      // 按钮 3 中心的原始 Y
             // 触摸是每 10 ms 轮询一次，所以至少要跑一个轮询周期 + SPI 事务
             repeat (600000) @(posedge clk_sys);     // 12.5 ms（一个轮询周期多一点）
@@ -690,7 +695,7 @@ module tb_top;
             begin : short_press
                 reg [7:0] g1;
                 g1 = dut.ui_wave_gain;
-                tp_force_x = 12'd2232;      // 还是 GAIN 按钮
+                tp_force_x = 12'd1896;      // 还是 GAIN 按钮
                 tp_force_y = 12'd4048;
                 repeat (288000) @(posedge clk_sys);     // 6 ms
                 tp_force_x = 12'hFFF; tp_force_y = 12'hFFF;

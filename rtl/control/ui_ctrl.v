@@ -183,6 +183,8 @@ module ui_ctrl #(
                 // DEMO 0..3
                 4'h6: cfg_demo      <= (cfg_demo[1:0] >= 2'd3) ? 8'd0
                                                                : cfg_demo + 1'b1;
+                // IN 输入源 0..1（话筒 / 线路输入）
+                4'h7: cfg_src <= (cfg_src[0]) ? 8'd0 : 8'd1;
                 default: ;          // 其它地址不步进
             endcase
         end else if (next_view || auto_tick) begin
