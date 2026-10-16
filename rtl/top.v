@@ -349,13 +349,26 @@ module top #(
     localparam [2:0] SEL_N   = 3'd6;    // 光标项数
     localparam [2:0] SEL_MAX = 3'd5;    // 最后一项（DEMO）
 
+    //-------------------------------------------------------------------------
+    // 面板是否展开（从 clk_pix 域同步回来）
+    //   按键只有在【看得见面板】时才有意义 —— 否则用户在盲选一个看不见的光标。
+    //   KEY1 双击（开/关面板）是唯一【不受此约束】的动作，否则就打不开了。
+    //-------------------------------------------------------------------------
+    wire panel_open_pix;
+    wire panel_open_sys;
+    cdc_sync u_panel_sync (
+        .clk(clk_sys), .rst_n(rst_sys_n),
+        .din(panel_open_pix), .dout(panel_open_sys)
+    );
+    wire keys_en = panel_open_sys;
+
     reg [2:0] sel_idx;
     always @(posedge clk_sys) begin
         if (!rst_sys_n)
             sel_idx <= 3'd0;
-        else if (k1_single)                          // 左移
+        else if (keys_en && k1_single)               // 左移（面板不在时无效）
             sel_idx <= (sel_idx == 3'd0) ? SEL_MAX : sel_idx - 1'b1;
-        else if (k2_single)                          // 右移
+        else if (keys_en && k2_single)               // 右移（面板不在时无效）
             sel_idx <= (sel_idx == SEL_MAX) ? 3'd0 : sel_idx + 1'b1;
     end
     // SEL_N 只用于注释里的说明，避免"声明了没用"——加一条显式引用
@@ -375,8 +388,9 @@ module top #(
     //   和触摸的语义【完全一致】：VIEW 走 next_view，其它走 step_en+地址。
     //   ⟹ 顺手把 ui_ctrl 那条现成的通路复用了，下游一行都不用改。
     //-------------------------------------------------------------------------
-    wire key_view = k2_dbl & (sel_idx == 3'd0);
-    wire key_step = k2_dbl & (sel_idx != 3'd0);
+    //   同样受 keys_en 约束：面板不在眼前时的"确认"没有意义。
+    wire key_view = k2_dbl & keys_en & (sel_idx == 3'd0);
+    wire key_step = k2_dbl & keys_en & (sel_idx != 3'd0);
 
     //=========================================================================
     // 6b. UART 命令通道（PC 串口 -> 改任意配置寄存器）
@@ -689,6 +703,7 @@ module top #(
     //=========================================================================
     disp_top #(.ANIM_STEP(ANIM_STEP)) u_disp (
         .panel_tog  (panel_tog),            // KEY1 双击 -> 面板开/关
+        .panel_open (panel_open_pix),       // 面板是否展开 -> 回 clk_sys 约束按键
         .ui_btn_act (ui_btn_act),
         .ui_btn_press(),                    // 用不到：边沿在 clk_sys 侧重新做
         .clk_sys    (clk_sys),

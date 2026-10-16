@@ -117,6 +117,11 @@ module disp_top #(
     //      单拍脉冲跨时钟域会被漏掉（clk_pix 可能整个脉冲期间都没采到），
     //      翻转标志则一定被采到，再在本域做边沿检测即可。这是标准做法。
     input  wire                  panel_tog,
+
+    //--------------------- 面板是否展开（送回 clk_sys 决定"按键要不要理"）-----
+    //   语义：面板不在眼前时，移动光标/确认都没有意义（用户看不见自己在选什么），
+    //         所以顶层要用它把单击和确认【禁掉】，只留下"双击开面板"。
+    output wire                  panel_open,
     input  wire [7:0]            ui_wave_gain,  // 来自 ui_ctrl：波形增益（G 命令）
     input  wire [7:0]            ui_demo,       // 来自 ui_ctrl：演示图案（T 命令）
 
@@ -384,8 +389,16 @@ module disp_top #(
     //=========================================================================
     localparam integer TAB_MS  = `DISP_UI_IDLE_MS;       // 空闲多久自动收起
     localparam integer TAB_CNT = 12500 * TAB_MS;         // @12.5MHz，1 ms = 12500 拍
+    //   ⚠️⚠️ 【原来这里的位宽算错了，是个潜伏很久的 bug】
+    //     TAB_CNT = 12500 × 4000 = 50,000,000，而 idle_cnt 原本只声明了 24 位
+    //     （上限 16,777,215）。后面的比较写的是 TAB_CNT[23:0]，等于把
+    //     50,000,000 截断成 50,000,000 mod 2^24 = 16,445,568 拍 = 【1316 ms】。
+    //     ⟹ 现象就是"说好 4 秒自动收起，实际 1.3 秒就收了"。
+    //     触摸没通的时候看不出来（没人能打开面板），所以一直没暴露。
+    //   修法：位宽由 TAB_CNT 自己算出来，比较也跟着用同一段，杜绝再次不同步。
+    localparam integer TAB_CW  = $clog2(TAB_CNT + 1);
 
-    reg  [23:0] idle_cnt;
+    reg  [TAB_CW-1:0] idle_cnt;
     reg         ui_open;
     wire        panel_target = demo_touch | ui_open;
 
@@ -624,17 +637,29 @@ module disp_top #(
             ui_open  <= 1'b0;
             idle_cnt <= 24'd0;
         end else begin
-            // 任何触摸（或演示里的"按下"）都算活动，重置空闲计时
-            if (td_scr || tab_press || panel_tog_pix) idle_cnt <= 24'd0;
-            else if (idle_cnt != TAB_CNT[23:0]) idle_cnt <= idle_cnt + 1'b1;
+            //  ⚠️⚠️ 【这里原来有个更隐蔽的 bug：切换和自动收起会在同一拍互相覆盖】
+            //    旧代码是两条并列的 if：
+            //        if (tab_press)          ui_open <= ~ui_open;   // 想打开
+            //        if (idle_cnt == TAB_CNT) ui_open <= 1'b0;      // 又写回 0
+            //    idle_cnt 空闲久了会一直趴在饱和值上，所以"你双击的那一拍"
+            //   恰好也满足后一条 ⟹ 打开被覆盖掉 ⟹ 【双击偶尔才生效】。
+            //   ⟹ 修法：让两者【互斥】。用户刚动过手，这一拍就绝不能自动收起。
+            if (tab_press || panel_tog_pix) begin
+                ui_open  <= ~ui_open;       // 点把手 / KEY1 双击 -> 切换
+                idle_cnt <= {TAB_CW{1'b0}}; // 切换即视为"刚活动过"
+            end else begin
+                // 任何触摸（或演示里的"按下"）都算活动，重置空闲计时
+                if (td_scr) idle_cnt <= {TAB_CW{1'b0}};
+                else if (idle_cnt != TAB_CNT[TAB_CW-1:0])
+                    idle_cnt <= idle_cnt + 1'b1;
 
-            if (tab_press || panel_tog_pix)      // 点把手 / KEY1 双击 -> 切换
-                ui_open <= ~ui_open;
-            if (idle_cnt == TAB_CNT[23:0])       // 空闲超时 -> 自动收起
-                ui_open <= 1'b0;
+                if (idle_cnt == TAB_CNT[TAB_CW-1:0])  // 空闲超时 -> 自动收起
+                    ui_open <= 1'b0;
+            end
         end
     end
 
+    assign panel_open   = ui_open;
     assign ui_btn_press = press_now;
 
     //=========================================================================
