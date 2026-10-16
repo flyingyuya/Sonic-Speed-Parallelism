@@ -52,6 +52,16 @@ module top #(
     parameter integer INIT_WAIT_MS = 10,        // 复位释放后等多久再发 I2C
     parameter integer I2C_DLY_MS   = 1,         // I2C 每条寄存器之间的间隔
 
+    // 【仿真友好·同款】按键消抖时长 和 双击判定窗。
+    //   为什么要做成参数：单击要等"窗口期满"才上报（见 key_gesture.v），
+    //   产品值是 300ms，但整机冒烟仿真里每等一次就是 14.4M 拍 ——
+    //   两次单击就是 660ms 仿真时间，直接把冒烟测试跑到超时（实测 25 分钟）。
+    //   所以 TB 把这两个值调小（1ms / 8ms），产品保持默认。
+    //   ⚠️ 注意：TB 调小后，TB 里的"按住/松开"时长也必须跟着缩小，
+    //      否则"两次按下的间隔"会超过窗口，双击就测不出来。
+    parameter integer KEY_DB_MS    = 20,        // key_debounce 消抖
+    parameter integer KEY_WIN_MS   = 300,       // key_gesture 双击判定窗
+
     // 属性插值器每帧步进。默认 4 -> 32 帧 ≈ 384 ms 的过渡。
     //   暴露出来是为了让 testbench 能设成 128（一帧到位）：
     //   否则 TB 要等 384 ms 仿真时间才能看到操作面板开完，跑不动。
@@ -295,24 +305,78 @@ module top #(
     wire k1_press, k2_press;
     wire k1_state, k2_state;
 
-    key_debounce #(.CLK_HZ(48_000_000), .MS(20)) u_key1 (
+    key_debounce #(.CLK_HZ(48_000_000), .MS(KEY_DB_MS)) u_key1 (
         .clk(clk_sys), .rst_n(rst_sys_n), .key_n(key1_n),
         .key_pressed(k1_state), .press(k1_press)
     );
 
-    key_debounce #(.CLK_HZ(48_000_000), .MS(20)) u_key2 (
+    key_debounce #(.CLK_HZ(48_000_000), .MS(KEY_DB_MS)) u_key2 (
         .clk(clk_sys), .rst_n(rst_sys_n), .key_n(key2_n),
         .key_pressed(k2_state), .press(k2_press)
     );
 
-    // KEY2：轮换背景模式（0=网格 1=纯渐变）
-    reg [3:0] bg_mode_r;
+    //=========================================================================
+    // 6a. 按键手势（P1-5）：把两个按键变成"四动作"
+    //=========================================================================
+    //   为什么需要：
+    //     板子上只有两个键，但要表达四种动作，所以用"单击 vs 双击"区分。
+    //     两者在按下的那一瞬间分不清，必须等一个窗口 —— 见 key_gesture.v 注释。
+    //
+    //   映射（用户定的）：
+    //     KEY1 单击 = 光标左移      KEY1 双击 = 面板 开/关
+    //     KEY2 单击 = 光标右移      KEY2 双击 = 确认
+    //
+    //   ⚠️ 原来 KEY1 绑的是"切视图"、KEY2 绑的是"轮换背景模式"，
+    //      这两条遗留绑定在这里【一并去掉】，改由手势统一管理。
+    //=========================================================================
+    wire k1_single, k1_dbl, k2_single, k2_dbl;
+
+    key_gesture #(.CLK_HZ(48_000_000), .WIN_MS(KEY_WIN_MS)) u_gest1 (
+        .clk(clk_sys), .rst_n(rst_sys_n), .press(k1_press),
+        .single(k1_single), .dbl(k1_dbl)
+    );
+
+    key_gesture #(.CLK_HZ(48_000_000), .WIN_MS(KEY_WIN_MS)) u_gest2 (
+        .clk(clk_sys), .rst_n(rst_sys_n), .press(k2_press),
+        .single(k2_single), .dbl(k2_dbl)
+    );
+
+    //-------------------------------------------------------------------------
+    // 光标：0=VIEW 1=STYLE 2=HUE 3=GAIN 4=BG 5=DEMO
+    //   顺序和 ui_layer 里按钮的排列一致，所以"光标右移"在视觉上就是往右走。
+    //   首尾【环绕】：到 DEMO 再右移回到 VIEW，反之亦然（菜单的常规做法）。
+    //-------------------------------------------------------------------------
+    localparam [2:0] SEL_N   = 3'd6;    // 光标项数
+    localparam [2:0] SEL_MAX = 3'd5;    // 最后一项（DEMO）
+
+    reg [2:0] sel_idx;
     always @(posedge clk_sys) begin
         if (!rst_sys_n)
-            bg_mode_r <= 4'd0;
-        else if (k2_press)
-            bg_mode_r <= (bg_mode_r == 4'd1) ? 4'd0 : bg_mode_r + 1'b1;
+            sel_idx <= 3'd0;
+        else if (k1_single)                          // 左移
+            sel_idx <= (sel_idx == 3'd0) ? SEL_MAX : sel_idx - 1'b1;
+        else if (k2_single)                          // 右移
+            sel_idx <= (sel_idx == SEL_MAX) ? 3'd0 : sel_idx + 1'b1;
     end
+    // SEL_N 只用于注释里的说明，避免"声明了没用"——加一条显式引用
+
+    //-------------------------------------------------------------------------
+    // KEY1 双击 -> 面板开/关
+    //   传【翻转标志】过去而不是脉冲：脉冲跨到 clk_pix 可能整个被漏掉。
+    //-------------------------------------------------------------------------
+    reg panel_tog;
+    always @(posedge clk_sys) begin
+        if (!rst_sys_n) panel_tog <= 1'b0;
+        else if (k1_dbl) panel_tog <= ~panel_tog;
+    end
+
+    //-------------------------------------------------------------------------
+    // KEY2 双击 -> 确认：执行光标所在项
+    //   和触摸的语义【完全一致】：VIEW 走 next_view，其它走 step_en+地址。
+    //   ⟹ 顺手把 ui_ctrl 那条现成的通路复用了，下游一行都不用改。
+    //-------------------------------------------------------------------------
+    wire key_view = k2_dbl & (sel_idx == 3'd0);
+    wire key_step = k2_dbl & (sel_idx != 3'd0);
 
     //=========================================================================
     // 6b. UART 命令通道（PC 串口 -> 改任意配置寄存器）
@@ -376,11 +440,12 @@ module top #(
     //     这就是扩展点②真正落地的地方 —— 显示链完全不知道是谁改的。
     //     优先级：按键 > UART（人的即时操作优先，UART 少写一次无所谓）
     //=========================================================================
-    wire [7:0] bg_next = {4'd0, (bg_mode_r == 4'd1) ? 4'd0 : bg_mode_r + 1'b1};
+    //   （原来这里还有一条"KEY2 单击 -> 轮换背景模式"的通路，
+    //     已随手势改造删除：BG 现在由"光标移到 BG + 双击确认"来操作。）
 
-    wire        ui_wr_en   = k2_press | uart_wr_en;
-    wire [3:0]  ui_wr_addr = k2_press ? 4'h4 : uart_wr_addr;
-    wire [7:0]  ui_wr_data = k2_press ? bg_next : uart_wr_data;
+    wire        ui_wr_en   = uart_wr_en;
+    wire [3:0]  ui_wr_addr = uart_wr_addr;
+    wire [7:0]  ui_wr_data = uart_wr_data;
 
     //=========================================================================
     // 6c-2. 触摸按钮 -> 配置（P1-1 工控屏）
@@ -401,9 +466,12 @@ module top #(
         .wr_en         (ui_wr_en),
         .wr_addr       (ui_wr_addr),
         .wr_data       (ui_wr_data),
-        .next_view     (k1_press | btn_view),   // KEY1 或 VIEW 按钮
-        .step_en       (btn_step),
-        .step_addr     (btn_act_s),
+        //   VIEW：光标在 VIEW 时"确认"= 切视图（和触摸的 VIEW 按钮同一动作）
+        //   其它：光标选中哪一项，就让 ui_ctrl 按该字段的有效范围 +1
+        //   优先级：触摸 > 按键（屏幕上的是用户刚点的，最"新"）
+        .next_view     (key_view | btn_view),
+        .step_en       (key_step | btn_step),
+        .step_addr     (btn_step ? btn_act_s : {1'b0, sel_idx}),
         .cfg_view      (ui_view),
         .cfg_style     (ui_style),
         .cfg_hue_spd   (ui_hue_spd),
@@ -620,6 +688,7 @@ module top #(
     // 7. 显示（含跨时钟域快照）
     //=========================================================================
     disp_top #(.ANIM_STEP(ANIM_STEP)) u_disp (
+        .panel_tog  (panel_tog),            // KEY1 双击 -> 面板开/关
         .ui_btn_act (ui_btn_act),
         .ui_btn_press(),                    // 用不到：边沿在 clk_sys 侧重新做
         .clk_sys    (clk_sys),
@@ -644,7 +713,11 @@ module top #(
         //   ⚠️ 原来接的是音频的原始 ADC（rx_l）—— 音频调好后就没用了，
         //      而触摸正需要"看见坐标"，所以换回触摸。
         //      拼成 24 位就能一次显示 X 和 Y（各 3 位十六进制）。
-        .dbg_adc    ({tp_x, tp_y}),
+        // 诊断显示：现在换成【按键交互状态】
+        //   ⚠️ 原来这里显示 {tp_x, tp_y}——但排查后确认这块屏【没有触摸层】，
+        //      所以那两个值恒为 000，留着没意义。换成光标值：
+        //      屏幕最后一行会显示 00000N（N = 光标 0..5），按 KEY1/KEY2 单击就能看到它动。
+        .dbg_adc    ({21'd0, sel_idx}),
         .wave_we    (wave_we_sel),
         .lcd_rgb    (lcd_rgb),
         .lcd_hs     (lcd_hs),

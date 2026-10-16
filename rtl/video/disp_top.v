@@ -110,7 +110,13 @@ module disp_top #(
     input  wire signed [23:0]    wave_din,      // = audio_top 的 rx_l
     input  wire                  wave_we,       // = audio_top 的 rx_valid
     input  wire signed [23:0]    wave_th,      // 自适应触发门限（来自 env_track）
-    input  wire [23:0]           dbg_adc,      // 诊断：原始 ADC 值（直通显示）
+    input  wire [23:0]           dbg_adc,      // 诊断值（直通显示）
+
+    //--------------------- 面板开/关（来自 clk_sys 的按键手势）---------------------
+    //   ⚠️ 传的是【翻转标志】而不是单拍脉冲：
+    //      单拍脉冲跨时钟域会被漏掉（clk_pix 可能整个脉冲期间都没采到），
+    //      翻转标志则一定被采到，再在本域做边沿检测即可。这是标准做法。
+    input  wire                  panel_tog,
     input  wire [7:0]            ui_wave_gain,  // 来自 ui_ctrl：波形增益（G 命令）
     input  wire [7:0]            ui_demo,       // 来自 ui_ctrl：演示图案（T 命令）
 
@@ -554,6 +560,14 @@ module disp_top #(
     end
     wire tab_press = tab_hit_w & ~tab_hit_d;
 
+    // 按键手势过来的"翻转标志"：两级同步 + 边沿检测（同 tab_press 的用法）
+    reg [2:0] panel_tog_sync;
+    always @(posedge clk_pix) begin
+        if (!rst_pix_n) panel_tog_sync <= 3'b000;
+        else            panel_tog_sync <= {panel_tog_sync[1:0], panel_tog};
+    end
+    wire panel_tog_pix = panel_tog_sync[2] ^ panel_tog_sync[1];
+
     // 高亮值要先声明（Verilog 不允许先用后声明）——
     //   ui_layer 例化时就要用到它，而"锁存最近按下"的逻辑在下面。
     reg [3:0]  ui_active;
@@ -611,10 +625,10 @@ module disp_top #(
             idle_cnt <= 24'd0;
         end else begin
             // 任何触摸（或演示里的"按下"）都算活动，重置空闲计时
-            if (td_scr || tab_press) idle_cnt <= 24'd0;
+            if (td_scr || tab_press || panel_tog_pix) idle_cnt <= 24'd0;
             else if (idle_cnt != TAB_CNT[23:0]) idle_cnt <= idle_cnt + 1'b1;
 
-            if (tab_press)                       // 点把手 -> 切换
+            if (tab_press || panel_tog_pix)      // 点把手 / KEY1 双击 -> 切换
                 ui_open <= ~ui_open;
             if (idle_cnt == TAB_CNT[23:0])       // 空闲超时 -> 自动收起
                 ui_open <= 1'b0;

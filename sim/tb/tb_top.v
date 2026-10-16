@@ -177,7 +177,13 @@ module tb_top;
     top #(
         .INIT_WAIT_MS (INI_WAIT),
         .I2C_DLY_MS   (I2C_DLY),
-        .ANIM_STEP    (128)     // 面板一帧开完，否则 TB 要等 384 ms
+        .ANIM_STEP    (128),    // 面板一帧开完，否则 TB 要等 384 ms
+        // 按键手势的两个时长同样要缩小：产品是 20ms/300ms，
+        // 那样"一次单击"就要等 14.4M 拍，冒烟测试会超时（实测过）。
+        // ⚠️ 缩小的同时，下面 T_PRESS/T_GAP 也要按比例缩小，
+        //    否则两次按下的间隔会超过窗口，双击测不出来。
+        .KEY_DB_MS    (1),      // 消抖 1ms
+        .KEY_WIN_MS   (8)       // 双击窗 8ms
     ) dut (
         .clk_200m_p (clk_p),
         .clk_200m_n (clk_n),
@@ -422,23 +428,95 @@ module tb_top;
         // [4] 按键端到端：按一下 KEY1，视图预设应该轮换
         //---------------------------------------------------------------------
         $display("");
-        $display(" [4] 按键端到端");
+        $display(" [4] 按键手势端到端（P1-5：单击/双击四动作）");
+        //   映射：KEY1 单击=光标左移  KEY1 双击=面板开关
+        //         KEY2 单击=光标右移  KEY2 双击=确认
+        //
+        //   时序依据（很重要，改参数时这里要跟着改）：
+        //     key_debounce MS=20  ⟹ 按下要持续 >20ms 才认
+        //     key_gesture WIN_MS=300 ⟹ 两次按下的【消抖脉冲间隔】<300ms 才算双击
+        //   本 TB 每次按下低 30ms、高 2ms，所以两次按下的脉冲间隔约 22ms，
+        //   远小于 300ms ⟹ 连按两次必然被判为双击。
+        //   而【单击】要等 300ms 窗口期满才发，所以单击后要等 >300ms 再看结果。
         begin : key_test
-            reg [7:0] v_before;
-            reg [3:0] i_before;
-            v_before = dut.ui_view;
-            i_before = dut.ui_view_idx;
-            // 按下 KEY1 并保持足够久（消抖窗口 20 ms，这里给 30 ms）
-            key1_n = 1'b0;
-            #30_000_000;
-            key1_n = 1'b1;
-            #5_000_000;
-            if (dut.ui_view === v_before) begin
+            reg [2:0] sel_before;
+            reg [7:0] view_before;
+            reg       panel_before;
+            // 时序（配合上面的 KEY_DB_MS=1 / KEY_WIN_MS=8）：
+            //   按下 3ms（>1ms 消抖）⟹ 消抖脉冲落在按下后约 1ms
+            //   松开 3ms（>1ms 消抖）⟹ 第二次按下的脉冲与之相隔约 4ms
+            //   4ms < 8ms 窗口 ⟹ 连按两次被判为双击 ✓
+            // 单击要等窗口期满，所以单击后等 10ms 再看结果。
+            #0;   // 占位：具体等待写在下面各步里
+
+            // ---- ① KEY1 单击 -> 光标左移（0 环绕到 5）----
+            sel_before = dut.sel_idx;
+            key1_n = 1'b0; #3_000_000; key1_n = 1'b1; #3_000_000;
+            #10_000_000;                       // 等过双击判定窗（KEY_WIN_MS=8ms）
+            if (dut.sel_idx === ((sel_before == 3'd0) ? 3'd5 : sel_before - 1'b1))
+                $display("  [ok ] KEY1 单击：光标 %0d -> %0d（左移）", sel_before, dut.sel_idx);
+            else begin
                 n_err = n_err + 1;
-                $display("  [ERR] 按下 KEY1 后视图预设没变（一直 %08b）", v_before);
+                $display("  [ERR] KEY1 单击后光标 = %0d（期望左移，原 %0d）", dut.sel_idx, sel_before);
+            end
+
+            // ---- ② KEY1 双击 -> 面板开/关 ----
+            panel_before = dut.u_disp.ui_open;
+            // ⚠️ 两次按下之间必须【松开足够久】——key_debounce 连"释放"也要消抖
+            //    （20ms）。第一版只给了 2ms 高电平，结果第二次按下根本没被认出来，
+            //    双击自然不成立。这里给 30ms，远大于消抖窗口。
+            key1_n = 1'b0; #3_000_000; key1_n = 1'b1; #3_000_000;
+            key1_n = 1'b0; #3_000_000; key1_n = 1'b1; #3_000_000;
+            if (dut.u_disp.ui_open === ~panel_before)
+                $display("  [ok ] KEY1 双击：面板 %0b -> %0b（切换）", panel_before, dut.u_disp.ui_open);
+            else begin
+                n_err = n_err + 1;
+                $display("  [ERR] KEY1 双击后面板 = %0b（期望 %0b）", dut.u_disp.ui_open, ~panel_before);
+            end
+
+            // ---- ③ KEY2 单击 -> 光标右移 ----
+            sel_before = dut.sel_idx;
+            key2_n = 1'b0; #3_000_000; key2_n = 1'b1; #3_000_000;
+            #10_000_000;
+            if (dut.sel_idx === ((sel_before == 3'd5) ? 3'd0 : sel_before + 1'b1))
+                $display("  [ok ] KEY2 单击：光标 %0d -> %0d（右移）", sel_before, dut.sel_idx);
+            else begin
+                n_err = n_err + 1;
+                $display("  [ERR] KEY2 单击后光标 = %0d（期望右移，原 %0d）", dut.sel_idx, sel_before);
+            end
+
+            // ---- ④ KEY2 双击 -> 确认 ----
+            //   ①左移一次 + ③右移一次 = 净位移 0 ⟹ 此时光标应当回到 0（VIEW）
+            //   在 VIEW 上"确认"= 切视图，所以看 ui_view 变没变
+            view_before = dut.ui_view;
+            key2_n = 1'b0; #3_000_000; key2_n = 1'b1; #3_000_000;
+            key2_n = 1'b0; #3_000_000; key2_n = 1'b1; #3_000_000;
+            if (dut.sel_idx === 3'd0) begin
+                if (dut.ui_view === view_before) begin
+                    n_err = n_err + 1;
+                    $display("  [ERR] KEY2 双击确认后视图预设没变（一直 %08b）", view_before);
+                end else
+                    $display("  [ok ] KEY2 双击确认：视图预设 %08b -> %08b", view_before, dut.ui_view);
             end else begin
-                $display("  [ok ] 按一下 KEY1：视图预设 %08b -> %08b（预设编号 %0d -> %0d）",
-                         v_before, dut.ui_view, i_before, dut.ui_view_idx);
+                n_err = n_err + 1;
+                $display("  [ERR] 前提不成立：期望光标在 0(VIEW)，实际 %0d", dut.sel_idx);
+            end
+
+            // ---- ⑤ 收尾：把面板【切回原状】----
+            //   ⚠️ 这一步不是可有可无的：
+            //      ② 把 ui_open 翻成了 1，而 [6] 的触摸测试【假设面板初始是关的】——
+            //      它在②之后点把手，看到的是 1->0，于是判"没打开"失败，
+            //      接着面板关着 ⟹ GAIN 按钮点不到 ⟹ 又连锁挂两项。
+            //      ⟹ 测试之间的【状态污染】是经典坑：一个用例改了全局状态，
+            //        后面的用例就全变了。凡是"有开关状态"的被测对象，用例收尾都要还原。
+            key1_n = 1'b0; #3_000_000; key1_n = 1'b1; #3_000_000;
+            key1_n = 1'b0; #3_000_000; key1_n = 1'b1; #3_000_000;
+            if (dut.u_disp.ui_open === panel_before)
+                $display("  [ok ] 收尾：面板已切回 %0b（不污染后续触摸测试）", panel_before);
+            else begin
+                n_err = n_err + 1;
+                $display("  [ERR] 收尾失败：面板 = %0b（期望 %0b）",
+                         dut.u_disp.ui_open, panel_before);
             end
         end
 
