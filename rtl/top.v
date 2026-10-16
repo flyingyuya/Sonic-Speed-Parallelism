@@ -151,19 +151,37 @@ module top #(
     reg         init_started;
     wire        init_done;
 
+    //-------------------------------------------------------------------------
+    // 音频输入源（P1-6 线路输入）
+    //   0 = 话筒（LINPUT1）  1 = 线路输入（LINPUT3/RINPUT3）
+    //   默认话筒 —— 与改造前完全一致，行为零变化。
+    //   变化时会重新脉冲一次 init_go（整表重写，表是幂等的，安全）。
+    //-------------------------------------------------------------------------
+    reg         src_sel;
+    reg         src_sel_d;
+    wire        src_chg = (src_sel != src_sel_d);
+
     always @(posedge clk_sys) begin
         if (!rst_sys_n) begin
             wait_cnt     <= 32'd0;
             init_go      <= 1'b0;
             init_started <= 1'b0;
+            src_sel      <= 1'b0;               // 默认话筒
+            src_sel_d    <= 1'b0;
         end else begin
-            init_go <= 1'b0;                    // 默认拉低，只给一个脉冲
+            init_go    <= 1'b0;                 // 默认拉低，只给一个脉冲
+            src_sel_d  <= src_sel;
             if (!init_started) begin
                 wait_cnt <= wait_cnt + 1'b1;
                 if (wait_cnt >= WAIT_CYC) begin
                     init_go      <= 1'b1;
                     init_started <= 1'b1;
                 end
+            end else if (src_chg) begin
+                // 输入源变了 -> 重跑一遍整表初始化。
+                // 表是幂等的（每条都是"设定成某个值"），全表重写比"只写 4 条"
+                // 更省事也更不容易漏；代价只有 ~33ms 的 I2C 时间。
+                init_go <= 1'b1;
             end
         end
     end
@@ -176,6 +194,7 @@ module top #(
         .Rst_n     (rst_sys_n),
         .Go        (init_go),
         .device_id (8'h34),                 // WM8960: 7bit 0x1A << 1 | W
+        .src_sel   (src_sel),               // 0=话筒 1=线路输入（P1-6）
         .Init_Done (init_done),
         .i2c_sclk  (aud_scl),
         .i2c_sdat  (aud_sda)

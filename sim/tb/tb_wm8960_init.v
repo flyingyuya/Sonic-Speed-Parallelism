@@ -59,6 +59,7 @@ module tb_wm8960_init;
         .Rst_n     (rst_n),
         .Go        (go),
         .device_id (DEV_ADDR_W),
+        .src_sel   (1'b0),          // 默认话筒
         .Init_Done (init_done),
         .i2c_sclk  (i2c_sclk),
         .i2c_sdat  (i2c_sdat)
