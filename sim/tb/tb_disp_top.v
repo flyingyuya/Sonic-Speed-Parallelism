@@ -124,6 +124,12 @@ module tb_disp_top;
     wire [23:0] lcd_rgb;
     wire        lcd_hs, lcd_vs, lcd_clk;
 
+    // 导帧用：让面板【开着】并把光标停在第 3 个按钮上（=GAIN）。
+    //   panel_tog 是【翻转标志】不是脉冲：0->1 会让 disp_top 翻一次 ui_open。
+    //   这样导出来的图能一次看清 7 个按钮的排布和标签渲染。
+    reg         panel_tog_tb;
+    reg  [3:0]  ui_sel_tb;
+
     disp_top #(
         // 让插值器一帧到位。
         // 参照模型算的是【稳态】（pres = view_en ? 128 : 0），
@@ -151,9 +157,9 @@ module tb_disp_top;
         .wave_th   (wave_th_v),
         .dbg_adc   (dbg_adc_v),
         // 新增端口：本用例不测按键，全部给"无活动/无光标"的静默值
-        .panel_tog  (1'b0),
+        .panel_tog  (panel_tog_tb),
         .key_act    (1'b0),
-        .ui_sel     (4'hF),         // 4'hF = 无高亮（ui_layer 里 act_tab 不会等于 F）
+        .ui_sel     (ui_sel_tb),
         .wave_we   (wave_we),
         .lcd_rgb   (lcd_rgb),
         .lcd_hs    (lcd_hs),
@@ -387,6 +393,10 @@ module tb_disp_top;
     always @(posedge clk_pix) begin
         if (cap_en && dut.de && fd != 0)
             $fwrite(fd, "%c%c%c", lcd_rgb[23:16], lcd_rgb[15:8], lcd_rgb[7:0]);
+
+            // [DIAG] 标签行的几何诊断：每 8 像素（一个字符格）打一次。
+            //   目的是回答"bx 到底是多少、lx/l_col 从哪个值开始"——
+            //   光看图只能知道"串了"，不知道串在哪一步。
     end
 
     //=========================================================================
@@ -419,12 +429,21 @@ module tb_disp_top;
             got_bars[k] = 0;
         end
 
+        panel_tog_tb = 1'b0;  ui_sel_tb = 4'hF;
         rst_sys_n = 1'b0;  rst_pix_n = 1'b0;
         repeat (20) @(posedge clk_sys);
         repeat (10) @(posedge clk_pix);
         @(negedge clk_sys); rst_sys_n = 1'b1;
         @(negedge clk_pix); rst_pix_n = 1'b1;
         repeat (4) @(posedge clk_pix);
+
+        // ⚠️ 这里【不要】把面板打开：
+        //   本 TB 同时还在和参考模型(u_ui_ref)逐像素比对，而参考模型并不知道
+        //   面板开了 —— 一打开就整片失配（实测报了 (453,132) 这类错，看着像极坐标坏了）。
+        //   需要看面板排布时，临时把下面这行改成 panel_tog_tb = 1'b1，
+        //   跑完【只看导出的 PPM】、不看逐像素比对结果，然后改回来。
+        //   （7 按钮那次就是这么做才看到"标签偏 4 像素"的。）
+        @(negedge clk_pix); panel_tog_tb = 1'b0; ui_sel_tb = 4'hF;
 
         fd = $fopen("sim/build/disp_frame.ppm", "wb");
         if (fd == 0)
