@@ -89,4 +89,4 @@
 `define DISP_TAB_Y      124         // 垂直居中（272/2 - 24/2）
 `define DISP_TAB_W      16
 `define DISP_TAB_H      24
-`define DISP_UI_IDLE_MS 4000        // 空闲多久自动收起（毫秒）
+`define DISP_UI_IDLE_MS 5000        // 空闲多久自动收起（毫秒）

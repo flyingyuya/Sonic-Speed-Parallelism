@@ -150,6 +150,10 @@ module tb_disp_top;
         .wave_din  (wave_din),
         .wave_th   (wave_th_v),
         .dbg_adc   (dbg_adc_v),
+        // 新增端口：本用例不测按键，全部给"无活动/无光标"的静默值
+        .panel_tog  (1'b0),
+        .key_act    (1'b0),
+        .ui_sel     (4'hF),         // 4'hF = 无高亮（ui_layer 里 act_tab 不会等于 F）
         .wave_we   (wave_we),
         .lcd_rgb   (lcd_rgb),
         .lcd_hs    (lcd_hs),

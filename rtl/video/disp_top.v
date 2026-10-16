@@ -118,6 +118,17 @@ module disp_top #(
     //      翻转标志则一定被采到，再在本域做边沿检测即可。这是标准做法。
     input  wire                  panel_tog,
 
+    //--------------------- 按键活动（用来重置空闲计时）---------------------
+    //   语义：按键的任何动作都算"用户还在操作"，面板不该这时自己收起来。
+    //   同样传【翻转标志】而不是脉冲（脉冲跨域会被漏掉）。
+    input  wire                  key_act,
+
+    //--------------------- 按键光标（0..5，用来画方框高亮）---------------------
+    //   ui_layer 里本来就有"active 与某个按钮动作码相同则该按钮高亮"的机制
+    //   （见 ui_layer.v 的 is_active）。以前这个 active 只来自触摸，
+    //   而触摸是死的，所以永远不亮。现在把按键光标接上，高亮就活了。
+    input  wire [3:0]            ui_sel,
+
     //--------------------- 面板是否展开（送回 clk_sys 决定"按键要不要理"）-----
     //   语义：面板不在眼前时，移动光标/确认都没有意义（用户看不见自己在选什么），
     //         所以顶层要用它把单击和确认【禁掉】，只留下"双击开面板"。
@@ -581,9 +592,20 @@ module disp_top #(
     end
     wire panel_tog_pix = panel_tog_sync[2] ^ panel_tog_sync[1];
 
-    // 高亮值要先声明（Verilog 不允许先用后声明）——
-    //   ui_layer 例化时就要用到它，而"锁存最近按下"的逻辑在下面。
-    reg [3:0]  ui_active;
+    // 按键活动：同样两级同步 + 边沿检测
+    reg [2:0] key_act_sync;
+    always @(posedge clk_pix) begin
+        if (!rst_pix_n) key_act_sync <= 3'b000;
+        else            key_act_sync <= {key_act_sync[1:0], key_act};
+    end
+    wire key_act_pix = key_act_sync[2] ^ key_act_sync[1];
+
+
+    // 高亮值必须先【声明】再被下面的 ui_layer 例化引用 ——
+    //   Verilog-2001 对 wire 是"声明在前"，不能像 reg 赋值那样靠后。
+    //   （这里踩过一次：把 reg 改成 wire 时顺手把声明删了，编译报 declaration after use。）
+    //   来源的赋值在下面（触摸优先，否则用按键光标）。
+    wire [3:0] ui_active;
 
     ui_layer #(
         .NB(NB_UI), .XW(XW), .YW(YW),
@@ -605,29 +627,39 @@ module disp_top #(
         .tab_hit  (tab_hit_w)
     );
 
-    // 高亮：锁存"最近一次按下的按钮"，松开后保持约 1.3 s，让人看清反馈。
+    // 高亮：锁存"最近一次按下的按钮"，松开后保持约 0.3 s，让人看清反馈。
     //   press_now 是按下沿；它同时也作为对外的 ui_btn_press 脉冲。
     reg [21:0] hl_cnt;
     reg        td_scr_d;
+    reg [3:0]  hl_act;                      // 触摸锁存下来的动作码
     wire       press_now = td_scr & ~td_scr_d;
 
     always @(posedge clk_pix) begin
         if (!rst_pix_n) begin
-            td_scr_d  <= 1'b0;
-            ui_active <= 4'hF;
-            hl_cnt    <= 22'd0;
+            td_scr_d <= 1'b0;
+            hl_act   <= 4'hF;
+            // ⚠️ 复位就置成"已过期"：否则开机后头 0.3 s 会误判成
+            //    "触摸高亮还在"，把【按键光标的高亮】挡住 0.3 s。
+            hl_cnt   <= 22'h3FFFFF;
         end else begin
             td_scr_d <= td_scr;
             if (press_now) begin
-                ui_active <= ui_btn_act;    // 按下时锁存动作码
-                hl_cnt    <= 22'd0;
+                hl_act <= ui_btn_act;       // 按下时锁存动作码
+                hl_cnt <= 22'd0;
             end else if (hl_cnt != 22'h3FFFFF) begin
-                hl_cnt <= hl_cnt + 1'b1;    // 保持一段时间后自动清高亮
-            end else begin
-                ui_active <= 4'hF;
+                hl_cnt <= hl_cnt + 1'b1;    // 保持一段时间后自动过期
             end
         end
     end
+
+    //-------------------------------------------------------------------------
+    // 高亮的来源，优先级：触摸刚按下的（0.3s 内） > 按键光标
+    //   · 触摸没死的板子：点一下就闪一下，和以前一样
+    //   · 触摸是死的板子（本板）：hl_cnt 一直过期，高亮恒等于按键光标
+    //   ⟹ 两条路共用 ui_layer 里那套 is_active 的方框高亮，不新增任何绘制代码。
+    //-------------------------------------------------------------------------
+    wire        touch_hl = (hl_cnt != 22'h3FFFFF);
+    assign      ui_active = touch_hl ? hl_act : ui_sel;
 
     //=========================================================================
     // 6b-2. 面板展开/收起的驱动（放在 ui_layer 之后：要用它的 tab_press）
@@ -648,8 +680,11 @@ module disp_top #(
                 ui_open  <= ~ui_open;       // 点把手 / KEY1 双击 -> 切换
                 idle_cnt <= {TAB_CW{1'b0}}; // 切换即视为"刚活动过"
             end else begin
-                // 任何触摸（或演示里的"按下"）都算活动，重置空闲计时
-                if (td_scr) idle_cnt <= {TAB_CW{1'b0}};
+                // 任何【用户动作】都算活动，重置空闲计时：
+                //   · 触摸按下
+                //   · ⭐ 按键的任何动作（单击移动光标、双击确认）——
+                //     这条原来漏了，导致"用单击选着选着，面板自己收了"
+                if (td_scr || key_act_pix) idle_cnt <= {TAB_CW{1'b0}};
                 else if (idle_cnt != TAB_CNT[TAB_CW-1:0])
                     idle_cnt <= idle_cnt + 1'b1;
 
