@@ -25,8 +25,8 @@
 //      用 PD=11 走内部参考就【不需要 R10】，省一次 0402 的焊接。
 //      这也是本模块默认用 PD=11 的原因。
 //
-//     所以：读 X 的命令 = 8'b1101_0011 = 0xD3   （A=101, MODE=0, SER/DFR=0, PD=11）
-//           读 Y 的命令 = 8'b1001_0011 = 0x93   （A=001, 同上）
+//     所以：读 X 的命令 = 8'b1101_0001 = 0xD1   （A=101, MODE=0, SER/DFR=0, PD=01）
+//           读 Y 的命令 = 8'b1001_0001 = 0x91   （A=001, 同上）
 //
 // 【DIN / DOUT 的边沿】
 //   器件在 DCLK 的【下降沿】更新 DOUT，主机在【上升沿】采样。
@@ -105,8 +105,12 @@ module xpt2046 #(
     //   正确值：
     //     X = 1 101 0 0 11 = 0xD3
     //     Y = 1 001 0 0 11 = 0x93
-    localparam [7:0] CMD_X = 8'hD3;     // 1 101 0 0 11 : X, 12bit, 差分, 内部参考
-    localparam [7:0] CMD_Y = 8'h93;     // 1 001 0 0 11 : Y, 12bit, 差分, 内部参考
+    //   ⚠️⚠️ PD1 必须为 0！子卡原理图把 VREF(pin9) 经 R10(0Ω) 直接接到 VDD_3V3，
+    //     ⟹ 用的是【外部参考】。手册原文：internal reference "must be commanded to be
+    //     off"（PD1=0），否则内部 2.5V 参考会和外部 3.3V 打架。
+    //   PD0 = 1 ⟹ ADC 常开（不进入转换间掉电）。
+    localparam [7:0] CMD_X = 8'hD1;     // 1 101 0 0 01 : X, 12bit, 差分, 外部参考, ADC on
+    localparam [7:0] CMD_Y = 8'h91;     // 1 001 0 0 01 : Y, 12bit, 差分, 外部参考, ADC on
 
     // 状态机
     localparam S_IDLE = 2'd0,
