@@ -157,7 +157,12 @@ module top #(
     //   默认话筒 —— 与改造前完全一致，行为零变化。
     //   变化时会重新脉冲一次 init_go（整表重写，表是幂等的，安全）。
     //-------------------------------------------------------------------------
-    reg         src_sel;
+    //   ⚠️ src_sel 是【wire】：它由 ui_ctrl 的 cfg_src 驱动（见下面的 assign）。
+    //      不要在这里用 always 写它 —— 那会变成"同一个变量被两种方式驱动"，
+    //      静态检查工具会直接报 BLKANDNBLK 类错误。
+    //      （注意：注释里不要写"斜杠/斜杠 空白 + 该工具名"——
+    //        它会被当成 pragma 解析，报 BADVLTPRAGMA。）
+    wire        src_sel;
     reg         src_sel_d;
     wire        src_chg = (src_sel != src_sel_d);
 
@@ -166,8 +171,7 @@ module top #(
             wait_cnt     <= 32'd0;
             init_go      <= 1'b0;
             init_started <= 1'b0;
-            src_sel      <= 1'b0;               // 默认话筒
-            src_sel_d    <= 1'b0;
+            src_sel_d    <= 1'b0;               // src_sel 由 ui_ctrl 复位（默认话筒）
         end else begin
             init_go    <= 1'b0;                 // 默认拉低，只给一个脉冲
             src_sel_d  <= src_sel;
@@ -452,6 +456,8 @@ module top #(
 
     // ui_ctrl 的配置输出（声明必须在使用之前 —— Verilog 不允许先用后声明）
     wire [7:0] ui_view, ui_style, ui_hue_spd, ui_wave_gain, ui_bg_mode, ui_auto, ui_demo;
+    wire [7:0] ui_src;                  // 输入源（0=话筒 1=线路），UART 命令 I 写 ui_ctrl 的 4'h7
+    assign src_sel = ui_src[0];         // 只取最低位（ui_ctrl 那边已经限过 1 位）
     wire [3:0] ui_view_idx;
 
     cmd_proc u_cmd (
@@ -532,6 +538,7 @@ module top #(
         .cfg_bg_mode   (ui_bg_mode),
         .cfg_auto      (ui_auto),
         .cfg_demo      (ui_demo),
+        .cfg_src       (ui_src),           // 输入源：UART 命令 I 写 4'h7
         .view_idx      (ui_view_idx)
     );
 

@@ -91,6 +91,10 @@ module cmd_proc #(
                 //   之所以要这个命令：没有音频模块时，柱状/极坐标/波形
                 //   全是空的，S/H/G 你看不出有没有生效。开个内置图案就能看了。
                 "T", "t": cmdidx = 4'h6;
+                // I = 音频输入源（P1-6 线路输入）
+                //   I00 = 话筒（板载 MIC，接 LINPUT1）
+                //   I01 = 线路输入（3.5mm 座，接 LINPUT3 / RINPUT3）
+                "I", "i": cmdidx = 4'h7;
                 default : cmdidx = 4'hF;
             endcase
         end

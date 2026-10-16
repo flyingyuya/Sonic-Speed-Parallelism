@@ -72,6 +72,9 @@ module ui_ctrl #(
     output reg  [7:0]  cfg_bg_mode,
     output reg  [7:0]  cfg_auto,
     output reg  [7:0]  cfg_demo,        // 演示/自检图案选择
+    // 音频输入源（P1-6）：0=话筒 1=线路输入
+    //   只取 1 位 —— 写进来的高 7 位一律丢掉，避免垃圾值让下游产生奇怪状态。
+    output reg  [7:0]  cfg_src,
     output reg  [3:0]  view_idx         // 当前预设编号（观测用）
 );
 
@@ -136,6 +139,7 @@ module ui_ctrl #(
             cfg_bg_mode   <= 8'd0;
             cfg_auto      <= 8'd0;
             cfg_demo      <= 8'd0;              // 上电关（走真实音频）
+            cfg_src       <= 8'd0;              // 输入源：默认话筒（与改造前一致）
             view_idx      <= 4'd0;              // 对应 preset[0]（柱状+波形，极坐标隐藏）
         end else if (wr_en) begin
             case (wr_addr)
@@ -146,6 +150,8 @@ module ui_ctrl #(
                 4'h4: cfg_bg_mode   <= wr_data;
                 4'h5: cfg_auto      <= wr_data;
                 4'h6: cfg_demo      <= wr_data;
+                // I 命令：只保留最低位（0=话筒 1=线路）
+                4'h7: cfg_src       <= {7'd0, wr_data[0]};
                 default: ;                      // 未定义的地址忽略
             endcase
             // 直接写 VIEW 时让预设编号跟着对齐（否则下一次按键会跳）
