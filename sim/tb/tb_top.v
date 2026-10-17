@@ -512,6 +512,60 @@ module tb_top;
                 $display("  [ERR] 前提不成立：期望光标在 0(VIEW)，实际 %0d", dut.sel_idx);
             end
 
+            // ---- ④b 覆盖【尾部两项】的确认动作 ----
+            //   ⚠️ 为什么要专门测这两项：
+            //     ui_ctrl 的动作码不是连续的光标值 ——
+            //       光标 0..4 -> 动作码 0..4
+            //       光标 5(DEMO) -> 4'h6    （跳过 5）
+            //       光标 6(IN)   -> 4'h7
+            //     而 4'h5 在 ui_ctrl 的 step 分支里【不存在】（4'h5 是 cfg_auto，只给 UART 用）。
+            //     所以只要"光标->动作码"这份映射漏了一处，就会表现为
+            //       "DEMO 按了没反应、IN 却执行了 DEMO"。
+            //     这类"差一格"的 bug，中间的项全对，只有跳号处和末尾错 ——
+            //     所以【第一项和最后两项】必须逐个测。
+            begin : tail_items
+                reg [7:0] d0, s0;
+                integer n;
+
+                // 从 VIEW(0) 右移到 DEMO(5)：5 次单击
+                for (n = 0; n < 5; n = n + 1) begin
+                    key2_n = 1'b0; #3_000_000; key2_n = 1'b1; #3_000_000;
+                    #10_000_000;
+                end
+                if (dut.sel_idx !== 3'd5) begin
+                    n_err = n_err + 1;
+                    $display("  [ERR] 右移 5 次后光标 = %0d（期望 5 = DEMO）", dut.sel_idx);
+                end else begin
+                    d0 = dut.ui_demo;
+                    // DEMO 上双击确认
+                    key2_n = 1'b0; #3_000_000; key2_n = 1'b1; #3_000_000;
+                    key2_n = 1'b0; #3_000_000; key2_n = 1'b1; #3_000_000;
+                    if (dut.ui_demo === d0) begin
+                        n_err = n_err + 1;
+                        $display("  [ERR] 光标在 DEMO 上确认后 cfg_demo 没变（还是 %0d）", d0);
+                    end else
+                        $display("  [ok ] 光标在 DEMO 上确认：cfg_demo %0d -> %0d", d0, dut.ui_demo);
+                end
+
+                // 再右移一次到 IN(6)
+                key2_n = 1'b0; #3_000_000; key2_n = 1'b1; #3_000_000;
+                #10_000_000;
+                if (dut.sel_idx !== 3'd6) begin
+                    n_err = n_err + 1;
+                    $display("  [ERR] 再右移一次后光标 = %0d（期望 6 = IN）", dut.sel_idx);
+                end else begin
+                    s0 = dut.ui_src;
+                    key2_n = 1'b0; #3_000_000; key2_n = 1'b1; #3_000_000;
+                    key2_n = 1'b0; #3_000_000; key2_n = 1'b1; #3_000_000;
+                    if (dut.ui_src === s0) begin
+                        n_err = n_err + 1;
+                        $display("  [ERR] 光标在 IN 上确认后 cfg_src 没变（还是 %0d）", s0);
+                    end else
+                        $display("  [ok ] 光标在 IN 上确认：cfg_src %0d -> %0d（输入源切换）",
+                                 s0, dut.ui_src);
+                end
+            end
+
             // ---- ⑤ 静态检查：空闲计时器的位宽必须装得下超时值 ----
             //   这是那个"说好 4 秒、实际 1.3 秒"bug 的回归判据。
             //   idle_cnt 原来 24 位，装不下 12500*4000=50,000,000，被静默截断。
