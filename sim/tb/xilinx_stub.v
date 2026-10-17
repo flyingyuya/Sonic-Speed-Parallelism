@@ -100,3 +100,121 @@ module MMCME2_BASE #(
     assign LOCKED   = lk;
 
 endmodule
+
+//=============================================================================
+// OSERDESE2 —— 行为级模型（只给 iverilog 仿真用，综合时用 Xilinx 真原语）
+//=============================================================================
+// 【为什么需要它】OSERDESE2 是 Xilinx 原语，iverilog 不认识。
+//
+// 【模型做到什么程度】
+//   做到了"真的串行化"：CLKDIV 上升沿装入并行数据，然后在 CLK 的上升沿和
+//   下降沿依次吐出 bit0、bit1、……、bit9（DDR，5 个 CLK 周期吐 10 位）。
+//   所以 TB 能验证【位序】—— 这是最容易搞错、也最影响画面的地方。
+//   不做的部分：TQ/TBYTE 三态、OFB 反馈 —— 本项目用不到。
+//
+// 【级联关系（依据 A7_LITE 教程原文）】
+//   MASTER 承接 10bit 数据的【低 8 位】：D1=din[0] ... D8=din[7]
+//   SLAVE  的 D3/D4 承接【高 2 位】：D3=din[8], D4=din[9]
+//   SLAVE 的 SHIFTOUT1/2 -> MASTER 的 SHIFTIN1/2
+//   输出顺序：由低位到高位（TMDS 规定先发 din[0]）
+//=============================================================================
+module OSERDESE2 #(
+    parameter         DATA_RATE_OQ   = "DDR",
+    parameter         DATA_RATE_TQ   = "DDR",
+    parameter integer DATA_WIDTH     = 10,
+    parameter         INIT_OQ        = 1'b0,
+    parameter         INIT_TQ        = 1'b0,
+    parameter         SERDES_MODE    = "MASTER",
+    parameter         SRVAL_OQ       = 1'b0,
+    parameter         SRVAL_TQ       = 1'b0,
+    parameter         TBYTE_CTL      = "FALSE",
+    parameter         TBYTE_SRC      = "FALSE",
+    parameter integer TRISTATE_WIDTH = 1
+) (
+    output wire OFB,
+    output wire OQ,
+    output wire SHIFTOUT1,
+    output wire SHIFTOUT2,
+    output wire TBYTEOUT,
+    output wire TFB,
+    output wire TQ,
+
+    input  wire D1, D2, D3, D4, D5, D6, D7, D8,
+    input  wire CLK,
+    input  wire CLKDIV,
+    input  wire SHIFTIN1,
+    input  wire SHIFTIN2,
+    input  wire T1, T2, T3, T4,
+    input  wire TBYTEIN,
+    input  wire TCE,
+    input  wire RST
+);
+
+    // SLAVE 只把高 2 位"递"给 MASTER，自己不出数据
+    assign SHIFTOUT1 = D3;          // din[8]
+    assign SHIFTOUT2 = D4;          // din[9]
+
+    reg [9:0] sr;                   // 待串行化的 10 位
+    reg [3:0] bi;                   // 已经吐出几位
+    reg       oq_r;
+
+    wire is_master = (SERDES_MODE == "MASTER");
+
+    initial begin
+        sr   = 10'd0;
+        bi   = 4'd0;
+        oq_r = INIT_OQ;
+    end
+
+    // 装入：每个 CLKDIV 周期装一次
+    always @(posedge CLKDIV) begin
+        if (RST) begin
+            sr <= 10'd0;
+            bi <= 4'd0;
+        end else begin
+            // {高2位(来自SLAVE), 低8位(本地)}
+            sr <= {SHIFTIN2, SHIFTIN1, D8, D7, D6, D5, D4, D3, D2, D1};
+            bi <= 4'd0;
+        end
+    end
+
+    // 吐出：DDR，上升沿和下降沿各吐一位。
+    // ⚠️ bi 必须【在 10 以内回绕】：第一版直接 bi+1 / bi+2，
+    //    数到 10 之后就读 sr[10]、sr[11]（越界）= X，
+    //    串行流里就会夹着 x —— 这是被 tb_tmds_out 抓出来的（stub 自己的 bug）。
+    wire [3:0] bi_lo = (bi >= 4'd10) ? (bi - 4'd10) : bi;           // 当前位
+    wire [3:0] bi_nx1 = (bi_lo + 4'd1 >= 4'd10) ? (bi_lo + 4'd1 - 4'd10)
+                                                : (bi_lo + 4'd1);   // 下一位
+    wire [3:0] bi_nx2 = (bi_nx1 + 4'd1 >= 4'd10) ? (bi_nx1 + 4'd1 - 4'd10)
+                                                 : (bi_nx1 + 4'd1); // 再下一位
+
+    always @(posedge CLK) if (is_master && !RST) begin
+        oq_r <= sr[bi_lo];
+        bi   <= bi_nx1;
+    end
+
+    always @(negedge CLK) if (is_master && !RST) begin
+        oq_r <= sr[bi_nx1];
+        bi   <= bi_nx2;
+    end
+
+    assign OQ  = is_master ? oq_r : 1'b0;
+    assign OFB = 1'b0;
+    assign TBYTEOUT = 1'b0;
+    assign TFB = 1'b0;
+    assign TQ  = 1'b0;
+
+endmodule
+
+//=============================================================================
+// OBUFDS —— 行为级模型（单端转差分）
+//=============================================================================
+module OBUFDS (
+    output wire O,
+    output wire OB,
+    input  wire I,
+    input  wire T
+);
+    assign O  = I;
+    assign OB = ~I;
+endmodule
