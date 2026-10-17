@@ -161,12 +161,26 @@ module OSERDESE2 #(
     input  wire T1, T2, T3, T4,
     input  wire TBYTEIN,
     input  wire TCE,
+    // ⚠️ OCE 是【真原语的端口】——第一版 stub 里我漏了它，于是仿真一路绿灯、
+    //    综合才报 "port OCE is unconnected"。而且它必须接 1：
+    //    OCE = 输出时钟使能，接 0 输出根本不翻转（屏幕上会全黑）。
+    input  wire OCE,
     input  wire RST
 );
 
     // SLAVE 只把高 2 位"递"给 MASTER，自己不出数据
     assign SHIFTOUT1 = D3;          // din[8]
     assign SHIFTOUT2 = D4;          // din[9]
+
+    //-------------------------------------------------------------------------
+    // 局部抑制 MULTIDRIVEN：
+    //   模型里 sr/bi 既要被 CLKDIV（装载）写、又要被 CLK（移位）写 ——
+    //   这是 OSERDESE2 真实的内部结构（真原语是硬核，不会有这个问题）。
+    //   行为模型没法避免，所以在这里【局部】关掉这一条检查。
+    //   ⚠️ 只抑制这一条、只在这个文件里 —— 不动 run_iv.sh 的全局白名单，
+    //      免得把别处真正的多驱动也一起放过。
+    //-------------------------------------------------------------------------
+    /* verilator lint_off MULTIDRIVEN */
 
     reg [9:0] sr;                   // 待串行化的 10 位
     reg [3:0] bi;                   // 已经吐出几位
@@ -202,15 +216,23 @@ module OSERDESE2 #(
     wire [3:0] bi_nx2 = (bi_nx1 + 4'd1 >= 4'd10) ? (bi_nx1 + 4'd1 - 4'd10)
                                                  : (bi_nx1 + 4'd1); // 再下一位
 
+    // 串行输出模型：每个 CLK 上升沿吐一位（SDR）。
+    //   ⚠️ 早先写成"上升沿+下降沿各一位"（DDR），分成两个 always 块时
+    //      静态检查会报 MULTIDRIVEN（两个不同时钟写同一组寄存器）；
+    //      合并成一个双沿敏感块，它仍然报（双沿块本身就被当成多时钟）。
+    //   ⚠️ 这里的注释【绝不能】以"斜杠斜杠 + 空格 + 该工具名"开头 ——
+    //      会被解析成 pragma 并报 BADVLTPRAGMA。本轮已经因此挂过两次。
+    //      而本工程的两个 TB 其实【不需要 DDR】：
+    //        · tb_tmds_out 校验的是并行装载寄存器 sr（bit 映射对不对）
+    //        · tb_hdmi_top 只要求输出不是 X（说明链路在动）
+    //      ⟹ stub 简化成 SDR，够用且不触发告警。
+    //      真正的 DDR 行为和位序只能上板验（这也是之前就定好的责任边界）。
     always @(posedge CLK) if (is_master && !RST) begin
         oq_r <= sr[bi_lo];
         bi   <= bi_nx1;
     end
 
-    always @(negedge CLK) if (is_master && !RST) begin
-        oq_r <= sr[bi_nx1];
-        bi   <= bi_nx2;
-    end
+    /* verilator lint_on MULTIDRIVEN */
 
     assign OQ  = is_master ? oq_r : 1'b0;
     assign OFB = 1'b0;
@@ -223,11 +245,14 @@ endmodule
 //=============================================================================
 // OBUFDS —— 行为级模型（单端转差分）
 //=============================================================================
+//   ⚠️ 真原语只有 (O, OB, I) 三个端口 —— 没有 T。
+//      第一版 stub 我多加了个 T，结果 RTL 里写了 .T(1'b0)，仿真过得去、
+//      Vivado 综合报 "named port connection 'T' does not exist"。
+//      ⟹ stub 的端口表也必须和真原语对得上，否则它就是在"帮着隐藏错误"。
 module OBUFDS (
     output wire O,
     output wire OB,
-    input  wire I,
-    input  wire T
+    input  wire I
 );
     assign O  = I;
     assign OB = ~I;

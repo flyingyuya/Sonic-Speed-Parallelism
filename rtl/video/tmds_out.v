@@ -14,6 +14,12 @@
 //
 // 【为什么串行化不用自己写】
 //   OSERDESE2 是 Xilinx 原语，本来就干这件事。
+//   ⚠️ .DATA_RATE_TQ 用 "BUF" 而不是参考例程里的 "DDR"：
+//      我们根本不走三态路径（T1..T4 / TCE 全接 0，TQ 空接）。
+//      设成 "DDR" 时 Vivado 会报 [DRC AVAL-70]：
+//      "DATA_RATE_TQ set DDR expects TRISTATE_WIDTH to be set 4" ——
+//      所以要么 TRISTATE_WIDTH 填 4，要么干脆声明这条路径是 BUF。
+//      后者更符合实际用法，也省得以后忘了这个约束。
 //   一个只支持 8:1，所以要 10:1 必须【两个级联】（MASTER 收低 8 位、SLAVE 收高 2 位）。
 //   模型细节见 sim/tb/xilinx_stub.v 里的注释（依据 A7_LITE 教程原文）。
 //
@@ -87,7 +93,7 @@ module tmds_out (
     wire b_sh1, b_sh2;
 
     OSERDESE2 #(
-        .DATA_RATE_OQ ("DDR"), .DATA_RATE_TQ ("DDR"), .DATA_WIDTH (10),
+        .DATA_RATE_OQ ("DDR"), .DATA_RATE_TQ ("BUF"), .DATA_WIDTH (10),
         .INIT_OQ (1'b0), .INIT_TQ (1'b0), .SERDES_MODE ("SLAVE"),
         .SRVAL_OQ (1'b0), .SRVAL_TQ (1'b0),
         .TBYTE_CTL ("FALSE"), .TBYTE_SRC ("FALSE"), .TRISTATE_WIDTH (1)
@@ -99,11 +105,11 @@ module tmds_out (
         .CLK(clk_5x), .CLKDIV(clk_pix),
         .SHIFTIN1(1'b0), .SHIFTIN2(1'b0),
         .T1(1'b0), .T2(1'b0), .T3(1'b0), .T4(1'b0),
-        .TBYTEIN(1'b0), .TCE(1'b0), .RST(~rst_n)
+        .TBYTEIN(1'b0), .TCE(1'b0), .OCE(1'b1), .RST(~rst_n)
     );
 
     OSERDESE2 #(
-        .DATA_RATE_OQ ("DDR"), .DATA_RATE_TQ ("DDR"), .DATA_WIDTH (10),
+        .DATA_RATE_OQ ("DDR"), .DATA_RATE_TQ ("BUF"), .DATA_WIDTH (10),
         .INIT_OQ (1'b0), .INIT_TQ (1'b0), .SERDES_MODE ("MASTER"),
         .SRVAL_OQ (1'b0), .SRVAL_TQ (1'b0),
         .TBYTE_CTL ("FALSE"), .TBYTE_SRC ("FALSE"), .TRISTATE_WIDTH (1)
@@ -115,17 +121,17 @@ module tmds_out (
         .CLK(clk_5x), .CLKDIV(clk_pix),
         .SHIFTIN1(b_sh1), .SHIFTIN2(b_sh2),
         .T1(1'b0), .T2(1'b0), .T3(1'b0), .T4(1'b0),
-        .TBYTEIN(1'b0), .TCE(1'b0), .RST(~rst_n)
+        .TBYTEIN(1'b0), .TCE(1'b0), .OCE(1'b1), .RST(~rst_n)
     );
 
-    OBUFDS u_obuf_b (.O(tmds_d0_p), .OB(tmds_d0_n), .I(b_ser), .T(1'b0));
+    OBUFDS u_obuf_b (.O(tmds_d0_p), .OB(tmds_d0_n), .I(b_ser));
 
     //------------------------------ 绿通道 ----------------------------------
     wire g_ser;
     wire g_sh1, g_sh2;
 
     OSERDESE2 #(
-        .DATA_RATE_OQ ("DDR"), .DATA_RATE_TQ ("DDR"), .DATA_WIDTH (10),
+        .DATA_RATE_OQ ("DDR"), .DATA_RATE_TQ ("BUF"), .DATA_WIDTH (10),
         .INIT_OQ (1'b0), .INIT_TQ (1'b0), .SERDES_MODE ("SLAVE"),
         .SRVAL_OQ (1'b0), .SRVAL_TQ (1'b0),
         .TBYTE_CTL ("FALSE"), .TBYTE_SRC ("FALSE"), .TRISTATE_WIDTH (1)
@@ -137,11 +143,11 @@ module tmds_out (
         .CLK(clk_5x), .CLKDIV(clk_pix),
         .SHIFTIN1(1'b0), .SHIFTIN2(1'b0),
         .T1(1'b0), .T2(1'b0), .T3(1'b0), .T4(1'b0),
-        .TBYTEIN(1'b0), .TCE(1'b0), .RST(~rst_n)
+        .TBYTEIN(1'b0), .TCE(1'b0), .OCE(1'b1), .RST(~rst_n)
     );
 
     OSERDESE2 #(
-        .DATA_RATE_OQ ("DDR"), .DATA_RATE_TQ ("DDR"), .DATA_WIDTH (10),
+        .DATA_RATE_OQ ("DDR"), .DATA_RATE_TQ ("BUF"), .DATA_WIDTH (10),
         .INIT_OQ (1'b0), .INIT_TQ (1'b0), .SERDES_MODE ("MASTER"),
         .SRVAL_OQ (1'b0), .SRVAL_TQ (1'b0),
         .TBYTE_CTL ("FALSE"), .TBYTE_SRC ("FALSE"), .TRISTATE_WIDTH (1)
@@ -153,17 +159,17 @@ module tmds_out (
         .CLK(clk_5x), .CLKDIV(clk_pix),
         .SHIFTIN1(g_sh1), .SHIFTIN2(g_sh2),
         .T1(1'b0), .T2(1'b0), .T3(1'b0), .T4(1'b0),
-        .TBYTEIN(1'b0), .TCE(1'b0), .RST(~rst_n)
+        .TBYTEIN(1'b0), .TCE(1'b0), .OCE(1'b1), .RST(~rst_n)
     );
 
-    OBUFDS u_obuf_g (.O(tmds_d1_p), .OB(tmds_d1_n), .I(g_ser), .T(1'b0));
+    OBUFDS u_obuf_g (.O(tmds_d1_p), .OB(tmds_d1_n), .I(g_ser));
 
     //------------------------------ 红通道 ----------------------------------
     wire r_ser;
     wire r_sh1, r_sh2;
 
     OSERDESE2 #(
-        .DATA_RATE_OQ ("DDR"), .DATA_RATE_TQ ("DDR"), .DATA_WIDTH (10),
+        .DATA_RATE_OQ ("DDR"), .DATA_RATE_TQ ("BUF"), .DATA_WIDTH (10),
         .INIT_OQ (1'b0), .INIT_TQ (1'b0), .SERDES_MODE ("SLAVE"),
         .SRVAL_OQ (1'b0), .SRVAL_TQ (1'b0),
         .TBYTE_CTL ("FALSE"), .TBYTE_SRC ("FALSE"), .TRISTATE_WIDTH (1)
@@ -175,11 +181,11 @@ module tmds_out (
         .CLK(clk_5x), .CLKDIV(clk_pix),
         .SHIFTIN1(1'b0), .SHIFTIN2(1'b0),
         .T1(1'b0), .T2(1'b0), .T3(1'b0), .T4(1'b0),
-        .TBYTEIN(1'b0), .TCE(1'b0), .RST(~rst_n)
+        .TBYTEIN(1'b0), .TCE(1'b0), .OCE(1'b1), .RST(~rst_n)
     );
 
     OSERDESE2 #(
-        .DATA_RATE_OQ ("DDR"), .DATA_RATE_TQ ("DDR"), .DATA_WIDTH (10),
+        .DATA_RATE_OQ ("DDR"), .DATA_RATE_TQ ("BUF"), .DATA_WIDTH (10),
         .INIT_OQ (1'b0), .INIT_TQ (1'b0), .SERDES_MODE ("MASTER"),
         .SRVAL_OQ (1'b0), .SRVAL_TQ (1'b0),
         .TBYTE_CTL ("FALSE"), .TBYTE_SRC ("FALSE"), .TRISTATE_WIDTH (1)
@@ -191,15 +197,15 @@ module tmds_out (
         .CLK(clk_5x), .CLKDIV(clk_pix),
         .SHIFTIN1(r_sh1), .SHIFTIN2(r_sh2),
         .T1(1'b0), .T2(1'b0), .T3(1'b0), .T4(1'b0),
-        .TBYTEIN(1'b0), .TCE(1'b0), .RST(~rst_n)
+        .TBYTEIN(1'b0), .TCE(1'b0), .OCE(1'b1), .RST(~rst_n)
     );
 
-    OBUFDS u_obuf_r (.O(tmds_d2_p), .OB(tmds_d2_n), .I(r_ser), .T(1'b0));
+    OBUFDS u_obuf_r (.O(tmds_d2_p), .OB(tmds_d2_n), .I(r_ser));
 
     //=========================================================================
     // 3. 时钟通道：就是像素时钟本身，直接差分出去
     //=========================================================================
-    OBUFDS u_obuf_clk (.O(tmds_clk_p), .OB(tmds_clk_n), .I(clk_pix), .T(1'b0));
+    OBUFDS u_obuf_clk (.O(tmds_clk_p), .OB(tmds_clk_n), .I(clk_pix));
 
 endmodule
 

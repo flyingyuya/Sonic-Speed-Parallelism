@@ -99,7 +99,21 @@ module top #(
     output wire        lcd_clk,
 
     //----------------------- 指示 -----------------------------
-    output wire [1:0]  led
+    output wire [1:0]  led,
+
+    //--------------------- HDMI 输出（DVI 兼容，无发送芯片）---------------------
+    //   Bank 14 的 Vcco = 3.3V，所以差分用 TMDS_33（见 constrs/hdmi.xdc）
+    //   通道分配：D0=蓝  D1=绿  D2=红  时钟=像素时钟
+    output wire        hdmi_clk_p,
+    output wire        hdmi_clk_n,
+    output wire        hdmi_d0_p,
+    output wire        hdmi_d0_n,
+    output wire        hdmi_d1_p,
+    output wire        hdmi_d1_n,
+    output wire        hdmi_d2_p,
+    output wire        hdmi_d2_n,
+    output wire        hdmi_out_en,     // 低有效（NC7SZ125 的 OE）
+    input  wire        hdmi_hpd         // 热插拔检测（本版不参与逻辑，但必须进端口）
 );
 
     //=========================================================================
@@ -111,10 +125,7 @@ module top #(
     wire clk_5x;                        // 200 MHz —— HDMI 串行化时钟
     wire mmcm_locked;
 
-    //   ⚠️ clk_hdmi / clk_5x 目前【还没有使用者】（hdmi_top 还没写）。
-    //      先接出来是为了让端口连接完整（否则综合报 3 条 unconnected 警告）。
-    //      Vivado 会把没被使用的 BUFG 输出自动剪掉，所以不影响资源。
-    //      hdmi_top 接进来之后，这两根线就有真实负载了。
+    //   clk_hdmi / clk_5x 供 hdmi_top 使用（40 MHz 像素钟 / 200 MHz 串行钟）。
     clk_gen u_clkgen (
         .clk_200m_p  (clk_200m_p),
         .clk_200m_n  (clk_200m_n),
@@ -847,5 +858,40 @@ module top #(
     // 从"没按"变成"按了某个按钮" -> 一次按下事件
     assign btn_press_s = (btn_act_d == 4'hF) && (btn_act_s != 4'hF);
 
+
+    //=========================================================================
+    // 9. HDMI 输出（第一版：800x600@60 + 内置测试图案）
+    //=========================================================================
+    //   【为什么先出测试图案而不是真实画面】
+    //     disp_top 的布局常数全是按 480x272 调过的，直接换 800x600 会全歪 ——
+    //     那是独立的"大屏布局设计"。先让物理链路（时钟/编码/串行化/差分/约束）
+    //     通起来，出图就证明整条链路对，再谈画面内容。
+    //   pattern 现在接常数 3'b001 = 彩条。以后可以挂 UART 命令或面板选项。
+    //=========================================================================
+    // ⚠️ rst_hdmi_n 必须【先声明】再被下面的例化引用（Verilog-2001 的硬约束，
+    //    这一轮已经在 ui_active / lut_raw / l_oyu 上踩过三次了）。
+    wire rst_hdmi_n;
+
+    rst_sync u_rst_hdmi (
+        .clk         (clk_hdmi),
+        .rst_async_n (rst_sys_n),      // 端口名是 rst_async_n，不是 arst_n
+        .rst_n       (rst_hdmi_n)
+    );
+
+    hdmi_top u_hdmi (
+        .rst_n      (rst_hdmi_n),
+        .clk_hdmi   (clk_hdmi),
+        .clk_5x     (clk_5x),
+        .pattern    (3'b001),           // 彩条
+        .tmds_clk_p (hdmi_clk_p), .tmds_clk_n (hdmi_clk_n),
+        .tmds_d0_p  (hdmi_d0_p),  .tmds_d0_n  (hdmi_d0_n),
+        .tmds_d1_p  (hdmi_d1_p),  .tmds_d1_n  (hdmi_d1_n),
+        .tmds_d2_p  (hdmi_d2_p),  .tmds_d2_n  (hdmi_d2_n),
+        .hdmi_out_en(hdmi_out_en)
+    );
+
+    // hdmi_hpd 本版不参与逻辑：接进来但不使用，避免综合报"未约束输入"。
+    //   ⚠️ 以后接 EDID/热插拔逻辑时，这里要改成真正的消费者。
+    wire _unused_hpd = hdmi_hpd;
 
 endmodule
