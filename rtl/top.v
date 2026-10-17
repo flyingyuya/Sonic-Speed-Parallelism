@@ -534,7 +534,14 @@ module top #(
         //   优先级：触摸 > 按键（屏幕上的是用户刚点的，最"新"）
         .next_view     (key_view | btn_view),
         .step_en       (key_step | btn_step),
-        .step_addr     (btn_step ? btn_act_s : {1'b0, sel_idx}),
+        // ⚠️⚠️ 【这里原来有个"差一格"的映射 bug】
+        //   光标是 0..6（VIEW/STYLE/HUE/GAIN/BG/DEMO/IN），
+        //   而 ui_ctrl 的动作码不是光标值：DEMO 是 4'h6、IN 是 4'h7（中间跳过了 5）。
+        //   原来这里直接送 {1'b0, sel_idx}，于是：
+        //     光标 5(DEMO) -> 送 4'h5 -> ui_ctrl 没这个分支（4'h5 是 cfg_auto，只给 UART）-> 毫无反应
+        //     光标 6(IN)   -> 送 4'h6 -> ui_ctrl 的 cfg_demo -> 按下 IN 却在切演示图案
+        //   修法：用和高亮【同一个】映射 ui_sel_act，两边永远一致。
+        .step_addr     (btn_step ? btn_act_s : ui_sel_act),
         .cfg_view      (ui_view),
         .cfg_style     (ui_style),
         .cfg_hue_spd   (ui_hue_spd),
