@@ -34,6 +34,8 @@ module clk_gen (
     input  wire rst_btn_n,       // R14 板载复位按键，低有效
     output wire clk_sys,         // 48 MHz
     output wire clk_pix,         // 12.5 MHz
+    output wire clk_hdmi,        // 40 MHz   —— HDMI 像素时钟（800x600@60）
+    output wire clk_5x,          // 200 MHz  —— HDMI 串行化时钟（5 x 40）
     output wire mmcm_locked
 );
 
@@ -42,6 +44,8 @@ module clk_gen (
     wire clk_sys_raw;            // MMCM 输出，尚未过 BUFG
     wire clk_pix_raw;
     wire locked;
+    wire clkfb_h;                // 第二个 MMCM 的反馈
+    wire locked_h;
 
     // 差分转单端
     IBUFDS #(
@@ -87,11 +91,62 @@ module clk_gen (
         .RST      (~rst_btn_n)
     );
 
-    // 全局时钟缓冲
-    BUFG u_bufg_sys (.I(clk_sys_raw), .O(clk_sys));
-    BUFG u_bufg_pix (.I(clk_pix_raw), .O(clk_pix));
+    //=========================================================================
+    // 第二个 MMCM：给 HDMI 出 40 MHz 和 200 MHz
+    //-----------------------------------------------------------------------------
+    // 【为什么不能用上面那个 MMCM】
+    //   上面 VCO = 900 MHz，900/40 = 22.5 —— 不是整数。
+    //   CLKOUT2_DIVIDE 只收整数（小数分频只有 CLKOUT0 支持，已被 48 MHz 占用），
+    //   所以 40 MHz 出不来。
+    // 【为什么也不能把 VCO 改成 1200】
+    //   1200 能同时整除 48 / 40 / 12.5，看起来完美；但 1200 MHz 正好是
+    //   MMCME2_BASE 的【上边界】，卡边界不稳。所以另开一个 MMCM。
+    // 【为什么 clk_5x 也要从这个 MMCM 出，而不是直接用输入的 200 MHz】
+    //   clk_5x 和像素时钟是 5 倍关系，串行化要求两者【相位严格对齐】。
+    //   只有同源同 VCO 才能保证 —— 用输入的 200 MHz 会和 MMCM 出的 40 MHz 相位漂。
+    //   两者都是 1000 MHz 的整数分频，所以同源同 VCO ✓
+    //=========================================================================
+    wire clk_hdmi_raw;
+    wire clk_5x_raw;
 
-    // 锁相指示
-    assign mmcm_locked = locked;
+    MMCME2_BASE #(
+        .BANDWIDTH          ("OPTIMIZED"),
+        .STARTUP_WAIT       ("FALSE"),
+        .CLKIN1_PERIOD      (5.000),        // 200 MHz
+        .DIVCLK_DIVIDE      (4),            // PFD = 50 MHz
+        .CLKFBOUT_MULT_F    (20.000),       // VCO = 50 x 20 = 1000 MHz
+        .CLKFBOUT_PHASE     (0.000),
+        .CLKOUT0_DIVIDE_F   (25.000),       // 1000 / 25 = 40 MHz
+        .CLKOUT0_DUTY_CYCLE (0.500),
+        .CLKOUT0_PHASE      (0.000),
+        .CLKOUT1_DIVIDE     (5),            // 1000 / 5 = 200 MHz
+        .CLKOUT1_DUTY_CYCLE (0.500),
+        .CLKOUT1_PHASE      (0.000),
+        .REF_JITTER1        (0.010)
+    ) u_mmcm_hdmi (
+        .CLKIN1   (clk_200m),
+        .CLKFBIN  (clkfb_h),
+        .CLKFBOUT (clkfb_h),
+
+        .CLKOUT0  (clk_hdmi_raw),
+        .CLKOUT1  (clk_5x_raw),
+        .CLKOUT2  (), .CLKOUT3  (), .CLKOUT4  (),
+        .CLKOUT5  (), .CLKOUT6  (),
+        .CLKOUT0B (), .CLKOUT1B (), .CLKOUT2B (), .CLKOUT3B (),
+        .CLKFBOUTB(),
+
+        .LOCKED   (locked_h),
+        .PWRDWN   (1'b0),
+        .RST      (~rst_btn_n)
+    );
+
+    // 全局时钟缓冲
+    BUFG u_bufg_sys  (.I(clk_sys_raw),  .O(clk_sys));
+    BUFG u_bufg_pix  (.I(clk_pix_raw),  .O(clk_pix));
+    BUFG u_bufg_hdmi (.I(clk_hdmi_raw), .O(clk_hdmi));
+    BUFG u_bufg_5x   (.I(clk_5x_raw),   .O(clk_5x));
+
+    // 锁相指示：两个 MMCM 都锁上了才算好
+    assign mmcm_locked = locked & locked_h;
 
 endmodule

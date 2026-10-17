@@ -29,6 +29,8 @@ module tb_clk_gen;
 
     wire clk_sys;
     wire clk_pix;
+    wire clk_hdmi;      // 40 MHz  —— HDMI 像素时钟
+    wire clk_5x;        // 200 MHz —— HDMI 串行化时钟
     wire mmcm_locked;
 
     //-------------------------------------------------------------------------
@@ -49,6 +51,8 @@ module tb_clk_gen;
         .rst_btn_n   (rst_btn_n),
         .clk_sys     (clk_sys),
         .clk_pix     (clk_pix),
+        .clk_hdmi    (clk_hdmi),
+        .clk_5x      (clk_5x),
         .mmcm_locked (mmcm_locked)
     );
 
@@ -57,11 +61,15 @@ module tb_clk_gen;
     //-------------------------------------------------------------------------
     localparam integer MEAS_NS = 100_000;      // 测量窗口 100 us
 
-    integer cyc_sys = 0;
+    integer cyc_sys  = 0;
+    integer cyc_hdmi = 0;
+    integer cyc_5x   = 0;
     integer cyc_pix = 0;
 
     always @(posedge clk_sys) cyc_sys = cyc_sys + 1;
     always @(posedge clk_pix) cyc_pix = cyc_pix + 1;
+    always @(posedge clk_hdmi) cyc_hdmi = cyc_hdmi + 1;
+    always @(posedge clk_5x)   cyc_5x   = cyc_5x + 1;
 
     //-------------------------------------------------------------------------
     // 主流程
@@ -94,8 +102,10 @@ module tb_clk_gen;
         $display("[%0.1f ns] MMCM 已锁定（等待 %0d 个 200MHz 周期）", $realtime, lock_wait);
 
         // 从锁定后开始测，先清零计数器
-        cyc_sys = 0;
-        cyc_pix = 0;
+        cyc_sys  = 0;
+        cyc_pix  = 0;
+        cyc_hdmi = 0;
+        cyc_5x   = 0;
 
         #(MEAS_NS);
 
@@ -106,10 +116,20 @@ module tb_clk_gen;
         $display("          -> 实测频率: %0.4f MHz   (期望 48.0000)", cyc_sys / 100.0);
         $display(" clk_pix  周期数     : %0d", cyc_pix);
         $display("          -> 实测频率: %0.4f MHz   (期望 12.5000)", cyc_pix / 100.0);
+        $display(" clk_hdmi 周期数     : %0d", cyc_hdmi);
+        $display("          -> 实测频率: %0.4f MHz   (期望 40.0000)", cyc_hdmi / 100.0);
+        $display(" clk_5x   周期数     : %0d", cyc_5x);
+        $display("          -> 实测频率: %0.4f MHz   (期望 200.0000)", cyc_5x / 100.0);
         $display("---------------------------------------------------------");
 
-        if (cyc_sys == 4800 && cyc_pix == 1250)
-            $display(" 结果 : *** PASS ***  两路时钟频率都精确正确");
+        //   容差 ±1：测量窗口是固定长度，窗口首尾的沿可能多算/少算一个。
+        //   200 MHz 最快，最容易碰上这个边界（实测 19999 vs 20000）。
+        //   这是测量方法的问题，不是时钟的问题。
+        if ((cyc_sys  >= 4799  && cyc_sys  <= 4801)  &&
+            (cyc_pix  >= 1249  && cyc_pix  <= 1251)  &&
+            (cyc_hdmi >= 3999  && cyc_hdmi <= 4001)  &&
+            (cyc_5x   >= 19999 && cyc_5x   <= 20001))
+            $display(" 结果 : *** PASS ***  四路时钟频率正确（±1 计数容差）");
         else
             $display(" 结果 : *** FAIL ***  频率不符，检查 MMCM 参数");
 

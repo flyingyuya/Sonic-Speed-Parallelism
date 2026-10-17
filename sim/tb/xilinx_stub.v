@@ -57,6 +57,14 @@ module MMCME2_BASE #(
     parameter integer CLKOUT1_DIVIDE   = 1,
     parameter real    CLKOUT1_DUTY_CYCLE = 0.500,
     parameter real    CLKOUT1_PHASE    = 0.000,
+    // CLKOUT2/3 的分频比。默认给一个大数：没用到的输出就保持慢速翻转，
+    // 避免默认值 1 时产生极快的时钟把仿真拖慢（第一版这里默认 1，很危险）。
+    parameter integer CLKOUT2_DIVIDE   = 1000,
+    parameter real    CLKOUT2_DUTY_CYCLE = 0.500,
+    parameter real    CLKOUT2_PHASE    = 0.000,
+    parameter integer CLKOUT3_DIVIDE   = 1000,
+    parameter real    CLKOUT3_DUTY_CYCLE = 0.500,
+    parameter real    CLKOUT3_PHASE    = 0.000,
     parameter real    REF_JITTER1      = 0.010
 ) (
     output wire CLKOUT0, CLKOUT1, CLKOUT2, CLKOUT3, CLKOUT4, CLKOUT5, CLKOUT6,
@@ -70,13 +78,19 @@ module MMCME2_BASE #(
     // 输出半周期 = VCO 周期 x 分频比 / 2
     localparam real C0_HALF = VCO_P * CLKOUT0_DIVIDE_F / 2.0;
     localparam real C1_HALF = VCO_P * CLKOUT1_DIVIDE   / 2.0;
+    localparam real C2_HALF = VCO_P * CLKOUT2_DIVIDE   / 2.0;
+    localparam real C3_HALF = VCO_P * CLKOUT3_DIVIDE   / 2.0;
 
     reg c0 = 1'b0;
     reg c1 = 1'b0;
+    reg c2 = 1'b0;
+    reg c3 = 1'b0;
     reg lk = 1'b0;
 
     always #(C0_HALF) c0 = ~c0;
     always #(C1_HALF) c1 = ~c1;
+    always #(C2_HALF) c2 = ~c2;
+    always #(C3_HALF) c3 = ~c3;
 
     // 等若干输入沿再给 LOCKED，模拟真实的锁相过程
     initial begin
@@ -86,8 +100,8 @@ module MMCME2_BASE #(
 
     assign CLKOUT0  = c0;
     assign CLKOUT1  = c1;
-    assign CLKOUT2  = 1'b0;
-    assign CLKOUT3  = 1'b0;
+    assign CLKOUT2  = c2;
+    assign CLKOUT3  = c3;
     assign CLKOUT4  = 1'b0;
     assign CLKOUT5  = 1'b0;
     assign CLKOUT6  = 1'b0;

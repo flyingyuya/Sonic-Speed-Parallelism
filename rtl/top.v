@@ -107,14 +107,22 @@ module top #(
     //=========================================================================
     wire clk_sys;                       // 48 MHz
     wire clk_pix;                       // 12.5 MHz
+    wire clk_hdmi;                      // 40 MHz  —— HDMI 像素时钟
+    wire clk_5x;                        // 200 MHz —— HDMI 串行化时钟
     wire mmcm_locked;
 
+    //   ⚠️ clk_hdmi / clk_5x 目前【还没有使用者】（hdmi_top 还没写）。
+    //      先接出来是为了让端口连接完整（否则综合报 3 条 unconnected 警告）。
+    //      Vivado 会把没被使用的 BUFG 输出自动剪掉，所以不影响资源。
+    //      hdmi_top 接进来之后，这两根线就有真实负载了。
     clk_gen u_clkgen (
         .clk_200m_p  (clk_200m_p),
         .clk_200m_n  (clk_200m_n),
         .rst_btn_n   (rst_btn_n),
         .clk_sys     (clk_sys),
         .clk_pix     (clk_pix),
+        .clk_hdmi    (clk_hdmi),
+        .clk_5x      (clk_5x),
         .mmcm_locked (mmcm_locked)
     );
 
