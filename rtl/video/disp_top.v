@@ -34,8 +34,6 @@ module disp_top #(
     parameter integer HDISP      = `DISP_HDISP,
     parameter integer VDISP      = `DISP_VDISP,
     parameter integer NBARS      = `DISP_NBARS,
-    // 显示柱数（默认=数据柱数 ⟹ 一一对应，行为不变）
-    parameter integer NBARS_DISP = `DISP_NBARS,
     parameter integer HW         = 9,
     parameter integer BARS_Y0    = `DISP_BARS_Y0,
     parameter integer BARS_H     = `DISP_BARS_H,
@@ -324,8 +322,7 @@ module disp_top #(
     //=========================================================================
     wire [NBARS*HW-1:0] bars;
 
-    spec_sync #(.NBARS(NBARS),
-        .HW(HW)) u_sync (
+    spec_sync #(.NBARS(NBARS), .HW(HW)) u_sync (
         .wclk   (clk_sys),
         .wrst_n (rst_sys_n),
         .wr_en  (spec_wr),
@@ -729,7 +726,7 @@ module disp_top #(
     // 7. 混合
     //=========================================================================
     disp_mix #(
-        .HDISP(HDISP), .VDISP(VDISP), .NBARS(NBARS), .NBARS_DISP(NBARS_DISP), .HW(HW),
+        .HDISP(HDISP), .VDISP(VDISP), .NBARS(NBARS), .HW(HW),
         .XW(XW), .YW(YW),
         .BARS_Y0(BARS_Y0), .BARS_H(BARS_H), .BAR_GAP(BAR_GAP),
         .POL_CX(POL_CX), .POL_CY(POL_CY), .POL_RIN(POL_RIN), .POL_RMAX(POL_RMAX),
