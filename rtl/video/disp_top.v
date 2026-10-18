@@ -90,7 +90,18 @@ module disp_top #(
     parameter integer UI_BY0 = `DISP_UI_BY0,
     parameter integer UI_BW  = `DISP_UI_BW,
     parameter integer UI_BH  = `DISP_UI_BH,
-    parameter integer UI_GAP = `DISP_UI_GAP
+    parameter integer UI_GAP = `DISP_UI_GAP,
+    //-------------------------------------------------------------------------
+    // 面板把手（侧边的小三角）的几何。
+    //   默认值 = 现有宏 ⟹ 480x272 下行为逐位不变。
+    //   800x600 大屏要单独给一套（把手要跟着面板走）。
+    //   提成参数的原因：disp_top 现在是"可以被例化两次的像素源"——
+    //   LCD 一套参数、HDMI 一套参数，布局各自独立。
+    //-------------------------------------------------------------------------
+    parameter integer TAB_X  = `DISP_TAB_X,
+    parameter integer TAB_Y  = `DISP_TAB_Y,
+    parameter integer TAB_W  = `DISP_TAB_W,
+    parameter integer TAB_H  = `DISP_TAB_H
 ) (
     //--------------------- 音频域（clk_sys）---------------------
     input  wire                  clk_sys,
@@ -429,7 +440,7 @@ module disp_top #(
     // 动画后的实际 y：收起时整条移到屏幕下边缘之外
     //   level=128 -> y = BY0；level=0 -> y = VDISP（看不见）
     // 宏不能直接放进拼接里（`DISP_UI_BH 的宽度不定），先落成有宽度的常量
-    localparam [9:0] UI_BH_L = `DISP_UI_BH;
+    localparam [9:0] UI_BH_L = UI_BH[9:0];   // 用参数（原来写的是宏，换分辨率会不一致）
     wire [YW+7:0] by0_mul = {6'b0, UI_BH_L} * pres_panel[7:0];
     wire [YW-1:0] ui_by0  = VDISP[YW-1:0] - by0_mul[YW+6:7];
 
@@ -609,7 +620,8 @@ module disp_top #(
 
     ui_layer #(
         .NB(NB_UI), .XW(XW), .YW(YW),
-        .BX0(UI_BX0), .BY0(UI_BY0), .BW(UI_BW), .BH(UI_BH), .GAP(UI_GAP)
+        .BX0(UI_BX0), .BY0(UI_BY0), .BW(UI_BW), .BH(UI_BH), .GAP(UI_GAP),
+        .TX(TAB_X), .TY(TAB_Y), .TW(TAB_W), .TH(TAB_H)
     ) u_ui (
         .x        (x),
         .y        (y),
