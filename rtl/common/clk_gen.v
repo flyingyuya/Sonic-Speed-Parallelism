@@ -34,8 +34,8 @@ module clk_gen (
     input  wire rst_btn_n,       // R14 板载复位按键，低有效
     output wire clk_sys,         // 48 MHz
     output wire clk_pix,         // 12.5 MHz
-    output wire clk_hdmi,        // 40 MHz   —— HDMI 像素时钟（800x600@60）
-    output wire clk_5x,          // 200 MHz  —— HDMI 串行化时钟（5 x 40）
+    output wire clk_hdmi,        // 25 MHz   —— HDMI 像素时钟（640x480@60）
+    output wire clk_5x,          // 125 MHz  —— HDMI 串行化时钟（5 x 25）
     output wire mmcm_locked
 );
 
@@ -116,10 +116,14 @@ module clk_gen (
         .DIVCLK_DIVIDE      (4),            // PFD = 50 MHz
         .CLKFBOUT_MULT_F    (20.000),       // VCO = 50 x 20 = 1000 MHz
         .CLKFBOUT_PHASE     (0.000),
-        .CLKOUT0_DIVIDE_F   (25.000),       // 1000 / 25 = 40 MHz
+        // ★ 640x480@60 的像素时钟是 25.175 MHz（VESA DMT）。
+        //   用 25.000 MHz 替代：刷新率 480/525 x 31.5kHz ≈ 59.6 Hz，显示器完全能锁。
+        //   为什么不用 40 MHz（800x600@60）：disp_top 的关键路径 26.9 ns，
+        //   40 MHz 只有 25 ns 预算 ⟹ 时序违例 -1.9 ns。25 MHz 有 40 ns，余量充足。
+        .CLKOUT0_DIVIDE_F   (40.000),       // 1000 / 40 = 25 MHz
         .CLKOUT0_DUTY_CYCLE (0.500),
         .CLKOUT0_PHASE      (0.000),
-        .CLKOUT1_DIVIDE     (5),            // 1000 / 5 = 200 MHz
+        .CLKOUT1_DIVIDE     (8),            // 1000 / 8 = 125 MHz
         .CLKOUT1_DUTY_CYCLE (0.500),
         .CLKOUT1_PHASE      (0.000),
         .REF_JITTER1        (0.010)

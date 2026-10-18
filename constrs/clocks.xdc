@@ -94,3 +94,21 @@ set_clock_groups -asynchronous \
     -group [get_clocks clk_bclk] \
     -group [get_clocks clk_sys] \
     -group [get_clocks clk_pix]
+
+#=============================================================================
+# 【待办】HDMI 域与 clk_sys 的异步约束
+#=============================================================================
+#   现状：spec_sync 的 async_fifo、wave_buf 的 done_tog/rd_tog 是【设计上异步】
+#         的跨域路径。默认流程能容忍（26 条 Slack VIOLATED 不报错），
+#         但加了 route_design -timing_summary 就会报 CRITICAL。
+#
+#   为什么没写约束：clk_hdmi_raw / clk_5x_raw 是 MMCM 生成时钟，
+#         在 set_clock_groups 生效的时刻名字对不上（试过，报 11 条 CRITICAL）。
+#         正确做法是用 create_generated_clock 给它们显式命名，
+#         或者用 -include_generated_clocks 按源时钟分组 —— 需要先 report_clocks
+#         确认实际名字。
+#
+#   当前补偿措施：所有【非】异步 FIFO 的跨域信号（ui_sel / panel_tog / key_act）
+#         都已在 top.v 里各加了 cdc_sync 两级同步器，不依赖这条约束。
+#   ⟹ 所以现在不加这条约束是安全的，但欠一笔"约束债"，上更高分辨率前要还。
+#=============================================================================

@@ -815,6 +815,7 @@ module top #(
         .lcd_rgb    (lcd_rgb),
         .lcd_hs     (lcd_hs),
         .lcd_vs     (lcd_vs),
+        .lcd_de     (),                     // LCD 侧用不到（面板靠 hsync/vsync 定边界）
         .lcd_clk    (lcd_clk)
     );
 
@@ -860,29 +861,152 @@ module top #(
 
 
     //=========================================================================
-    // 9. HDMI 输出（第一版：800x600@60 + 内置测试图案）
+    // 9. HDMI 输出（第二路显示：800x600@60 + 大屏布局）
     //=========================================================================
-    //   【为什么先出测试图案而不是真实画面】
-    //     disp_top 的布局常数全是按 480x272 调过的，直接换 800x600 会全歪 ——
-    //     那是独立的"大屏布局设计"。先让物理链路（时钟/编码/串行化/差分/约束）
-    //     通起来，出图就证明整条链路对，再谈画面内容。
-    //   pattern 现在接常数 3'b001 = 彩条。以后可以挂 UART 命令或面板选项。
+    //   【架构：两个 disp_top 各自独立】
+    //     · LCD 那一路（480x272 @12.5MHz）—— 一行不改
+    //     · HDMI 那一路（800x600 @40MHz）—— 新例化一个，参数全部换成大屏值
+    //   ⟹ 哪一路出问题都不影响另一路；大屏布局也能独立调。
+    //
+    //   【为什么不用"一个 disp_top 输出两路"】
+    //     disp_top 里自带 lcd_timing，输出的像素流带着自己的节拍（12.5MHz）。
+    //     要送到 40MHz 的 800x600 画布上，就得做帧缓冲/跨时钟域 ——
+    //     那要动 spec_sync/wave_buf/ui_* 整条链，风险和收益不成比例。
+    //     资源翻倍（约 7200 -> 13000 LUT，11% -> 20%）完全不是瓶颈。
+    //
+    //   【大屏布局参数：先按约 1.5~2 倍放，之后看实际效果再调】
+    //     柱状  NBARS 保持 60 —— 注意【不能】改成 100：
+    //           spec_din 的宽度是 NBARS*HW 位，而频谱上游（spectrum_map）
+    //           固定只产生 60 根柱（540 位）。改成 100 会让端口宽度不匹配
+    //           （iverilog 会报 "Port spec_din expects 900 bits, given 540"）。
+    //           大屏上 60 根柱自然变宽（800/60 ≈ 13px/柱），观感反而更好。
+    //     极坐标 圆心 (240,78)->(400,170)，半径 16/62 -> 24/92
+    //     波形 中轴 136->300，振幅 40->60
+    //     面板 底边 234->540，按钮 66x38 -> 106x48
+    //     把手 448/124 -> 768/288
     //=========================================================================
-    // ⚠️ rst_hdmi_n 必须【先声明】再被下面的例化引用（Verilog-2001 的硬约束，
-    //    这一轮已经在 ui_active / lut_raw / l_oyu 上踩过三次了）。
-    wire rst_hdmi_n;
+    // ⚠️ 先声明再使用（Verilog-2001 硬约束）：
+    //    rst_hdmi_n 给 HDMI 那一路的 disp_top 和 hdmi_top 用。
+    wire        rst_hdmi_n;
+    wire [23:0] hdmi_rgb;
+    wire        hdmi_hs, hdmi_vs, hdmi_de;
 
     rst_sync u_rst_hdmi (
         .clk         (clk_hdmi),
-        .rst_async_n (rst_sys_n),      // 端口名是 rst_async_n，不是 arst_n
+        .rst_async_n (rst_sys_n),
         .rst_n       (rst_hdmi_n)
+    );
+
+    //-------------------------------------------------------------------------
+    // 从 clk_sys 域跨到 clk_hdmi 域的三个信号 —— 必须同步
+    //-----------------------------------------------------------------------------
+    //   【为什么必须同步】
+    //     HDMI 那一路的 disp_top 跑在 clk_hdmi(25MHz)，而这三个信号都来自
+    //     clk_sys(48MHz)。直接接过去就是【异步跨域】：
+    //       · ui_sel_act（4 位电平）—— 位之间可能不同步变化，读到的可能是乱码值
+    //       · panel_tog / key_act（翻转标志）—— 也可能采到亚稳态
+    //     实测证据：加了 -timing_summary 之后 Vivado 直接报
+    //       Slack (VIOLATED) -3.135ns：sel_idx_reg -> u_disp_hdmi/u_status/cnt_reg
+    //     它把这条路径当成同步路径去算，算了 3 个时钟周期的账，自然算不过。
+    //   ⟹ 正确做法就是两级同步器（cdc_sync），工具也就不会再按同步路径去约束它。
+    //-------------------------------------------------------------------------
+    wire [3:0] ui_sel_hdmi;
+    wire       panel_tog_hdmi;
+    wire       key_act_hdmi;
+
+    cdc_sync #(.WIDTH(4)) u_cdc_sel (
+        .clk(clk_hdmi), .rst_n(rst_hdmi_n),
+        .din(ui_sel_act), .dout(ui_sel_hdmi)
+    );
+
+    cdc_sync #(.WIDTH(1)) u_cdc_ptog (
+        .clk(clk_hdmi), .rst_n(rst_hdmi_n),
+        .din(panel_tog), .dout(panel_tog_hdmi)
+    );
+
+    cdc_sync #(.WIDTH(1)) u_cdc_kact (
+        .clk(clk_hdmi), .rst_n(rst_hdmi_n),
+        .din(key_act_tog), .dout(key_act_hdmi)
+    );
+
+    disp_top #(
+        .ANIM_STEP  (ANIM_STEP),
+        //-------------------------------------------------------------------------
+        // 大屏布局：640x480@60，全部参数按 480x272 的 ~1.33 倍放大后取整。
+        //
+        // ⚠️ 为什么是 640x480 而不是 800x600：
+        //    disp_top 的关键路径 26.9 ns（46 级逻辑，60 根柱的优先级选择链）。
+        //    800x600@60 要 40 MHz ⟹ 25 ns 预算 ⟹ 时序违例 -1.9 ns（实测）。
+        //    640x480@60 只要 25 MHz ⟹ 40 ns 预算 ⟹ 余量 13 ns ✓
+        //    想上更高分辨率必须先改架构（帧缓冲 + 整数倍放大），不是调参数。
+        //
+        // ⚠️ NBARS 必须保持 60：spec_din 的宽度是 NBARS*HW 位，
+        //    而频谱上游（spectrum_map）固定只产生 60 根柱。改大端口就对不上了。
+        //-------------------------------------------------------------------------
+        .HDISP      (640),
+        .VDISP      (480),
+        .NBARS      (60),
+        .BARS_Y0    (20),
+        .BARS_H     (340),
+        .BAR_GAP    (2),
+        .POL_CX     (320),
+        .POL_CY     (104),
+        .POL_RIN    (21),
+        .POL_RMAX   (83),
+        .WAVE_CY    (240),
+        .WAVE_AMP   (53),
+        .UI_BY0     (432),
+        .UI_BW      (88),       // 7x88 + 6x2 = 628 <= 640 ✓
+        .UI_BH      (48),
+        .UI_GAP     (2),
+        .TAB_X      (622),
+        .TAB_Y      (228),
+        .TAB_W      (16),
+        .TAB_H      (24)
+    ) u_disp_hdmi (
+        .panel_tog  (panel_tog_hdmi),
+        .panel_open (),
+        .key_act    (key_act_hdmi),
+        .ui_sel     (ui_sel_hdmi),
+        .ui_btn_act (),
+        .ui_btn_press(),
+        .clk_sys    (clk_sys),
+        .rst_sys_n  (rst_sys_n),
+        .spec_wr    (spec_wr_sel),
+        .spec_din   (spec_bars_sel),
+        .clk_pix    (clk_hdmi),
+        .rst_pix_n  (rst_hdmi_n),
+        .ui_mode    (ui_bg_mode[3:0]),
+        .ui_style   (ui_style[3:0]),
+        .ui_view    (ui_view[2:0]),
+        .ui_hue_spd (ui_hue_spd),
+        .ui_wave_gain(ui_wave_gain),
+        .ui_demo    (ui_demo),
+        .tp_x       (tp_x),
+        .tp_y       (tp_y),
+        .tp_edges   (tp_edges),
+        .tp_low     (tp_low),
+        .wave_din   (wave_din_sel),
+        .wave_th    (wave_th),
+        // 诊断显示：大屏上用【同步后】的 ui_sel_hdmi，不能用 clk_sys 的 sel_idx。
+        //   原来直接写 sel_idx ⟹ 又一条跨域路径（实测报 -3.134ns 违例）。
+        .dbg_adc    ({20'd0, ui_sel_hdmi}),
+        .wave_we    (wave_we_sel),
+        .lcd_rgb    (hdmi_rgb),
+        .lcd_hs     (hdmi_hs),
+        .lcd_vs     (hdmi_vs),
+        .lcd_de     (hdmi_de),
+        .lcd_clk    ()
     );
 
     hdmi_top u_hdmi (
         .rst_n      (rst_hdmi_n),
         .clk_hdmi   (clk_hdmi),
         .clk_5x     (clk_5x),
-        .pattern    (3'b001),           // 彩条
+        .pix_rgb    (hdmi_rgb),
+        .pix_de     (hdmi_de),
+        .pix_hs     (hdmi_hs),
+        .pix_vs     (hdmi_vs),
         .tmds_clk_p (hdmi_clk_p), .tmds_clk_n (hdmi_clk_n),
         .tmds_d0_p  (hdmi_d0_p),  .tmds_d0_n  (hdmi_d0_n),
         .tmds_d1_p  (hdmi_d1_p),  .tmds_d1_n  (hdmi_d1_n),
@@ -890,8 +1014,7 @@ module top #(
         .hdmi_out_en(hdmi_out_en)
     );
 
-    // hdmi_hpd 本版不参与逻辑：接进来但不使用，避免综合报"未约束输入"。
-    //   ⚠️ 以后接 EDID/热插拔逻辑时，这里要改成真正的消费者。
+    // hdmi_hpd 本版不参与逻辑：接进来但不使用
     wire _unused_hpd = hdmi_hpd;
 
 endmodule

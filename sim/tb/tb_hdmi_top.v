@@ -1,15 +1,17 @@
 //=============================================================================
-// tb_hdmi_top.v —— HDMI 输出级（800x600 时序 + 测试图案）的冒烟测试
+// tb_hdmi_top.v —— HDMI 输出包装层的测试（像素流 -> TMDS）
 //=============================================================================
-// 【判据】
-//   ① 一帧的行数/列数和 800x600@60 的 VESA 参数一致
-//   ② de 有效期内 x/y 从 0 递增到 799/599，且不会越界
-//   ③ hsync/vsync 的脉宽等于参数（128 / 4）
-//   ④ 彩条图案在 x 的 8 个区间里给出 8 种不同颜色
-//   ⑤ hdmi_out_en 恒为 0（板上低有效）
-//   ⑥ TMDS 输出不是 X（说明编码器和串行器都动起来了）
+// 【本 TB 的定位】
+//   第一版 hdmi_top 自带 800x600 时序和彩条图案，那个 TB 验的是"时序+图案"。
+//   现在 hdmi_top 已经退化成纯物理层包装（像素流进来、TMDS 出去），
+//   时序和图案由上游 disp_top 负责（它的 TB 已经在验了）。
+//   所以本 TB 只验【这一层自己要负责的事】：
+//     ① hdmi_out_en 恒 0（板上低有效）
+//     ② 送进已知像素时，三条 TMDS 数据线不是 X（编码器+串行器在动）
+//     ③ 消隐期（de=0）蓝通道出的是控制码，不是像素
+//     ④ 时钟通道 = 像素时钟（不编码、不串行化）
 //
-// 【不验】真实的 DDR 时序、差分电平和显示器能不能锁 —— 只能上板。
+// 【不验】串行位序、DDR 相位、差分电平 —— 只能上板（责任边界第一版就定过）。
 //=============================================================================
 `timescale 1ns/1ps
 `default_nettype none
@@ -19,18 +21,21 @@ module tb_hdmi_top;
     reg        rst_n = 1'b0;
     reg        clk_hdmi = 1'b0;
     reg        clk_5x   = 1'b0;
-    reg  [2:0] pattern  = 3'b001;      // 彩条
+
+    reg  [23:0] pix_rgb = 24'h000000;
+    reg         pix_de = 1'b0;
+    reg         pix_hs = 1'b1;
+    reg         pix_vs = 1'b1;
 
     wire c_p, c_n, d0_p, d0_n, d1_p, d1_n, d2_p, d2_n, oen;
 
     integer n_fail = 0;
     integer n_chk  = 0;
-    integer i;
 
     hdmi_top dut (
         .rst_n(rst_n),
         .clk_hdmi(clk_hdmi), .clk_5x(clk_5x),
-        .pattern(pattern),
+        .pix_rgb(pix_rgb), .pix_de(pix_de), .pix_hs(pix_hs), .pix_vs(pix_vs),
         .tmds_clk_p(c_p), .tmds_clk_n(c_n),
         .tmds_d0_p(d0_p), .tmds_d0_n(d0_n),
         .tmds_d1_p(d1_p), .tmds_d1_n(d1_n),
@@ -38,147 +43,98 @@ module tb_hdmi_top;
         .hdmi_out_en(oen)
     );
 
-    // 40 MHz 像素钟；200 MHz 串行钟（5 倍）
     always #12.5 clk_hdmi = ~clk_hdmi;
     always #2.5  clk_5x   = ~clk_5x;
 
-    //-------------------------------------------------------------------------
-    // 统计一帧的 de 像素数、hsync/vsync 脉宽
-    //-------------------------------------------------------------------------
-    integer de_pix   = 0;   // 本帧 de=1 的像素数
-    integer hs_low   = 0;   // hsync 低电平计数（一拍）
-    integer vs_low   = 0;
-    integer frames   = 0;
-    integer max_x    = 0;
-    integer max_y    = 0;
-    integer de_extra = 0;   // de=1 但 x/y 越界的次数 ← 必须有 0
-
-    always @(posedge clk_hdmi) begin
-        if (rst_n) begin
-            if (dut.de) begin
-                de_pix = de_pix + 1;
-                if (dut.x > max_x) max_x = dut.x;
-                if (dut.y > max_y) max_y = dut.y;
-                if (dut.x >= 800 || dut.y >= 600) de_extra = de_extra + 1;
-            end
-            if (!dut.hs) hs_low = hs_low + 1;
-            if (!dut.vs) vs_low = vs_low + 1;
-            // sof 是帧起始单拍脉冲
-            if (dut.u_timing.sof) frames = frames + 1;
-        end
-    end
-
     task chk;
         input [1023:0] name;
-        input integer  got;
-        input integer  exp;
+        input          got;
+        input          exp;
         begin
             n_chk = n_chk + 1;
             if (got !== exp) begin
                 n_fail = n_fail + 1;
-                $display("  [ERR] %0s : 得到 %0d，期望 %0d", name, got, exp);
+                $display("  [ERR] %0s : 得到 %0b，期望 %0b", name, got, exp);
             end else
-                $display("  [OK ] %0s : %0d", name, got);
+                $display("  [OK ] %0s : %0b", name, got);
         end
     endtask
 
-    //-------------------------------------------------------------------------
     initial begin
         $display("==================== tb_hdmi_top ====================");
 
         repeat (4) @(negedge clk_hdmi);
         rst_n = 1'b1;
+        repeat (8) @(negedge clk_hdmi);
 
         //---------------------------------------------------------------------
-        // ① 跑两帧，统计
+        // ① 使能
         //---------------------------------------------------------------------
-        de_pix = 0; hs_low = 0; vs_low = 0; frames = 0;
-        max_x = 0; max_y = 0; de_extra = 0;
-
-        while (frames < 2) @(posedge clk_hdmi);
-
-        $display("  ---- 一帧（约）统计 ----");
-        $display("       de 像素数 = %0d（期望 800x600=480000）", de_pix);
-        $display("       x 最大 = %0d（期望 799）  y 最大 = %0d（期望 599）", max_x, max_y);
-
-        n_chk = n_chk + 1;
-        if (de_extra != 0) begin
-            n_fail = n_fail + 1;
-            $display("  [ERR] 有 %0d 个像素 de=1 但 x/y 越界", de_extra);
-        end else
-            $display("  [OK ] de 有效期内 x/y 从未越界");
-
-        n_chk = n_chk + 1;
-        if (max_x != 799 || max_y != 599) begin
-            n_fail = n_fail + 1;
-            $display("  [ERR] 有效区不是 800x600（x_max=%0d y_max=%0d）", max_x, max_y);
-        end else
-            $display("  [OK ] 有效区正好 800x600");
+        chk("hdmi_out_en 恒 0（板上低有效）", oen, 1'b0);
 
         //---------------------------------------------------------------------
-        // ② hsync/vsync 极性：lcd_timing 是低有效
-        //    一帧里 hsync 低电平的拍数应该 ≈ 128 x 628 = 80384
-        //    vsync 低电平的拍数应该 ≈ 4 x 1056 = 4224
-        //    （这里只做数量级检查，精确值依赖统计起点，容易差一帧）
+        // ② 像素期：送入已知颜色，TMDS 不应是 X
         //---------------------------------------------------------------------
-        $display("       hsync 低电平拍数 = %0d（约 80384 = 128x628）", hs_low);
-        $display("       vsync 低电平拍数 = %0d（约 4224 = 4x1056）", vs_low);
-        //   ⚠️ 这里【暂时只打印、不判定】。
-        //      实测 hs_low=81024（≈1 帧的量）、vs_low=8448（正好 2 帧的量），
-        //      两者不自洽 —— 怀疑 hsync 的实际脉宽是 64 而不是参数里的 128
-        //      （81024 / 1256 行 ≈ 64.5）。真相未定之前不写判据，
-        //      免得要么放过真 bug、要么为了让它过而把期望值改成"跑出来是多少"。
-        $display("  [..] 同步脉宽：hs_low=%0d vs_low=%0d（比值 %0d，期望约 19）",
-                 hs_low, vs_low, hs_low / (vs_low + 1));
-        $display("       ⚠️ 待查：hs 脉宽看起来是 64 而不是 128（下一轮核对 lcd_timing）");
-
-        //---------------------------------------------------------------------
-        // ③ 彩条：x 在 8 个区间里颜色应该不同
-        //---------------------------------------------------------------------
-        @(negedge clk_hdmi);
-        // 等一个 de 期间的稳定点
-        while (!dut.de) @(posedge clk_hdmi);
-        $display("  ---- 彩条检查（pattern=001）----");
-        begin : bars
-            reg [23:0] c0, c3, c7;
-            // 直接看组合逻辑产生的 pat_rgb 是不可能的（它随 x 变），
-            // 所以等 x 走到各条中心时采样
-            while (dut.x != 50)  @(posedge clk_hdmi);
-            c0 = dut.pat_rgb;
-            while (dut.x != 350) @(posedge clk_hdmi);
-            c3 = dut.pat_rgb;
-            while (dut.x != 750) @(posedge clk_hdmi);
-            c7 = dut.pat_rgb;
-            $display("       x=50  -> %06h（期望 FFFFFF）", c0);
-            $display("       x=350 -> %06h（期望 00FF00）", c3);
-            $display("       x=750 -> %06h（期望 000000）", c7);
-            n_chk = n_chk + 1;
-            if (c0 !== 24'hFFFFFF || c3 !== 24'h00FF00 || c7 !== 24'h000000) begin
-                n_fail = n_fail + 1;
-                $display("  [ERR] 彩条颜色不符");
-            end else
-                $display("  [OK ] 彩条颜色正确（白/绿/黑）");
-        end
-
-        //---------------------------------------------------------------------
-        // ④ hdmi_out_en 恒 0（低有效）
-        //---------------------------------------------------------------------
-        n_chk = n_chk + 1;
-        if (oen !== 1'b0) begin
-            n_fail = n_fail + 1;
-            $display("  [ERR] hdmi_out_en = %0b，应为 0（板上低有效）", oen);
-        end else
-            $display("  [OK ] hdmi_out_en = 0（使能 HDMI 输出）");
-
-        //---------------------------------------------------------------------
-        // ⑤ TMDS 输出不是 X（说明编码器+串行器在动）
-        //---------------------------------------------------------------------
+        pix_de = 1'b1; pix_hs = 1'b1; pix_vs = 1'b1; pix_rgb = 24'hFFFFFF;
+        repeat (10) @(negedge clk_hdmi);
         n_chk = n_chk + 1;
         if ((^d0_p === 1'bx) || (^d1_p === 1'bx) || (^d2_p === 1'bx)) begin
             n_fail = n_fail + 1;
-            $display("  [ERR] TMDS 数据线出现 X");
+            $display("  [ERR] 像素期 TMDS 数据线出现 X");
         end else
-            $display("  [OK ] TMDS 三条数据线都是确定值（编码+串行化在动）");
+            $display("  [OK ] 像素期 TMDS 三条数据线都是确定值");
+
+        // 编码结果应该等于"白色"的编码（三个通道同一个值，但各自独立算）
+        $display("       白色 -> 蓝 bd=%010b 绿 gd=%010b 红 rd=%010b",
+                 dut.u_tmds.bd, dut.u_tmds.gd, dut.u_tmds.rd);
+        n_chk = n_chk + 1;
+        if ((dut.u_tmds.bd === dut.u_tmds.gd) && (dut.u_tmds.gd === dut.u_tmds.rd)) begin
+            $display("  [OK ] 三通道同色时编码结果相同（符合预期）");
+        end else begin
+            n_fail = n_fail + 1;
+            $display("  [ERR] 三通道同色但编码不同（de 或数据通路接错？）");
+        end
+
+        //---------------------------------------------------------------------
+        // ③ 消隐期：蓝通道出控制码
+        //
+        //   ⚠️ 索引顺序是 {C1, C0}，而蓝通道接的是 C0=hsync、C1=vsync。
+        //      所以 hsync=0 / vsync=1 对应 {c1,c0} = 2'b10 -> 0101010100。
+        //      第一版我按 {c0,c1} 的心算写了 0010101011（那是 hsync=1/vsync=0），
+        //      判据反而帮我纠正了这个顺序错误。
+        //      对照表（DVI/HDMI 通用控制码）：
+        //        {c1,c0} = 00 -> 1101010100
+        //                  01 -> 0010101011
+        //                  10 -> 0101010100
+        //                  11 -> 1010101011
+        //---------------------------------------------------------------------
+        pix_de = 1'b0; pix_hs = 1'b0; pix_vs = 1'b1;
+        repeat (10) @(negedge clk_hdmi);
+        n_chk = n_chk + 1;
+        if (dut.u_tmds.bd !== 10'b0101010100) begin
+            n_fail = n_fail + 1;
+            $display("  [ERR] 消隐期蓝通道编码 = %010b，期望 0101010100（{c1,c0}=10）",
+                     dut.u_tmds.bd);
+        end else
+            $display("  [OK ] 消隐期 {c1,c0}=10 -> 蓝通道 0101010100（控制码正确）");
+        // 绿/红通道的控制位固定为 0，所以是 c1c0=00 -> 1101010100
+        n_chk = n_chk + 1;
+        if (dut.u_tmds.gd !== 10'b1101010100) begin
+            n_fail = n_fail + 1;
+            $display("  [ERR] 消隐期绿通道编码 = %010b，期望 1101010100", dut.u_tmds.gd);
+        end else
+            $display("  [OK ] 消隐期绿/红通道 1101010100（c1c0=00）");
+
+        //---------------------------------------------------------------------
+        // ④ 时钟通道 = 像素时钟
+        //---------------------------------------------------------------------
+        @(negedge clk_hdmi); #1;
+        n_chk = n_chk + 1;
+        if (c_p !== clk_hdmi) begin
+            n_fail = n_fail + 1;
+            $display("  [ERR] 时钟通道 %0b 与像素时钟 %0b 不一致", c_p, clk_hdmi);
+        end else
+            $display("  [OK ] 时钟通道 = 像素时钟（不编码不串行化）");
 
         //---------------------------------------------------------------------
         $display("-------------------------------------------------------");

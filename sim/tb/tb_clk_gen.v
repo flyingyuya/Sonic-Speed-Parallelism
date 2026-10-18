@@ -117,9 +117,9 @@ module tb_clk_gen;
         $display(" clk_pix  周期数     : %0d", cyc_pix);
         $display("          -> 实测频率: %0.4f MHz   (期望 12.5000)", cyc_pix / 100.0);
         $display(" clk_hdmi 周期数     : %0d", cyc_hdmi);
-        $display("          -> 实测频率: %0.4f MHz   (期望 40.0000)", cyc_hdmi / 100.0);
+        $display("          -> 实测频率: %0.4f MHz   (期望 25.0000)", cyc_hdmi / 100.0);
         $display(" clk_5x   周期数     : %0d", cyc_5x);
-        $display("          -> 实测频率: %0.4f MHz   (期望 200.0000)", cyc_5x / 100.0);
+        $display("          -> 实测频率: %0.4f MHz   (期望 125.0000)", cyc_5x / 100.0);
         $display("---------------------------------------------------------");
 
         //   容差 ±1：测量窗口是固定长度，窗口首尾的沿可能多算/少算一个。
@@ -127,8 +127,8 @@ module tb_clk_gen;
         //   这是测量方法的问题，不是时钟的问题。
         if ((cyc_sys  >= 4799  && cyc_sys  <= 4801)  &&
             (cyc_pix  >= 1249  && cyc_pix  <= 1251)  &&
-            (cyc_hdmi >= 3999  && cyc_hdmi <= 4001)  &&
-            (cyc_5x   >= 19999 && cyc_5x   <= 20001))
+            (cyc_hdmi >= 2499  && cyc_hdmi <= 2501)  &&
+            (cyc_5x   >= 12499 && cyc_5x   <= 12501))
             $display(" 结果 : *** PASS ***  四路时钟频率正确（±1 计数容差）");
         else
             $display(" 结果 : *** FAIL ***  频率不符，检查 MMCM 参数");

@@ -166,6 +166,9 @@ module disp_top #(
     output wire [23:0]           lcd_rgb,
     output wire                  lcd_hs,
     output wire                  lcd_vs,
+    // 数据有效（有效像素区）。LCD 侧不需要（面板靠 hsync/vsync 自己定边界），
+    // 但 HDMI 侧必须要有：TMDS 编码用 de 区分"像素数据期"和"控制码期"。
+    output wire                  lcd_de,
     output wire                  lcd_clk
 );
 
@@ -195,6 +198,8 @@ module disp_top #(
         .y       (y),
         .sof     (sof)
     );
+
+    assign lcd_de = de;
 
     // 像素时钟直连输出脚（与璞致官方例程一致，已实测可用）
     assign lcd_clk = clk_pix;

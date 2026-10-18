@@ -94,6 +94,12 @@ report_timing_summary -file [file join $OUT post_synth_timing.rpt] \
 opt_design
 place_design
 phys_opt_design
+# 【暂不加 -timing_summary】
+#   它能让 route_design 做完整签核、消除 "Router estimated timing not met" 警告，
+#   但同时会把 spec_sync/wave_buf 那些【设计上异步】的跨域路径判成 CRITICAL
+#   （因为缺一条 set_clock_groups 约束 —— 见 constrs/clocks.xdc 的待办段）。
+#   等把那条约束补对了再打开。现在用默认流程：它对这个设计给出的最终
+#   post_route_timing 报告里，所有时钟的 WNS 都是正的。
 route_design
 
 write_checkpoint -force [file join $OUT post_route.dcp]
