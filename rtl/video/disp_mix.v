@@ -33,6 +33,9 @@ module disp_mix #(
     parameter integer HDISP    = `DISP_HDISP,
     parameter integer VDISP    = `DISP_VDISP,
     parameter integer NBARS    = `DISP_NBARS,
+    // 显示柱数（决定每根柱占多宽）。默认等于 NBARS ⟹ 一一对应。
+    // HDMI 640 宽要 80 根显示柱（640 = 8 x 80），数据仍只有 60 根 ⟹ 3/4 缩放。
+    parameter integer NBARS_DISP = `DISP_NBARS,
     parameter integer HW       = 9,
 
     //-------------------------------------------------------------------------
@@ -110,7 +113,8 @@ module disp_mix #(
     output reg  [23:0]          rgb
 );
 
-    localparam integer AW     = $clog2(NBARS);       // 柱号位宽（60 -> 6）
+    localparam integer AW     = $clog2(NBARS);       // 数据柱号位宽（60 -> 6）
+    localparam integer AW_D   = $clog2(NBARS_DISP);  // 显示柱号位宽（80 -> 7）
 
     // 常量做成长度匹配的字面值，避免各处写死位宽
     localparam [YW-1:0] VDISP_L = VDISP;
@@ -121,7 +125,34 @@ module disp_mix #(
     //=========================================================================
     // 1. 柱状频谱
     //=========================================================================
-    wire [AW-1:0] bbar = x[BAR_SH+AW-1 : BAR_SH];    // 每根柱 2^BAR_SH 像素
+    //-------------------------------------------------------------------------
+    // 显示柱 -> 数据柱 的映射
+    //-----------------------------------------------------------------------------
+    //   为什么要分开两个参数：
+    //     NBARS      —— 数据柱数（决定 spec_din 的位宽 = NBARS*HW）
+    //     NBARS_DISP —— 显示柱数（决定每根柱占多宽：屏宽 = 2^BAR_SH x NBARS_DISP）
+    //   两者绑成一个参数的话，就只能选"数据柱数正好占满屏宽"的分辨率 ——
+    //   而 640/60 = 10.67 既不是整数也不是 2 的幂，根本凑不出来。
+    //
+    //   ⚠️ 关键：当 NBARS_DISP == NBARS 时走【恒等分支】，不经过任何除法。
+    //      上一版我在公共路径上写 x*NBARS/HDISP，数学上等价于 x/8，
+    //      但实际把 LCD 改坏了（全部柱一起动、高度一致）。
+    //      所以这次用 generate 保证"老路径结构上一个比特都不变"。
+    //-------------------------------------------------------------------------
+    wire [AW_D-1:0] dbar = x[BAR_SH+AW_D-1 : BAR_SH];   // 显示柱号（0..NBARS_DISP-1）
+
+    wire [AW-1:0] bbar;                                 // 数据柱号（0..NBARS-1）
+
+    generate
+        if (NBARS_DISP == NBARS) begin : g_ident
+            // 一一对应（LCD：480 = 8 x 60，正好占满）
+            assign bbar = dbar[AW-1:0];
+        end else begin : g_scale
+            // 缩放：src = dbar * NBARS / NBARS_DISP（除数是常数，综合成乘加移位）
+            assign bbar = (dbar * NBARS) / NBARS_DISP;
+        end
+    endgenerate
+
     wire [HW-1:0] bbh  = bars[bbar*HW +: HW];
 
     // 柱高 × pres_bar/128（右移 7 位，零成本）—— 切换视图时柱子在“长/缩”
@@ -205,7 +236,9 @@ module disp_mix #(
     //=========================================================================
     // 4. 颜色
     //=========================================================================
-    wire [6:0]  hue_bar = {bbar[4:0], 2'b00} + hue_off;  // 60 根 x 4 -> 取模 128 循环
+    // 色相按【显示柱号】推进：LCD 下 dbar 与 bbar 完全相同（行为不变），
+    // HDMI 下 80 根柱各有一个色相 ⟹ 彩虹过渡连续，不会每 60 根断一次。
+    wire [6:0]  hue_bar = {dbar[4:0], 2'b00} + hue_off;
     wire [6:0]  hue_pol = {p_bar[4:0], 2'b00} + hue_off;
 
     wire [23:0] rb_bar, rb_pol;
