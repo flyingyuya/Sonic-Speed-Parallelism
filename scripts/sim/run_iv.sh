@@ -104,7 +104,7 @@ fi
 # 源文件清单
 #-----------------------------------------------------------------------------
 IVFLAGS="-g2005 -Wall -Wno-timescale -I rtl/common -I rtl/wm8960 -I rtl/audio -I rtl/video"
-TBEXTRA="sim/tb/codec_model.v sim/tb/xpt2046_model.v"
+TBEXTRA="sim/tb/codec_model.v sim/tb/xpt2046_model.v sim/tb/sd_card_model.v"
 # 触摸屏的行为模型（只有 tb_xpt2046 用，但一起带上无害）
 RTL="rtl/fft/fft_addr_gen.v rtl/fft/fft_twiddle_rom.v rtl/fft/fft_butterfly.v rtl/fft/fft_core.v \
      rtl/common/cdc_sync.v rtl/common/rst_sync.v rtl/common/audio_fifo.v \
@@ -122,9 +122,10 @@ RTL="rtl/fft/fft_addr_gen.v rtl/fft/fft_twiddle_rom.v rtl/fft/fft_butterfly.v rt
      rtl/video/disp_mix.v rtl/video/disp_top.v rtl/video/rainbow_rom.v \
      rtl/video/polar_map.v rtl/video/wave_buf.v rtl/video/demo_src.v \
      rtl/video/ui_anim.v rtl/video/font_rom.v rtl/video/text_buf.v \
-     rtl/video/status_line.v rtl/video/ui_layer.v rtl/touch/xpt2046.v rtl/video/tmds_enc.v rtl/video/tmds_out.v rtl/video/hdmi_top.v"
+     rtl/video/status_line.v rtl/video/ui_layer.v rtl/touch/xpt2046.v rtl/video/tmds_enc.v rtl/video/tmds_out.v rtl/video/hdmi_top.v \
+     rtl/sdcard/sd_init.v"
 
-ALL_TB="hdmi_top tmds_out tmds_enc key_gesture ui_layer xpt2046 i2s_bclk_if dc_block fir_sym env_track eq_cascade i2s_loopback audio_top fft_addr_gen fft_butterfly fft_core wm8960_init lcd_timing spectrum disp_top i2s_slave polar_map wave_buf ui_ctrl uart_cmd demo_src ui_anim font_rom text_buf status_line"
+ALL_TB="sd_init hdmi_top tmds_out tmds_enc key_gesture ui_layer xpt2046 i2s_bclk_if dc_block fir_sym env_track eq_cascade i2s_loopback audio_top fft_addr_gen fft_butterfly fft_core wm8960_init lcd_timing spectrum disp_top i2s_slave polar_map wave_buf ui_ctrl uart_cmd demo_src ui_anim font_rom text_buf status_line"
 WANT="${1:-all}"
 
 pass=0
