@@ -101,6 +101,15 @@ module top #(
     //----------------------- 指示 -----------------------------
     output wire [1:0]  led,
 
+    //----------------------- SD 卡（SPI 模式）------------------
+    //   引脚见 constrs/sd.xdc：CLK=AA20 / CMD(MOSI)=AB21 /
+    //   DATA0(MISO)=AB18 / DATA3(CS)=AA21
+    //   CS 用 DATA3 是 SD 规范对 SPI 模式的规定。
+    output wire        sd_clk,
+    output wire        sd_cs,
+    output wire        sd_mosi,
+    input  wire        sd_miso,
+
     //--------------------- HDMI 输出（DVI 兼容，无发送芯片）---------------------
     //   Bank 14 的 Vcco = 3.3V，所以差分用 TMDS_33（见 constrs/hdmi.xdc）
     //   通道分配：D0=蓝  D1=绿  D2=红  时钟=像素时钟
@@ -829,6 +838,84 @@ module top #(
             hb <= 25'd0;
         else
             hb <= hb + 1'b1;
+    end
+
+    //=========================================================================
+    // SD 卡子系统
+    //=========================================================================
+    //   上电后先做 SD 初始化（200 kHz），完成后自动读一次【扇区 0】，
+    //   把前 16 个字节抓进 sd_dbg_bytes，供后续显示/打印用。
+    //
+    //   ⚠️ 为什么先读扇区 0 而不是用户数据区：
+    //      扇区 0 是 MBR/引导区，几乎任何卡都有内容 ⟹ 能区分
+    //      "卡没插/没初始化"和"读流程有问题"两种情况：
+    //        · sd_init_done = 0 ⟹ 卡没通
+    //        · sd_init_done = 1 但 sd_rd_count < 512 ⟹ 命令通了、数据没通
+    //        · sd_rd_count = 512 ⟹ 整条读通路 OK
+    //=========================================================================
+    wire        sd_init_done;
+    wire        sd_rd_busy;
+    wire        sd_rd_valid;
+    wire [7:0]  sd_rd_data;
+    reg         sd_rd_start;
+    reg  [15:0] sd_rd_count;        // 读到的字节数（512 = 完整一块）
+    reg  [7:0]  sd_dbg_bytes [0:15]; // 前 16 个字节
+    reg  [3:0]  sd_dbg_idx;
+    reg         sd_rd_done;
+
+    sd_ctrl_top #(
+        .CLK_HZ        (48_000_000),
+        .FAST_DIV      (4),          // 12 MHz 读时钟
+        .INIT_HZ       (200_000),
+        .POWER_ON_NUM  (5000),
+        .OVER_TIME_NUM (25000)
+    ) u_sd (
+        .clk         (clk_sys),
+        .rst_n       (rst_sys_n),
+        .sd_clk      (sd_clk),
+        .sd_cs       (sd_cs),
+        .sd_mosi     (sd_mosi),
+        .sd_miso     (sd_miso),
+        .rd_start    (sd_rd_start),
+        .rd_sec_addr (32'd0),
+        .rd_busy     (sd_rd_busy),
+        .rd_valid    (sd_rd_valid),
+        .rd_data     (sd_rd_data),
+        .init_done   (sd_init_done)
+    );
+
+    // 初始化完成后发一次读请求（单拍脉冲）
+    // 【注意】所有 sd_rd_* 寄存器必须在【同一个 always 块】里驱动。
+    //   我第一版把它们分到两个块里，结果 Verilator 报 MULTIDRIVEN（多驱动）——
+    //   综合器会只保留其中一个，行为完全不可预测。
+    always @(posedge clk_sys or negedge rst_sys_n) begin
+        if (!rst_sys_n) begin
+            sd_rd_start <= 1'b0;
+            sd_rd_done  <= 1'b0;
+            sd_rd_count <= 16'd0;
+            sd_dbg_idx  <= 4'd0;
+        end else begin
+            // ① 初始化完成后发一次读请求（1 拍脉冲）
+            //    sd_ctrl_top 内部会把"脉冲"转成"翻转+双打+边沿检测"来跨时钟域
+            if (sd_init_done && !sd_rd_done && !sd_rd_busy && !sd_rd_start)
+                sd_rd_start <= 1'b1;
+            else
+                sd_rd_start <= 1'b0;
+
+            // ② 收集读到的字节：前 16 个存下来，同时数总个数
+            if (sd_rd_valid) begin
+                // sd_dbg_idx 是 4 位 ⟹ 天然 ≤ 15，不用再判
+                sd_dbg_bytes[sd_dbg_idx] <= sd_rd_data;
+                if (sd_dbg_idx != 4'd15)
+                    sd_dbg_idx <= sd_dbg_idx + 4'd1;
+                if (sd_rd_count != 16'd511)
+                    sd_rd_count <= sd_rd_count + 16'd1;
+            end
+
+            // ③ 收满 512 个 ⟹ 本次读完成
+            if (sd_rd_count == 16'd511)
+                sd_rd_done <= 1'b1;
+        end
     end
 
     assign led[0] = init_done;          // 常亮 = WM8960 配置完成

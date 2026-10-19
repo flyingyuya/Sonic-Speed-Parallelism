@@ -111,7 +111,7 @@ module sd_read (
             bit_in_byte <= 3'd0;
             byte_shift  <= 8'd0;
             crc_bit     <= 5'd0;
-            mosi_bit    <= 6'd0;
+            // mosi_bit 归 negedge 块管，这里不要重复驱动（会 MULTIDRIVEN）
             dout_valid  <= 1'b0;
             dout_data   <= 8'd0;
         end else begin
