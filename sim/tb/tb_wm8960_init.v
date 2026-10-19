@@ -79,7 +79,10 @@ module tb_wm8960_init;
 
     reg [15:0] cap_word [0:127];                   // 捕获到的 16 位字
     reg [63:0] cap_time [0:127];                   // 该字停止位时刻(ps)
-    integer    cap_n = 0;
+    integer    cap_n    = 0;
+    integer    cap_base = 0;      // 第二次 Go 之前的条数
+    integer    go2_err  = 0;      // 第二次 Go 相关的错误数（模块级，便于汇总）
+    integer    go2_wait = 0;
 
     reg       in_frame = 1'b0;
     reg [3:0] bitcnt   = 4'd0;
@@ -296,13 +299,48 @@ module tb_wm8960_init;
             $display("  [ERR] 最后一条不是 R4 CLKSEL=1");
         end
 
+        //---------------------------------------------------------------------
+        // 检查 ⑧：第二次 Go 必须能【完整重跑整张表】
+        //---------------------------------------------------------------------
+        //   ⚠️ 这条判据是补上来的。之前 TB 只测一次 Go，所以下面这个真 bug
+        //      完全没被覆盖，直到上板才暴露（切输入源 I01 后静音 + LED1 灭）：
+        //        Go 只清 cnt 不清 state，且整个 case 被 cnt<LUT_SIZE 门控
+        //        ⟹ 重配时 Go 落在 cnt==LUT_SIZE 那一拍被吞掉
+        //        ⟹ state 停在 0 ⟹ 一条都发不出去 ⟹ Init_Done 恒 0
+        //        ⟹ aud_rst_n 把音频通路按住复位。
+        //   判据：第二次 Go 之后 Init_Done 要重新拉高，且表要完整重跑一轮。
+        //---------------------------------------------------------------------
+        cap_base = cap_n;
+        @(negedge clk); go = 1'b1;
+        @(negedge clk); go = 1'b0;
+
+        go2_wait = 0;
+        while (init_done !== 1'b1 && go2_wait < 2000000) begin
+            @(posedge clk);
+            go2_wait = go2_wait + 1;
+        end
+
+        if (init_done !== 1'b1) begin
+            go2_err = go2_err + 1;
+            $display("  [ERR] 第二次 Go 之后 Init_Done 没有重新拉高（状态机卡死）");
+        end else
+            $display("  [OK ] 第二次 Go：Init_Done 重新拉高");
+
+        if ((cap_n - cap_base) !== N_EXP) begin
+            go2_err = go2_err + 1;
+            $display("  [ERR] 第二次 Go 只发了 %0d 条（期望 %0d 条）",
+                     cap_n - cap_base, N_EXP);
+        end else
+            $display("  [OK ] 第二次 Go：整张表完整重跑了 %0d 条", cap_n - cap_base);
+
         // 检查：Init_Done 拉高后必须保持
         repeat (500) @(posedge clk);
         if (init_done !== 1'b1) begin
             n_err = n_err + 1;
             $display("  [ERR] Init_Done 没有保持");
         end
-        if (cap_n !== N_EXP) begin
+        // 这里已经跑了两轮（第一次 Go + 第二次 Go），所以是 2*N_EXP
+        if (cap_n !== 2*N_EXP) begin
             n_err = n_err + 1;
             $display("  [ERR] Init_Done 之后仍在写寄存器（cnt 回绕了）");
         end
