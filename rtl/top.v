@@ -494,6 +494,11 @@ module top #(
     wire [7:0] ui_view, ui_style, ui_hue_spd, ui_wave_gain, ui_bg_mode, ui_auto, ui_demo;
     wire [7:0] ui_src;
     wire [7:0] ui_img_idx;              // SD 背景图序号（面板 SD 键 / UART 4'h8）
+    // SD 卡前 8 字节拼成 64 位，给状态行显示。
+    //   ⚠️ 必须在【第一次使用之前】声明：disp_top 的例化在前面，
+    //      否则 Vivado 会按 1 位隐式声明，然后报 [Synth 8-992]
+    //      "already implicitly declared earlier"，显示出来是垃圾。
+    wire [63:0] sd_dbg_q;
     // ui_src = 输入源（0=话筒 1=线路），UART 命令 I 写 ui_ctrl 的 4'h7
     assign src_sel = ui_src[0];         // 只取最低位（ui_ctrl 那边已经限过 1 位）
     wire [3:0] ui_view_idx;
@@ -869,9 +874,11 @@ module top #(
     reg  [15:0] sd_rd_count;        // 读到的字节数（512 = 完整一块）
     reg  [7:0]  sd_dbg_bytes [0:15]; // 前 16 个字节
     reg  [3:0]  sd_dbg_idx;
-    // 拼成 64 位给状态行显示（sd_dbg_bytes[0] 打在最左边）
-    wire [63:0] sd_dbg_q = {sd_dbg_bytes[0], sd_dbg_bytes[1], sd_dbg_bytes[2], sd_dbg_bytes[3],
-                            sd_dbg_bytes[4], sd_dbg_bytes[5], sd_dbg_bytes[6], sd_dbg_bytes[7]};
+
+    // sd_dbg_bytes[0] 打在最左边
+    assign sd_dbg_q = {sd_dbg_bytes[0], sd_dbg_bytes[1], sd_dbg_bytes[2], sd_dbg_bytes[3],
+                       sd_dbg_bytes[4], sd_dbg_bytes[5], sd_dbg_bytes[6], sd_dbg_bytes[7]};
+
     reg         sd_rd_done;
     reg  [7:0]  sd_img_d;        // ui_img_idx 打拍，用来检测"用户切图"
 
