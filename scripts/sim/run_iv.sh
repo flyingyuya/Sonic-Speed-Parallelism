@@ -351,50 +351,112 @@ if [ "$WANT" = "all" ] || [ "$WANT" = "async_fifo" ]; then
     run_async_fifo
 fi
 
-if [ "$WANT" = "all" ] || [ "$WANT" = "top" ]; then
+#-----------------------------------------------------------------------------
+# 整机冒烟测试：默认【跳过】
+#-----------------------------------------------------------------------------
+#   【为什么要跳过】
+#     它要跑完 WM8960 配置（几十 ms）+ 按键消抖 + 双击窗口 + 面板动画，
+#     单这一个 TB 就要 20 分钟，而 39 个模块级 TB 合起来只要一两分钟。
+#     日常改代码根本不需要每次都跑它 ⟹ 改成按需运行：
+#
+#       bash scripts/sim/run_iv.sh top      # 只跑整机冒烟
+#       FULL=1 bash scripts/sim/run_iv.sh   # 全量（含整机冒烟）
+#
+#     CI 里用 FULL=1 保证覆盖；本地迭代用默认值。
+#-----------------------------------------------------------------------------
+if [ "$WANT" = "top" ]; then
     run_top_smoke
+elif [ "$WANT" = "all" ] && [ -n "${FULL:-}" ]; then
+    run_top_smoke
+elif [ "$WANT" = "all" ]; then
+    echo ""
+    echo "  [跳过] 整机冒烟测试（约 20 分钟）。需要时："
+    echo "         bash scripts/sim/run_iv.sh top     （只跑它）"
+    echo "         FULL=1 bash scripts/sim/run_iv.sh  （全量）"
 fi
 
+#=============================================================================
+# TB 执行（可并行）
+#-----------------------------------------------------------------------------
+# 【为什么改成并行】
+#   39 个 TB 原来是 for 循环串行跑的，每个都要编译 57 个 RTL 文件 + 跑一次 vvp。
+#   机器有 16 核 ⟹ 串行等于只用 1/16 的算力。改成并行后墙钟时间大约降到 1/6~1/8。
+#
+# 【为什么每个 TB 的屏幕输出要落盘】
+#   并行时多个进程同时 echo 会互相穿插，日志完全没法看。
+#   所以每个 TB 把详细输出写进 $OUT/<tb>.console，
+#   屏幕上只在【失败】时才把对应文件打出来。
+#
+# 【JOBS 环境变量】
+#   默认 = CPU 核数。设 JOBS=1 就退回原来的串行行为（排查问题用）。
+#=============================================================================
+JOBS="${JOBS:-$(nproc)}"
+rm -f "$OUT"/*.st
+
+run_tb_one() {
+    _tb="$1"
+    _con="$OUT/${_tb}.console"
+    : > "$_con"
+
+    if ! "$IVERILOG" $IVERILOG_LIBFLAGS $IVFLAGS -o "$OUT/tb_${_tb}.vvp" \
+            sim/tb/xilinx_stub.v $RTL $TBEXTRA "sim/tb/tb_${_tb}.v" 2>"$OUT/${_tb}.log"; then
+        echo "[编译失败]"
+        echo "--- $OUT/${_tb}.log ---"
+        cat "$OUT/${_tb}.log"
+        echo "CFAIL" > "$OUT/${_tb}.st"
+        return 0
+    fi
+    grep -i "warning" "$OUT/${_tb}.log" | head -20 >> "$_con" || true
+
+    if [ -n "${WAVE:-}" ]; then VVPARG=""; else VVPARG="+novcd"; fi
+    ( cd "$ROOT" && "$VVP" $VVP_LIBFLAGS "$OUT/tb_${_tb}.vvp" $VVPARG ) > "$OUT/${_tb}.run.log" 2>&1
+
+    if grep -q "\*\*\* PASS" "$OUT/${_tb}.run.log"; then
+        echo "PASS" > "$OUT/${_tb}.st"
+    else
+        echo "FAIL" > "$OUT/${_tb}.st"
+    fi
+    return 0
+}
+export -f run_tb_one 2>/dev/null || true
+
+TB_LIST=""
 for tb in $ALL_TB; do
     if [ "$WANT" != "all" ] && [ "$WANT" != "$tb" ]; then continue; fi
     if [ ! -f "sim/tb/tb_${tb}.v" ]; then
         echo "  [跳过] sim/tb/tb_${tb}.v 不存在"
-        skip=$((skip + 1))
+        echo "SKIP" > "$OUT/${tb}.st"
         continue
     fi
+    TB_LIST="$TB_LIST $tb"
+done
 
-    echo ""
-    CUR_STEP="TB: $tb"
-    echo ">>> 仿真 $tb"
-    # ⚠️ 注释不能插在 `\` 续行的命令中间 —— 那会把命令拆断，所有 TB 全编译失败。
-    #    （这个坑本轮真踩了：加了 5 行注释到续行里，34 个 TB 挂 28 个。）
-    # 每个 TB 都带上 Xilinx 原语的行为模型（sim/tb/xilinx_stub.v）：
-    #   RTL 里只要有一个模块用到原语（tmds_out.v 用了 OSERDESE2/OBUFDS），
-    #   所有 TB 的编译都会去解析它。没被例化的模块是孤儿、无害，
-    #   但原语类型必须能解析，否则整条编译失败。
-    #   ⚠️ 上面这几行注释必须写在 if 之前 —— 插在 `\` 续行里会把命令拆断。
-    if "$IVERILOG" $IVERILOG_LIBFLAGS $IVFLAGS -o "$OUT/tb_${tb}.vvp" \
-            sim/tb/xilinx_stub.v $RTL $TBEXTRA "sim/tb/tb_${tb}.v" 2>"$OUT/${tb}.log"; then
-        :
-    else
-        echo "  [编译失败]"; cat "$OUT/${tb}.log"; fail=$((fail + 1)); continue
-    fi
-    grep -i "warning" "$OUT/${tb}.log" | head -20 || true
+if [ "$JOBS" -le 1 ]; then
+    for tb in $TB_LIST; do
+        echo ">>> 仿真 $tb"
+        run_tb_one "$tb"
+    done
+else
+    echo ">>> 并行仿真 $JOBS 路（共 $(echo $TB_LIST | wc -w) 个 TB）"
+    for tb in $TB_LIST; do
+        run_tb_one "$tb" &
+        while [ "$(jobs -rp | wc -l)" -ge "$JOBS" ]; do wait -n 2>/dev/null || break; done
+    done
+    wait
+fi
 
-    # 默认加 +novcd 关波形；WAVE=1 时不加，波形落在 sim/build/ 下
-    if [ -n "${WAVE:-}" ]; then VVPARG=""; else VVPARG="+novcd"; fi
-    # 同上：必须检查输出文本，不能只看退出码
-    # ⚠️ 同上：写成 `| tee log | grep -q PASS` 的话，grep -q 一找到就退出，
-    #   tee 收到 SIGPIPE 返回非零，set -o pipefail 会把 PASS 的测试判成失败。
-    #   一律【先落盘，再单独 grep】。
-    ( cd "$ROOT" && "$VVP" $VVP_LIBFLAGS "$OUT/tb_${tb}.vvp" $VVPARG ) \
-            > "$OUT/${tb}.run.log" 2>&1
-    if grep -q "\*\*\* PASS" "$OUT/${tb}.run.log"; then
-        pass=$((pass + 1))
-    else
-        echo "  [测试失败]"; grep -E "\[ERR\]|FAIL" "$OUT/${tb}.run.log" | head -10
-        fail=$((fail + 1))
-    fi
+#-----------------------------------------------------------------------------
+# 汇总（并行时屏幕上只在失败处打细节）
+#-----------------------------------------------------------------------------
+for tb in $TB_LIST; do
+    st=$(cat "$OUT/${tb}.st" 2>/dev/null || echo "SKIP")
+    case "$st" in
+        PASS) pass=$((pass + 1));;
+        FAIL) fail=$((fail + 1)); echo "  [测试失败] $tb";
+              grep -E "\[ERR\]|FAIL" "$OUT/${tb}.run.log" 2>/dev/null | head -10;;
+        CFAIL) fail=$((fail + 1));;
+        *) skip=$((skip + 1));;
+    esac
 done
 
 echo ""

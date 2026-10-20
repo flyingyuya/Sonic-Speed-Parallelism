@@ -40,7 +40,7 @@ jobs:
       - name: 跑 run_iv.sh（Verilator 检查 + 21 个 testbench）
         # tee 一份到文件，失败那一步才能把完整输出贴出来。
         # GHA 默认 pipefail，所以管道不会把 run_iv.sh 的退出码吞掉。
-        run: bash scripts/sim/run_iv.sh 2>&1 | tee /tmp/run.log
+        run: FULL=1 JOBS=2 bash scripts/sim/run_iv.sh 2>&1 | tee /tmp/run.log
 
       - name: 失败时打印详细日志
         if: failure()
