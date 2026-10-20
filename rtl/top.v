@@ -895,6 +895,12 @@ module top #(
 
     reg         sd_rd_done;
     reg  [7:0]  sd_img_d;        // ui_img_idx 打拍，用来检测"用户切图"
+    // 读请求的"重试看门狗"：
+    //   如果发出 sd_rd_start 之后 sd_rd_done 长时间不拉高（实测发现卡可能
+    //   不响应某条命令，而 sd_read 本身没有超时保护），就重新发一次请求。
+    //   放在这里而不是改 sd_read —— sd_read 已经验证过 4/4，不想为一个
+    //   边界情况去动它（账本：改已验证模块的代价往往高于在外面加保护）。
+    reg  [23:0] sd_wdg;
     // 切图检测做成【组合逻辑】：sd_img_d 是打拍后的值，两者不等就是刚切过。
     //   ⚠️ 不能在时序块里用 `=` 临时算它（Verilator 报 BLKSEQ，
     //      而且阻塞赋值和同块内的非阻塞赋值混用容易出意外）。
@@ -935,6 +941,7 @@ module top #(
             sd_rd_count <= 16'd0;
             sd_dbg_idx  <= 4'd0;
             sd_img_d    <= 8'd0;
+            sd_wdg      <= 24'd0;
         end else begin
             sd_img_d <= ui_img_idx;
 
@@ -950,6 +957,22 @@ module top #(
                 sd_rd_count <= 16'd0;
                 sd_dbg_idx  <= 4'd0;
                 sd_rd_start <= 1'b0;
+                sd_wdg      <= 24'd0;
+            end
+
+            // 看门狗：没读到数据时一直计数，超时就把"已完成"清掉 ⟹ 重新发请求
+            //   阈值取 24'hFFFFFF 太大（48MHz 下约 350 ms），这里用 2^21
+            //   ≈ 44 ms，比一次正常读（512 字节 @12MHz ≈ 3.4 ms）宽得多。
+            if (sd_rd_done)
+                sd_wdg <= 24'd0;
+            else if (sd_wdg != 24'h1FFFFF)
+                sd_wdg <= sd_wdg + 24'd1;
+            else begin
+                // 超时 ⟹ 强制重来
+                sd_rd_done  <= 1'b0;
+                sd_rd_count <= 16'd0;
+                sd_dbg_idx  <= 4'd0;
+                sd_wdg      <= 24'd0;
             end
 
             // ① 初始化完成后发一次读请求（1 拍脉冲）
