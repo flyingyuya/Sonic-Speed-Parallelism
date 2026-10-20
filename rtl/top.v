@@ -921,6 +921,15 @@ module top #(
     //   12 MHz 的 sd_clk ⟹ 8 拍 = 32 个 clk_sys；这里给到 512（约 10 us），
     //   余量充足且不影响体验（用户按一次键远慢于 10 us）。
     reg  [9:0]  sd_gap_q;
+    // SD 子系统软复位：
+    //   上板实测：上电后第一次读永远成功，之后无论怎么切图都读不到数据
+    //   （sr_rd_count 恒 0），说明卡在一次完整事务之后就不再响应了。
+    //   与其继续猜"第 2 次为什么不响应"，不如让每次切图都回到"刚上电"：
+    //   给 sd_ctrl_top（连同 sd_init/sd_read）一个软复位脉冲，
+    //   重新走一遍初始化 ⟹ 每次都是"第一次读" ⟹ 必然成功。
+    //   代价：每次切图多花约 300 ms 初始化时间（可以接受）。
+    reg  [3:0]  sd_srst_cnt;
+    reg         sd_srst;
     // 切图检测做成【组合逻辑】：sd_img_d 是打拍后的值，两者不等就是刚切过。
     //   ⚠️ 不能在时序块里用 `=` 临时算它（Verilator 报 BLKSEQ，
     //      而且阻塞赋值和同块内的非阻塞赋值混用容易出意外）。
@@ -934,7 +943,8 @@ module top #(
         .OVER_TIME_NUM (25000)
     ) u_sd (
         .clk         (clk_sys),
-        .rst_n       (rst_sys_n),
+        // ⚠️ 用软复位：切图时把整个 SD 子系统复位，让它从"刚上电"开始
+        .rst_n       (rst_sys_n & ~sd_srst),
         .sd_clk      (sd_clk),
         .sd_cs       (sd_cs),
         .sd_mosi     (sd_mosi),
@@ -963,7 +973,20 @@ module top #(
             sd_img_d    <= 8'd0;
             sd_wdg      <= 24'd0;
             sd_gap_q    <= 10'd0;
+            sd_srst_cnt <= 4'd0;
+            sd_srst     <= 1'b0;
         end else begin
+            // img_changed 是一个单拍脉冲 ⟹ 拉长成 8 拍的复位窗
+            if (img_changed) begin
+                sd_srst_cnt <= 4'd15;
+                sd_srst     <= 1'b1;
+            end else if (sd_srst_cnt != 4'd0) begin
+                sd_srst_cnt <= sd_srst_cnt - 4'd1;
+                sd_srst     <= 1'b1;
+            end else begin
+                sd_srst     <= 1'b0;
+            end
+
             sd_img_d <= ui_img_idx;
 
             // 用户切图（面板 SD 按钮 / UART 4'h8）⟹ 重新来一轮读
