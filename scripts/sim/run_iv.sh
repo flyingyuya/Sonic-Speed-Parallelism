@@ -124,9 +124,9 @@ RTL="rtl/fft/fft_addr_gen.v rtl/fft/fft_twiddle_rom.v rtl/fft/fft_butterfly.v rt
      rtl/video/ui_anim.v rtl/video/font_rom.v rtl/video/text_buf.v \
      rtl/video/status_line.v rtl/video/ui_layer.v rtl/touch/xpt2046.v rtl/video/tmds_enc.v rtl/video/tmds_out.v rtl/video/hdmi_top.v \
      rtl/sdcard/sd_init.v rtl/sdcard/sd_read.v rtl/sdcard/sd_ctrl_top.v \
-     rtl/video/frame_buf.v"
+     rtl/video/frame_buf.v rtl/video/sd_img_load.v"
 
-ALL_TB="frame_buf sd_init sd_read sd_ctrl_top hdmi_top tmds_out tmds_enc key_gesture ui_layer xpt2046 i2s_bclk_if dc_block fir_sym env_track eq_cascade i2s_loopback audio_top fft_addr_gen fft_butterfly fft_core wm8960_init lcd_timing spectrum disp_top i2s_slave polar_map wave_buf ui_ctrl uart_cmd demo_src ui_anim font_rom text_buf status_line"
+ALL_TB="sd_img_load frame_buf sd_init sd_read sd_ctrl_top hdmi_top tmds_out tmds_enc key_gesture ui_layer xpt2046 i2s_bclk_if dc_block fir_sym env_track eq_cascade i2s_loopback audio_top fft_addr_gen fft_butterfly fft_core wm8960_init lcd_timing spectrum disp_top i2s_slave polar_map wave_buf ui_ctrl uart_cmd demo_src ui_anim font_rom text_buf status_line"
 WANT="${1:-all}"
 
 pass=0
