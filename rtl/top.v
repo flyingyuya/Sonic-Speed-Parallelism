@@ -912,6 +912,15 @@ module top #(
     //   放在这里而不是改 sd_read —— sd_read 已经验证过 4/4，不想为一个
     //   边界情况去动它（账本：改已验证模块的代价往往高于在外面加保护）。
     reg  [23:0] sd_wdg;
+    // 两次读之间的最小间隔：
+    //   SD 规范要求一条命令结束后 CS 保持高电平 ≥8 个 SPI 时钟，
+    //   卡才会接受下一条命令。sd_read 的 ST_DONE 只把 CS 拉高 1 个 sd_clk 周期
+    //   ⟹ 紧接着发的下一次 CMD17 会被卡忽略（上板实测：第 1 次能读、
+    //     第 2 次起 sr_rd_count 恒为 0）。
+    //   这里读完成后强制等 GAP_CYC 个 clk_sys 周期才允许下一次触发。
+    //   12 MHz 的 sd_clk ⟹ 8 拍 = 32 个 clk_sys；这里给到 512（约 10 us），
+    //   余量充足且不影响体验（用户按一次键远慢于 10 us）。
+    reg  [9:0]  sd_gap_q;
     // 切图检测做成【组合逻辑】：sd_img_d 是打拍后的值，两者不等就是刚切过。
     //   ⚠️ 不能在时序块里用 `=` 临时算它（Verilator 报 BLKSEQ，
     //      而且阻塞赋值和同块内的非阻塞赋值混用容易出意外）。
@@ -953,6 +962,7 @@ module top #(
             sd_dbg_idx  <= 4'd0;
             sd_img_d    <= 8'd0;
             sd_wdg      <= 24'd0;
+            sd_gap_q    <= 10'd0;
         end else begin
             sd_img_d <= ui_img_idx;
 
@@ -986,9 +996,17 @@ module top #(
                 sd_wdg      <= 24'd0;
             end
 
+            // ①-b 读完成后的最小间隔计数（CS 高电平保持时间）
+            if (sd_rd_done)
+                sd_gap_q <= 10'd0;
+            else if (sd_gap_q != 10'h3FF)
+                sd_gap_q <= sd_gap_q + 10'd1;
+
             // ① 初始化完成后发一次读请求（1 拍脉冲）
+            //    ⚠️ 用 sd_gap_q 作为门控：只在"距上次读完成已过足够时间"才允许
             //    sd_ctrl_top 内部会把"脉冲"转成"翻转+双打+边沿检测"来跨时钟域
-            if (sd_init_done && !sd_rd_done && !sd_rd_busy && !sd_rd_start)
+            if (sd_init_done && !sd_rd_done && !sd_rd_busy && !sd_rd_start &&
+                (sd_gap_q == 10'h3FF))
                 sd_rd_start <= 1'b1;
             else
                 sd_rd_start <= 1'b0;
