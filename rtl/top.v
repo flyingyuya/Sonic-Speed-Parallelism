@@ -65,7 +65,11 @@ module top #(
     // 属性插值器每帧步进。默认 4 -> 32 帧 ≈ 384 ms 的过渡。
     //   暴露出来是为了让 testbench 能设成 128（一帧到位）：
     //   否则 TB 要等 384 ms 仿真时间才能看到操作面板开完，跑不动。
-    parameter integer ANIM_STEP    = 4
+    parameter integer ANIM_STEP    = 4,
+
+    // SD 背景图的存放起始扇区（每张图占 512 个扇区 = 256 KB）
+    //   要和 scripts/sdcard/mkimage.py 的布局一致
+    parameter [31:0]  IMG_SECTOR_BASE = 32'd2048
 ) (
     //----------------------- 时钟与复位 -----------------------
     input  wire        clk_200m_p,      // R4  IO_L13P_MRCC_34（差分）
@@ -488,7 +492,9 @@ module top #(
 
     // ui_ctrl 的配置输出（声明必须在使用之前 —— Verilog 不允许先用后声明）
     wire [7:0] ui_view, ui_style, ui_hue_spd, ui_wave_gain, ui_bg_mode, ui_auto, ui_demo;
-    wire [7:0] ui_src;                  // 输入源（0=话筒 1=线路），UART 命令 I 写 ui_ctrl 的 4'h7
+    wire [7:0] ui_src;
+    wire [7:0] ui_img_idx;              // SD 背景图序号（面板 SD 键 / UART 4'h8）
+    // ui_src = 输入源（0=话筒 1=线路），UART 命令 I 写 ui_ctrl 的 4'h7
     assign src_sel = ui_src[0];         // 只取最低位（ui_ctrl 那边已经限过 1 位）
     wire [3:0] ui_view_idx;
 
@@ -578,6 +584,7 @@ module top #(
         .cfg_auto      (ui_auto),
         .cfg_demo      (ui_demo),
         .cfg_src       (ui_src),           // 输入源：UART 命令 I 写 4'h7
+        .cfg_img_idx   (ui_img_idx),       // SD 切图：面板 SD 按钮写 4'h8
         .view_idx      (ui_view_idx)
     );
 
@@ -862,6 +869,7 @@ module top #(
     reg  [7:0]  sd_dbg_bytes [0:15]; // 前 16 个字节
     reg  [3:0]  sd_dbg_idx;
     reg         sd_rd_done;
+    reg  [7:0]  sd_img_d;        // ui_img_idx 打拍，用来检测"用户切图"
 
     sd_ctrl_top #(
         .CLK_HZ        (48_000_000),
@@ -877,7 +885,10 @@ module top #(
         .sd_mosi     (sd_mosi),
         .sd_miso     (sd_miso),
         .rd_start    (sd_rd_start),
-        .rd_sec_addr (32'd0),
+        // 第 N 张图占 512 个扇区（256 KB）。
+        //   起始扇区 IMG_SECTOR_BASE 由 PC 端脚本决定（见 scripts/sdcard/mkimage.py），
+        //   这里留成参数，方便和脚本对齐。
+        .rd_sec_addr (IMG_SECTOR_BASE + ({24'd0, ui_img_idx} << 9)),
         .rd_busy     (sd_rd_busy),
         .rd_valid    (sd_rd_valid),
         .rd_data     (sd_rd_data),
@@ -894,7 +905,17 @@ module top #(
             sd_rd_done  <= 1'b0;
             sd_rd_count <= 16'd0;
             sd_dbg_idx  <= 4'd0;
+            sd_img_d    <= 8'd0;
         end else begin
+            sd_img_d <= ui_img_idx;
+
+            // 用户切图（面板 SD 按钮 / UART 4'h8）⟹ 重新来一轮读
+            if (ui_img_idx != sd_img_d) begin
+                sd_rd_done  <= 1'b0;
+                sd_rd_count <= 16'd0;
+                sd_dbg_idx  <= 4'd0;
+            end
+
             // ① 初始化完成后发一次读请求（1 拍脉冲）
             //    sd_ctrl_top 内部会把"脉冲"转成"翻转+双打+边沿检测"来跨时钟域
             if (sd_init_done && !sd_rd_done && !sd_rd_busy && !sd_rd_start)

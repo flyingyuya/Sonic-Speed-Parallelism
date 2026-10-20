@@ -75,6 +75,9 @@ module ui_ctrl #(
     // 音频输入源（P1-6）：0=话筒 1=线路输入
     //   只取 1 位 —— 写进来的高 7 位一律丢掉，避免垃圾值让下游产生奇怪状态。
     output reg  [7:0]  cfg_src,
+    // SD 卡切图：每次按下面板的 SD 按钮，这个计数器加 1。
+    //   top.v 用它的变化去触发一次新的扇区读（"第几张图" = cfg_img_idx）。
+    output reg  [7:0]  cfg_img_idx,
     output reg  [3:0]  view_idx         // 当前预设编号（观测用）
 );
 
@@ -140,6 +143,7 @@ module ui_ctrl #(
             cfg_auto      <= 8'd0;
             cfg_demo      <= 8'd0;              // 上电关（走真实音频）
             cfg_src       <= 8'd0;              // 输入源：默认话筒（与改造前一致）
+            cfg_img_idx   <= 8'd0;              // SD 背景图序号
             view_idx      <= 4'd0;              // 对应 preset[0]（柱状+波形，极坐标隐藏）
         end else if (wr_en) begin
             case (wr_addr)
@@ -152,6 +156,7 @@ module ui_ctrl #(
                 4'h6: cfg_demo      <= wr_data;
                 // I 命令：只保留最低位（0=话筒 1=线路）
                 4'h7: cfg_src       <= {7'd0, wr_data[0]};
+                4'h8: cfg_img_idx   <= wr_data;     // UART 可直接指定第几张图
                 default: ;                      // 未定义的地址忽略
             endcase
             // 直接写 VIEW 时让预设编号跟着对齐（否则下一次按键会跳）
@@ -185,6 +190,8 @@ module ui_ctrl #(
                                                                : cfg_demo + 1'b1;
                 // IN 输入源 0..1（话筒 / 线路输入）
                 4'h7: cfg_src <= (cfg_src[0]) ? 8'd0 : 8'd1;
+                // SD 切图：环形递增（0..cfg_img_max，由上层决定实际张数）
+                4'h8: cfg_img_idx <= cfg_img_idx + 8'd1;
                 default: ;          // 其它地址不步进
             endcase
         end else if (next_view || auto_tick) begin
