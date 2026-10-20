@@ -69,7 +69,10 @@
 `define DISP_UI_NB     8           // 按钮个数（VIEW/STYLE/HUE/GAIN/BG/DEMO/IN/SD）
 `define DISP_UI_BY0     234         // 带子上边界（= 272 - 38）
 `define DISP_UI_BH      38          // 每个按钮高
-`define DISP_UI_BW      66          // 每个按钮宽（7 个按钮：7x66+6x2=474 <= 480）
+// 每按钮宽 × NB + (NB-1) × GAP ≤ 480
+//   7 个：7×66  + 6×2 = 474 ✓
+//   8 个：8×58  + 7×2 = 478 ✓  ← 加 SD 按钮后必须缩到 58
+`define DISP_UI_BW      58          // 每个按钮宽（NB=8 时 8x58+7x2=478 <= 480）
 `define DISP_UI_GAP     2
 
 //-----------------------------------------------------------------------------
