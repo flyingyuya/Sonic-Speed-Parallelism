@@ -53,6 +53,11 @@ module status_line #(
     //   【故意做成长度不变的】，因为 status_line 的 TB 用定长 68 字符的
     //   期望串比较；一改长度整串就错位，会报几十处假失败（已经栽过一次）。
     input  wire [23:0] dbg_adc,
+    // SD 卡读到的前 8 个字节（十六进制显示在第 8 行）
+    //   用途：上板时一眼看出"卡里到底读到了什么"——
+    //     全 00/全 FF ⟹ 没读到数据或数据线有问题
+    //     有变化          ⟹ 读通路是通的
+    input  wire [63:0] dbg_sd_bytes,
 
     //--------------------- 写 text_buf ---------------------
     output reg         we,
@@ -68,6 +73,7 @@ module status_line #(
     reg [11:0] te_d;
     reg        tl_d;
     reg [23:0] ad_d;
+    reg [63:0] sb_d;
 
     // ⚠️ 必须用 != 而不是 !==。
     //   `!==` 是【仿真专用】运算符（会比较 X/Z），**不可综合** ——
@@ -79,7 +85,7 @@ module status_line #(
                    (cfg_bg_mode   != b_d) || (cfg_demo      != m_d) ||
                    (tp_x != tx_d) || (tp_y != ty_d) ||
                    (tp_edges != te_d) || (tp_low != tl_d) ||
-                   (dbg_adc != ad_d);
+                   (dbg_adc != ad_d) || (dbg_sd_bytes != sb_d);
 
     //=========================================================================
     // 2. 逐字符写入
@@ -167,7 +173,7 @@ module status_line #(
     end
 
     // 敏感列表写全：数组（nm）不能进列表，所以只能用显式清单
-    always @(cnt or li or ci or vrow or dbg_adc or tp_x or tp_edges or tp_low or
+    always @(cnt or li or ci or vrow or dbg_adc or dbg_sd_bytes or tp_x or tp_edges or tp_low or
              cfg_view or cfg_style or cfg_hue_spd or cfg_wave_gain or
              cfg_bg_mode or cfg_demo) begin
         li = cnt / NLEN;        // 0..7
@@ -193,12 +199,18 @@ module status_line #(
             //     说话时高几位明显变化   -> 通路是好的，问题在显示链
             if (ci <= 5) ch = hexc(dbg_adc[(5-ci)*4 +: 4]);
         end else begin
-            // ---- 诊断 "E0000 L0" ----
-            if (ci == 0)      ch = "E";
-            else if (ci >= 1 && ci <= 4) ch = dec4(tp_edges, ci[2:0] - 3'd1);
-            else if (ci == 5) ch = " ";
-            else if (ci == 6) ch = "L";
-            else if (ci == 7) ch = tp_low ? "1" : "0";
+            //---- 第 8 行：SD 卡前 8 个字节的十六进制 ------------------------
+            //   格式（17 字符）："0102030405060708 "  ⟹ 8 字节 = 16 个十六进制字符
+            //
+            //   怎么看：
+            //     全 00         -> 读到了全零（扇区 0 的某个位置恰好全零，或没读到）
+            //     全 FF         -> MISO 一直被拉高 ⟹ 卡没响应 / 引脚没接对
+            //     有规律变化     -> 读通路是通的 ✓
+            //
+            //   这一行原来是触摸屏诊断（"E0000 L0"），但 LCD 模组没有触摸层、
+            //   触摸功能已弃用 ⟹ 换成 SD 卡字节，正好回收了这块显示位置。
+            if (ci <= 15)
+                ch = hexc(dbg_sd_bytes[(15-ci)*4 +: 4]);
         end
     end
 
@@ -208,6 +220,7 @@ module status_line #(
             g_d <= 8'hFF; b_d <= 8'hFF; m_d <= 8'hFF;   // 上电必触发一次
             tx_d <= 12'hFFF; ty_d <= 12'hFFF;
             te_d <= 12'hFFF; tl_d <= 1'b1; ad_d <= 24'hFFFFFF;
+            sb_d <= 64'hFFFF_FFFF_FFFF_FFFF;   // 上电必触发一次
             cnt <= 8'd0;
             busy <= 1'b0;
             we <= 1'b0;
@@ -237,6 +250,7 @@ module status_line #(
                     h_d <= cfg_hue_spd;   g_d <= cfg_wave_gain;
                     b_d <= cfg_bg_mode;   m_d <= cfg_demo;
                     tx_d <= tp_x;         ty_d <= tp_y;
+                    sb_d <= dbg_sd_bytes;
                     te_d <= tp_edges;     tl_d <= tp_low;
                     ad_d <= dbg_adc;
                 end else begin

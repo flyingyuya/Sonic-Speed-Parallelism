@@ -130,6 +130,7 @@ module disp_top #(
     input  wire                  wave_we,       // = audio_top 的 rx_valid
     input  wire signed [23:0]    wave_th,      // 自适应触发门限（来自 env_track）
     input  wire [23:0]           dbg_adc,      // 诊断值（直通显示）
+    input  wire [63:0]           dbg_sd_bytes, // SD 卡前 8 字节（直通显示）
 
     //--------------------- 面板开/关（来自 clk_sys 的按键手势）---------------------
     //   ⚠️ 传的是【翻转标志】而不是单拍脉冲：
@@ -570,6 +571,7 @@ module disp_top #(
         .tp_y          (tp_y_s),
         .tp_edges      (tp_edges_s),
         .dbg_adc  (dbg_adc),
+        .dbg_sd_bytes (dbg_sd_bytes),
         .tp_low        (tp_low_s),
         .we            (text_we),
         .waddr         (text_waddr),

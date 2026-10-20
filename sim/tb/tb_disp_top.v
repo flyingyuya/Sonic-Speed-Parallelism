@@ -156,6 +156,7 @@ module tb_disp_top;
         .wave_din  (wave_din),
         .wave_th   (wave_th_v),
         .dbg_adc   (dbg_adc_v),
+        .dbg_sd_bytes (64'd0),
         // 新增端口：本用例不测按键，全部给"无活动/无光标"的静默值
         .panel_tog  (panel_tog_tb),
         .key_act    (1'b0),
@@ -267,6 +268,7 @@ module tb_disp_top;
         .cfg_hue_spd(hue_spd), .cfg_wave_gain(wave_gain),
         .cfg_bg_mode(8'd0), .cfg_demo(ui_demo_v),
         .tp_x(tp_x_v), .tp_y(tp_y_v), .tp_edges(12'd7), .dbg_adc(dbg_adc_v),
+        .dbg_sd_bytes(64'd0),
  .tp_low(1'b1),
         .we(e_t_we), .waddr(e_t_addr), .wdata(e_t_data)
     );

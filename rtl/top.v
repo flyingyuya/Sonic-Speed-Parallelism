@@ -827,6 +827,7 @@ module top #(
         //      所以那两个值恒为 000，留着没意义。换成光标值：
         //      屏幕最后一行会显示 00000N（N = 光标 0..5），按 KEY1/KEY2 单击就能看到它动。
         .dbg_adc    ({21'd0, sel_idx}),
+        .dbg_sd_bytes (sd_dbg_q),
         .wave_we    (wave_we_sel),
         .lcd_rgb    (lcd_rgb),
         .lcd_hs     (lcd_hs),
@@ -868,6 +869,9 @@ module top #(
     reg  [15:0] sd_rd_count;        // 读到的字节数（512 = 完整一块）
     reg  [7:0]  sd_dbg_bytes [0:15]; // 前 16 个字节
     reg  [3:0]  sd_dbg_idx;
+    // 拼成 64 位给状态行显示（sd_dbg_bytes[0] 打在最左边）
+    wire [63:0] sd_dbg_q = {sd_dbg_bytes[0], sd_dbg_bytes[1], sd_dbg_bytes[2], sd_dbg_bytes[3],
+                            sd_dbg_bytes[4], sd_dbg_bytes[5], sd_dbg_bytes[6], sd_dbg_bytes[7]};
     reg         sd_rd_done;
     reg  [7:0]  sd_img_d;        // ui_img_idx 打拍，用来检测"用户切图"
 
@@ -1106,6 +1110,7 @@ module top #(
         // 诊断显示：大屏上用【同步后】的 ui_sel_hdmi，不能用 clk_sys 的 sel_idx。
         //   原来直接写 sel_idx ⟹ 又一条跨域路径（实测报 -3.134ns 违例）。
         .dbg_adc    ({20'd0, ui_sel_hdmi}),
+        .dbg_sd_bytes (sd_dbg_q),
         .wave_we    (wave_we_sel),
         .lcd_rgb    (hdmi_rgb),
         .lcd_hs     (hdmi_hs),
