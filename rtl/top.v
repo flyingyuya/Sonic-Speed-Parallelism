@@ -1052,6 +1052,59 @@ module top #(
         end
     end
 
+    //=========================================================================
+    // SD 图片搬运：SD 字节流 -> RGB565 像素 -> 帧缓冲
+    //=========================================================================
+    //   数据流：
+    //     sd_ctrl_top (rd_valid/rd_data, 8 位)
+    //        ⟹ sd_img_load (两字节凑一像素，小端)
+    //        ⟹ frame_buf   (480x272x16 双口 BRAM，写口在 clk_sys)
+    //
+    //   ⚠️ 显示端还没接（下一步）。这一步只保证【数据能正确搬进帧缓冲】，
+    //      可以用综合+后续的 TB 验证，不会影响现有画面。
+    //=========================================================================
+    wire        load_wr_en;
+    wire [18:0] load_wr_addr;
+    wire [15:0] load_wr_data;
+    wire        load_done;
+    wire [18:0] load_pix_cnt;
+
+    // 切图时给搬运器一个 start 脉冲，清掉计数重新搬
+    reg         load_start;
+    always @(posedge clk_sys or negedge rst_sys_n) begin
+        if (!rst_sys_n)
+            load_start <= 1'b0;
+        else
+            load_start <= img_changed;     // img_changed 是 1 拍脉冲
+    end
+
+    sd_img_load #(.W(480), .H(272)) u_img_load (
+        .clk        (clk_sys),
+        .rst_n      (rst_sys_n),
+        .start      (load_start),
+        .byte_valid (sd_rd_valid),
+        .byte_data  (sd_rd_data),
+        .wr_en      (load_wr_en),
+        .wr_addr    (load_wr_addr),
+        .wr_data    (load_wr_data),
+        .done       (load_done),
+        .pix_cnt    (load_pix_cnt)
+    );
+
+    // 帧缓冲：写口在这里，读口留给显示端（下一步接）
+    wire [15:0] fb_rd_data;
+    wire [18:0] fb_rd_addr = 19'd0;   // 显示端下一步接
+
+    frame_buf #(.W(480), .H(272)) u_fb (
+        .wr_clk  (clk_sys),
+        .wr_en   (load_wr_en),
+        .wr_addr (load_wr_addr),
+        .wr_data (load_wr_data),
+        .rd_clk  (clk_pix),
+        .rd_addr (fb_rd_addr),
+        .rd_data (fb_rd_data)
+    );
+
     assign led[0] = init_done;          // 常亮 = WM8960 配置完成
     assign led[1] = hb[23];             // 约 2.9 Hz 心跳
 
