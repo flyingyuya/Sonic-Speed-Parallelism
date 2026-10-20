@@ -104,18 +104,16 @@ module ui_layer #(
     //    3      0x3        WAVEG  波形增益
     //    4      0x4        BGMODE 背景模式
     //    5      0x6        DEMO   演示图案
-    //    6      0x8        SD     切换 SD 卡背景图（原来的"输入源 IN"已弃用：
-    //                            触摸屏本身没有触摸层，输入源切换改由 UART I 命令完成）
+    //    6      0x7        IN     切换音频输入源（话筒 / 线路）
+    //    7      0x8        SD     切换 SD 卡背景图
     reg [3:0] act_tab [0:NB-1];
 
     integer i;
     initial begin
         for (i = 0; i < NB; i = i + 1) act_tab[i] = i[3:0];
         if (NB > 5) act_tab[5] = 4'h6;      // 第 6 个按钮对应 DEMO 寄存器
-        // 第 7 个按钮：SD 卡切图（4'h8）
-        //   原来的 4'h7 是"输入源"(I 命令)，但那个功能已经由 UART 的 I00/I01 承担，
-        //   而面板上留着一个"IN"按钮既占位又容易误触 ⟹ 改成 SD 切图。
-        if (NB > 6) act_tab[6] = 4'h8;
+        if (NB > 6) act_tab[6] = 4'h7;      // 第 7 个按钮：输入源 IN
+        if (NB > 7) act_tab[7] = 4'h8;      // 第 8 个按钮：SD 卡切图
     end
 
     //=========================================================================
@@ -154,7 +152,8 @@ module ui_layer #(
                 3: lbl_of = "GAIN  ";
                 4: lbl_of = "BG    ";
                 5: lbl_of = "DEMO  ";
-                6: lbl_of = "SD    ";
+                6: lbl_of = "IN    ";
+                7: lbl_of = "SD    ";
                 default: lbl_of = "      ";
             endcase
         end
