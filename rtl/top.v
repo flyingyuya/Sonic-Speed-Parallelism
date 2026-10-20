@@ -888,6 +888,10 @@ module top #(
 
     reg         sd_rd_done;
     reg  [7:0]  sd_img_d;        // ui_img_idx 打拍，用来检测"用户切图"
+    // 切图检测做成【组合逻辑】：sd_img_d 是打拍后的值，两者不等就是刚切过。
+    //   ⚠️ 不能在时序块里用 `=` 临时算它（Verilator 报 BLKSEQ，
+    //      而且阻塞赋值和同块内的非阻塞赋值混用容易出意外）。
+    wire        img_changed = (ui_img_idx != sd_img_d);
 
     sd_ctrl_top #(
         .CLK_HZ        (48_000_000),
@@ -928,10 +932,17 @@ module top #(
             sd_img_d <= ui_img_idx;
 
             // 用户切图（面板 SD 按钮 / UART 4'h8）⟹ 重新来一轮读
-            if (ui_img_idx != sd_img_d) begin
+            //
+            // ⚠️ 这里必须和下面的"③ 收满 512 ⟹ 完成"互斥！
+            //    第一版两个 if 是并列的，而 ③ 判断用的是【清零之前】的
+            //    sd_rd_count（还是 511）⟹ ③ 又把 sd_rd_done 置回 1
+            //    ⟹ 标志永远清不掉 ⟹ 按 SD 键不会重新读（现象：16 位数不变）。
+            //    账本 215：并列的两个 if 写同一个寄存器，后写的赢。
+            if (img_changed) begin
                 sd_rd_done  <= 1'b0;
                 sd_rd_count <= 16'd0;
                 sd_dbg_idx  <= 4'd0;
+                sd_rd_start <= 1'b0;
             end
 
             // ① 初始化完成后发一次读请求（1 拍脉冲）
@@ -951,8 +962,8 @@ module top #(
                     sd_rd_count <= sd_rd_count + 16'd1;
             end
 
-            // ③ 收满 512 个 ⟹ 本次读完成
-            if (sd_rd_count == 16'd511)
+            // ③ 收满 512 个 ⟹ 本次读完成（和上面的"切图清零"互斥）
+            if (!img_changed && (sd_rd_count == 16'd511))
                 sd_rd_done <= 1'b1;
         end
     end
