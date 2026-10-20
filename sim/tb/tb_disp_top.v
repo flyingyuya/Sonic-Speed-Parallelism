@@ -157,6 +157,9 @@ module tb_disp_top;
         .wave_th   (wave_th_v),
         .dbg_adc   (dbg_adc_v),
         .dbg_sd_bytes (64'd0),
+        .cfg_bg_src   (1'b0),
+        .fb_rgb       (16'h0000),
+        .fb_addr      (),
         // 新增端口：本用例不测按键，全部给"无活动/无光标"的静默值
         .panel_tog  (panel_tog_tb),
         .key_act    (1'b0),

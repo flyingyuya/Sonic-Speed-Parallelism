@@ -132,6 +132,12 @@ module disp_top #(
     input  wire [23:0]           dbg_adc,      // 诊断值（直通显示）
     input  wire [63:0]           dbg_sd_bytes, // SD 卡前 8 字节（直通显示）
 
+    // SD 图片背景：cfg_bg_src=1 时背景取帧缓冲
+    //   帧缓冲 1 拍延迟 ⟹ 读地址提前一个像素（送 x+1）⟹ 天然对齐 ✓
+    input  wire                  cfg_bg_src,
+    input  wire [15:0]           fb_rgb,
+    output wire [18:0]           fb_addr,
+
     //--------------------- 面板开/关（来自 clk_sys 的按键手势）---------------------
     //   ⚠️ 传的是【翻转标志】而不是单拍脉冲：
     //      单拍脉冲跨时钟域会被漏掉（clk_pix 可能整个脉冲期间都没采到），
@@ -463,6 +469,16 @@ module disp_top #(
     //=========================================================================
     wire [23:0] bg_rgb;
 
+    // RGB565 -> RGB888
+    wire [23:0] fb_rgb888 = {fb_rgb[15:11], 3'b000,
+                             fb_rgb[10:5],  2'b00,
+                             fb_rgb[4:0],   3'b000};
+
+    // 读地址：y*HDISP + (x+1)，位宽写死 19 位避免混用
+    assign fb_addr = ({14'd0, y} * HDISP) + {14'd0, x} + 19'd1;
+
+    wire [23:0] bg_rgb_sel = cfg_bg_src ? fb_rgb888 : bg_rgb;
+
     bg_src #(.HDISP(HDISP), .VDISP(VDISP), .XW(XW), .YW(YW)) u_bg (
         .x    (x),
         .y    (y),
@@ -736,7 +752,7 @@ module disp_top #(
     ) u_mix (
         .x       (x),
         .y       (y),
-        .bg_rgb  (bg_rgb),
+        .bg_rgb  (bg_rgb_sel),
         .bars    (bars),
         .hue_off (hue_off),
         .wave    (wave_adj),

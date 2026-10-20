@@ -507,6 +507,15 @@ module top #(
     //      否则 Vivado 会按 1 位隐式声明，然后报 [Synth 8-992]
     //      "already implicitly declared earlier"，显示出来是垃圾。
     wire [63:0] sd_dbg_q;
+
+    // ⚠️ 下面这几个必须在【第一次使用之前】声明：
+    //   disp_top 的例化在前面（LCD 那一路要读帧缓冲），
+    //   而它们的原声明在后面的 SD 段里 ⟹ Vivado 会按 1 位隐式声明，
+    //   然后报一串 [Synth 8-992] "already implicitly declared earlier"。
+    //   这次一次踩了 3 个（fb_rd_data / fb_rd_addr / sd_rd_count）。
+    wire [15:0] fb_rd_data;             // 帧缓冲读出的 RGB565
+    wire [18:0] fb_rd_addr;             // 帧缓冲读地址（由 disp_top 产生）
+    reg  [15:0] sd_rd_count;            // 本轮已读到的字节数
     // ui_src = 输入源（0=话筒 1=线路），UART 命令 I 写 ui_ctrl 的 4'h7
     assign src_sel = ui_src[0];         // 只取最低位（ui_ctrl 那边已经限过 1 位）
     wire [3:0] ui_view_idx;
@@ -860,6 +869,9 @@ module top #(
         //   正常一次读：HHHH 会从 0000 一路涨到 01FF（=511），然后停住。
         .dbg_adc    ({ui_img_idx, sd_rd_count}),
         .dbg_sd_bytes (sd_dbg_q),
+        .cfg_bg_src (ui_bg_src),        // LCD：可用 SD 图片当背景
+        .fb_rgb     (fb_rd_data),
+        .fb_addr    (fb_rd_addr),
         .wave_we    (wave_we_sel),
         .lcd_rgb    (lcd_rgb),
         .lcd_hs     (lcd_hs),
@@ -898,7 +910,7 @@ module top #(
     wire        sd_rd_valid;
     wire [7:0]  sd_rd_data;
     reg         sd_rd_start;
-    reg  [15:0] sd_rd_count;        // 读到的字节数（512 = 完整一块）
+
     reg  [7:0]  sd_dbg_bytes [0:15]; // 前 16 个字节
     reg  [3:0]  sd_dbg_idx;
 
@@ -1092,8 +1104,7 @@ module top #(
     );
 
     // 帧缓冲：写口在这里，读口留给显示端（下一步接）
-    wire [15:0] fb_rd_data;
-    wire [18:0] fb_rd_addr = 19'd0;   // 显示端下一步接
+
 
     frame_buf #(.W(480), .H(272)) u_fb (
         .wr_clk  (clk_sys),
@@ -1273,6 +1284,9 @@ module top #(
         //   原来直接写 sel_idx ⟹ 又一条跨域路径（实测报 -3.134ns 违例）。
         .dbg_adc    ({20'd0, ui_sel_hdmi}),
         .dbg_sd_bytes (sd_dbg_q),
+        .cfg_bg_src (1'b0),             // HDMI：暂用程序化背景（帧缓冲读口给 LCD）
+        .fb_rgb     (16'd0),
+        .fb_addr    (),
         .wave_we    (wave_we_sel),
         .lcd_rgb    (hdmi_rgb),
         .lcd_hs     (hdmi_hs),

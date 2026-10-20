@@ -55,9 +55,12 @@ module sd_img_load #(
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            wr_en    <= 1'b0;
-            wr_addr  <= 19'd0;
-            wr_data  <= 16'd0;
+            // ⚠️ wr_addr / wr_data 故意【不加异步复位】：
+            //    它们直接驱动 BRAM 的地址/数据引脚，而 Vivado 的
+            //    DRC REQP-1839 明确警告"带异步复位的寄存器驱动 RAMB 控制脚
+            //    可能破坏存储内容"。这两个寄存器本来就由 start 清零、
+            //    由数据流赋值，不需要复位。
+            // wr_en 同理：它驱动 RAMB 的 ENARDEN，也不能带异步复位
             hi_lo    <= 1'b0;
             lo_byte  <= 8'd0;
             done     <= 1'b0;
