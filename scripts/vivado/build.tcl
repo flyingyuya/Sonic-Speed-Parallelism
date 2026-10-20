@@ -24,6 +24,30 @@ set PART  [expr {$argc > 0 ? [lindex $argv 0] : "xc7a100tfgg484-2"}]
 set TOP   [expr {$argc > 1 ? [lindex $argv 1] : "audio_top"}]
 set XDC   [expr {$argc > 2 ? [lindex $argv 2] : ""}]
 
+#=============================================================================
+# BUILD_MODE —— 构建到哪一步就停（用环境变量选，默认 full）
+#-----------------------------------------------------------------------------
+#   【为什么要这个开关】
+#     完整 synth+impl+route+bitstream 要 9~10 分钟。但日常改 RTL 时：
+#       · 只想确认"语法/综合有没有问题"      ⟹ synth 就够（约 2~3 分钟）
+#       · 想知道"资源涨了没、时序过不过"      ⟹ impl 就够（约 7~8 分钟）
+#       · 要上板                              ⟹ 必须 full
+#     ⟹ 用 SYNTH_ONLY=1 / IMPL_ONLY=1 环境变量选择，不用改脚本。
+#
+#   用法：
+#     SYNTH_ONLY=1 vivado -mode batch -source scripts/vivado/build.tcl ...
+#     IMPL_ONLY=1  vivado -mode batch -source scripts/vivado/build.tcl ...
+#     （什么都不设 = full，出比特流）
+#=============================================================================
+if {[info exists ::env(SYNTH_ONLY)]} {
+    set BUILD_MODE "synth"
+} elseif {[info exists ::env(IMPL_ONLY)]} {
+    set BUILD_MODE "impl"
+} else {
+    set BUILD_MODE "full"
+}
+puts "\n========== BUILD_MODE = $BUILD_MODE ==========\n" 
+
 set ROOT  [file normalize [file join [file dirname [info script]] ../..]]
 set OUT   [file join $ROOT build vivado]
 file mkdir $OUT
@@ -91,6 +115,14 @@ report_timing_summary -file [file join $OUT post_synth_timing.rpt] \
 # ---------------------------------------------------------------------------
 # 实现
 # ---------------------------------------------------------------------------
+# --- synth 模式在这里收工 ---
+if {$BUILD_MODE eq "synth"} {
+    puts "\n========== BUILD_MODE=synth：只做到综合，跳过实现 ==========\n"
+    report_utilization -file [file join $OUT "post_synth_util.rpt"]
+    close_project
+    exit 0
+}
+
 opt_design
 place_design
 phys_opt_design
@@ -136,6 +168,13 @@ if {!$_has_loc} {
     puts "        此比特流仅用于时序/资源评估，**不能上板**"
     set_property SEVERITY {Warning} [get_drc_checks NSTD-1]
     set_property SEVERITY {Warning} [get_drc_checks UCIO-1]
+}
+
+# --- impl 模式在这里收工（不做比特流）---
+if {$BUILD_MODE eq "impl"} {
+    puts "\n========== BUILD_MODE=impl：只到实现+布线，跳过比特流 ==========\n"
+    close_project
+    exit 0
 }
 
 write_bitstream -force [file join $OUT "${TOP}.bit"]
