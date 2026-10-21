@@ -170,6 +170,54 @@ def is_system_disk(dev):
         return False
 
 
+def make_channel_image(path):
+    """
+    生成"通道识别图"：4 条纯色竖条，用来一次定死颜色通道顺序。
+
+      第 1 条（最左）：纯红   (255,0,0)
+      第 2 条：纯绿   (0,255,0)
+      第 3 条：纯蓝   (0,0,255)
+      第 4 条（最右）：纯白 (255,255,255)
+
+    怎么判读（假设 LCD 朝向正常、左→右）：
+      · 看到 红 绿 蓝 白  ⟹ 颜色通道完全正确 ✓
+      · 看到 蓝 绿 红 白  ⟹ R 和 B 交换了（BGR 当成 RGB）
+      · 看到 绿 红 蓝 白  ⟹ R 和 G 交换
+      · 看到 白 蓝 绿 红  ⟹ 整幅左右翻转
+      · 颜色都像但偏暗/偏亮 ⟹ 位扩展（5/6 位到 8 位）的方式有问题
+    """
+    bars = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 255)]
+    bar_w = LCD_W // 4
+    row_bytes = ((LCD_W * 3 + 3) // 4) * 4
+    pixel_data = bytearray()
+    for y in range(LCD_H - 1, -1, -1):
+        row = bytearray()
+        for x in range(LCD_W):
+            idx = min(x // bar_w, 3)
+            r, g, b = bars[idx]
+            if y < 4 or y >= LCD_H - 4:      # 上下各留 4 行黑边，便于判断方向
+                r = g = b = 0
+            row += bytes([b, g, r])
+        row += b'\x00' * (row_bytes - len(row))
+        pixel_data += row
+
+    file_size = 54 + len(pixel_data)
+    hdr = bytearray(54)
+    hdr[0:2] = b'BM'
+    struct.pack_into('<I', hdr, 2, file_size)
+    struct.pack_into('<I', hdr, 10, 54)
+    struct.pack_into('<I', hdr, 14, 40)
+    struct.pack_into('<i', hdr, 18, LCD_W)
+    struct.pack_into('<i', hdr, 22, LCD_H)
+    struct.pack_into('<H', hdr, 26, 1)
+    struct.pack_into('<H', hdr, 28, 24)
+    struct.pack_into('<I', hdr, 30, 0)
+    struct.pack_into('<I', hdr, 34, len(pixel_data))
+    with open(path, 'wb') as f:
+        f.write(hdr)
+        f.write(pixel_data)
+
+
 def write_card(dev, images, dry_run=False):
     if os.path.isdir(dev):
         sys.exit(f"错误: {dev} 是目录（macOS 上要写 /dev/diskX 而不是 /Volumes/...）")
@@ -227,7 +275,14 @@ def main():
     ap.add_argument('--dry-run', action='store_true', help='只检查，不写卡')
     ap.add_argument('--make-test', type=int, metavar='N',
                     help='生成 N 张测试图 test0.bmp..testN-1.bmp')
+    ap.add_argument('--make-channel', metavar='FILE',
+                    help='生成通道识别图（4 条纯色竖条：红/绿/蓝/白）')
     args = ap.parse_args()
+
+    if args.make_channel:
+        make_channel_image(args.make_channel)
+        print(f"已生成 {args.make_channel}（红/绿/蓝/白 四条竖条）")
+        return
 
     if args.make_test:
         for i in range(args.make_test):
