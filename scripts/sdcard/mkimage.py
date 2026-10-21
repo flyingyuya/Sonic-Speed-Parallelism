@@ -43,6 +43,7 @@ RTL 侧算地址的公式（rtl/top.v）：
 import argparse
 import os
 import struct
+import subprocess
 import sys
 
 # ---------------------------------------------------------------- 布局常量
@@ -143,11 +144,42 @@ def make_test_image(idx, path):
         f.write(pixel_data)
 
 
+def is_system_disk(dev):
+    """
+    判断 dev 是不是"装了操作系统的那块盘"。
+
+    为什么必须检查：这个脚本会覆盖目标设备 1 MB 之后的内容
+    （480x272 的图就在这个位置）。如果手滑写成 /dev/sda 而 sda 是系统盘，
+    分区表和文件系统会被毁掉。
+    这里比较的是【整盘名】，所以 /dev/sda1 这种分区名也会被挡。
+    """
+    try:
+        root = subprocess.run(['findmnt', '-n', '-o', 'SOURCE', '/'],
+                              capture_output=True, text=True, timeout=5).stdout.strip()
+        # findmnt 可能返回 /dev/nvme0n1p2[/@] 这种形式，取 /dev/ 前的部分
+        if '[' in root:
+            root = root.split('[')[0]
+        if not root:
+            return False
+        pk = subprocess.run(['lsblk', '-no', 'PKNAME', root],
+                            capture_output=True, text=True, timeout=5).stdout.strip()
+        if not pk:
+            return False
+        return os.path.realpath(dev) == os.path.realpath('/dev/' + pk)
+    except Exception:
+        return False
+
+
 def write_card(dev, images, dry_run=False):
     if os.path.isdir(dev):
         sys.exit(f"错误: {dev} 是目录（macOS 上要写 /dev/diskX 而不是 /Volumes/...）")
     if not os.path.exists(dev):
         sys.exit(f"错误: {dev} 不存在")
+
+    # 安全闸：绝不允许写系统盘
+    if is_system_disk(dev):
+        sys.exit(f"\n🚨 拒绝执行：{dev} 是【系统盘】（装了操作系统的盘）。\n"
+                 f"   写它会毁掉你的系统。请用 lsblk 确认 SD 卡的设备名。\n")
 
     total = IMG_SECTOR_BASE * SECTOR_SIZE + len(images) * IMG_BYTES
     print(f"目标设备 : {dev}")
