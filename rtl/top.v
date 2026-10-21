@@ -516,6 +516,7 @@ module top #(
     wire [15:0] fb_rd_data;             // 帧缓冲读出的 RGB565
     wire [18:0] fb_rd_addr;             // 帧缓冲读地址（由 disp_top 产生）
     reg  [15:0] sd_rd_count;            // 本轮已读到的字节数
+    wire [18:0] load_pix_cnt;           // 已搬进帧缓冲的像素数（sd_img_load）
     // ui_src = 输入源（0=话筒 1=线路），UART 命令 I 写 ui_ctrl 的 4'h7
     assign src_sel = ui_src[0];         // 只取最低位（ui_ctrl 那边已经限过 1 位）
     wire [3:0] ui_view_idx;
@@ -872,7 +873,7 @@ module top #(
         //     1FE00   ⟹ 130560，整帧写满 ✓
         //   比显示图序号更有用：图序号只说明"按键到了"，
         //   像素数才说明"数据真的搬进去了"。
-        .dbg_adc    ({6'd0, load_pix_cnt}),
+        .dbg_adc    ({5'd0, load_pix_cnt}),
         .dbg_sd_bytes (sd_dbg_q),
         .cfg_bg_src (ui_bg_src),        // LCD：可用 SD 图片当背景
         .fb_rgb     (fb_rd_data),
@@ -1084,7 +1085,6 @@ module top #(
     wire [18:0] load_wr_addr;
     wire [15:0] load_wr_data;
     wire        load_done;
-    wire [18:0] load_pix_cnt;
 
     // 切图时给搬运器一个 start 脉冲，清掉计数重新搬
     reg         load_start;
