@@ -91,9 +91,20 @@ module WM8960_init #(
           //    TB 立刻报了"事务条数与逐条比对不符"。改成"只在线路模式覆盖"就干净了。
           !src_sel ? lut_raw
         : (lut_reg == 7'h20) ? {7'h20, 9'h088}   // R32 输入信号路径 L：LINPUT3 + 0dB + LMIC2B
-        : (lut_reg == 7'h21) ? {7'h21, 9'h088}   // R33 输入信号路径 R：RINPUT3 + 0dB + RMIC2B
+        // R33：线路模式下把【右路】接到 RINPUT1（bit8 = RMN1）
+        //   为什么用 RINPUT1 而不是 RINPUT3：
+        //     · RINPUT3 在板上经 R2 = 0Ω 直连【直流耦合】，配套的是麦克风偏置
+        //     · RINPUT1 在板上经 C4 = 1µF 【交流耦合】⟹ 信号会自己偏到芯片中点
+        //     · 线路信号（电脑/手机输出）是以 0V 为中心的交流信号，
+        //       走交流耦合才不会被偏置顶出 PGA 的线性区
+        //   ⟹ 0x108 = RMN1(bit8) + boost=00(0dB) + RMIC2B(bit3)
+        : (lut_reg == 7'h21) ? {7'h21, 9'h108}
         : (lut_reg == 7'h00) ? {7'h00, 9'h117}   // R0  PGA 音量 L：0dB（话筒时是 +12dB）
         : (lut_reg == 7'h01) ? {7'h01, 9'h117}   // R1  PGA 音量 R：0dB
+        // R23（0x17）：DATSEL 改成 10 = 【右路 ADC 复制到 L/R】
+        //   原来话筒模式是 01（左路复制）✗ 线路模式走的是右路（RINPUT1）
+        //   ⚠️ R23 的其它位保持不变：TSDEN=1，低 2 位是 DATSEL
+        : (lut_reg == 7'h17) ? {7'h17, 9'b1_1100_0110}
         : lut_raw;
 
     // lut = {7 位寄存器地址, 9 位数据}
