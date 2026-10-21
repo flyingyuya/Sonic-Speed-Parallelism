@@ -867,7 +867,12 @@ module top #(
         //       · NN 加 1 ✓ HHHH 一直是 01FF 不变的旧值 ⟹ 读没启动
         //
         //   正常一次读：HHHH 会从 0000 一路涨到 01FF（=511），然后停住。
-        .dbg_adc    ({ui_img_idx, sd_rd_count}),
+        // ★ 现在显示【已搬进帧缓冲的像素数】load_pix_cnt：
+        //     000000  ⟹ 一个像素都没写（SD 数据没到 / sd_img_load 没启动）
+        //     1FE00   ⟹ 130560，整帧写满 ✓
+        //   比显示图序号更有用：图序号只说明"按键到了"，
+        //   像素数才说明"数据真的搬进去了"。
+        .dbg_adc    ({6'd0, load_pix_cnt}),
         .dbg_sd_bytes (sd_dbg_q),
         .cfg_bg_src (ui_bg_src),        // LCD：可用 SD 图片当背景
         .fb_rgb     (fb_rd_data),
