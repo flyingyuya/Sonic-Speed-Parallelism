@@ -21,7 +21,9 @@
 `timescale 1ns / 1ps
 
 module sd_card_model #(
-    parameter integer ACMD41_POLLS = 3     // 第几次 ACMD41 才回"就绪"
+    parameter integer ACMD41_POLLS = 3,    // 第几次 ACMD41 才回"就绪"
+    // CMD18 多块读时，连续发多少个数据块（每块 512 字节）
+    parameter integer BLOCKS       = 510
 ) (
     input  wire sd_clk,
     input  wire sd_cs,
@@ -41,8 +43,10 @@ module sd_card_model #(
     reg [47:0] rx;             // 接收移位寄存器
     reg [47:0] tx;             // 待发送的 48 位响应
     reg        rsp_en;         // 本帧是否要发响应
-    reg        is_cmd17;       // 本条命令是 CMD17 ⟹ 后面要跟 512 字节数据块
+    reg        is_cmd17;       // CMD17（单块）或 CMD18（多块）⟹ 后面跟数据块
+    reg        is_cmd18;       // CMD18 ⟹ 连续 BLOCKS 块
     reg [12:0] data_bit;       // 数据块内的位序号（0..4095）
+
     reg [5:0]  cur_cmd;
     reg [31:0] cur_arg;
 
@@ -65,6 +69,14 @@ module sd_card_model #(
     localparam integer DAT_DATA   = DAT_TOKEN + 8;               // 120
     localparam integer DAT_CRC    = DAT_DATA + 512*8;            // 4216
     localparam integer DAT_END    = DAT_CRC + 16;                // 4232
+    // CMD18：一个数据块（令牌 8 + 数据 4096 + CRC 16）= 4120 位
+    localparam integer BLK_BITS   = 8 + 512*8 + 16;              // 4120
+
+    // CMD18 的块内偏移 + 块号（组合计算）
+    //   ⚠️ 必须放在上面这些 localparam 之后（Verilog-2001 不支持先用后声明）
+    wire [16:0] dat_off = (edge_n >= DAT_DATA) ? ({1'b0, edge_n} - DAT_DATA) : 17'd0;
+    wire [16:0] in_blk  = dat_off % BLK_BITS;
+    wire [16:0] blk_idx = dat_off / BLK_BITS;
 
     // 预设数据：第 i 个字节 = i[7:0]（0x00,0x01,...,0xFF,0x00,...）
     // TB 用同一个公式核对 ⟹ 只要有一个字节错位就会报出来
@@ -79,6 +91,7 @@ module sd_card_model #(
         rx         <= 48'd0;
         rsp_en     <= 1'b0;
         is_cmd17   <= 1'b0;
+        is_cmd18   <= 1'b0;
         sd_miso    <= 1'b1;
         // ⚠️ acmd41_cnt 不能在这里清零！
         //    每条命令结束时 CS 都会拉高，如果在这里清零，
@@ -110,7 +123,8 @@ module sd_card_model #(
                     cmd_arg     <= rx_next[39:8];
                     cmd_valid   <= 1'b1;
                     rsp_en      <= 1'b1;
-                    is_cmd17    <= (rx_next[45:40] == 6'h11);   // CMD17
+                    is_cmd17    <= (rx_next[45:40] == 6'h11) || (rx_next[45:40] == 6'h12);
+                    is_cmd18    <= (rx_next[45:40] == 6'h12);
                     data_bit    <= 13'd0;
                     $display("    [模型] 收满 48 位 = 0x%012h  ⟹ cmd=0x%02h arg=0x%08h",
                              rx_next, rx_next[45:40], rx_next[39:8]);
@@ -131,7 +145,8 @@ module sd_card_model #(
             case (rx_next[45:40])
                 6'd0:  tx <= {8'h01, 40'h00_0000_0000};                        // CMD0  ⟹ R1=0x01
                 6'd8:  tx <= {8'h01, 8'h00, 8'h00, 8'h01, 8'hAA, 8'hFF};       // CMD8  ⟹ R7
-                6'h11: tx <= {8'h00, 40'h00_0000_0000};                        // CMD17 ⟹ R1=0x00 成功
+                6'h11: tx <= {8'h00, 40'h00_0000_0000};                        // CMD17 ⟹ R1=0x00
+                6'h12: tx <= {8'h00, 40'h00_0000_0000};                        // CMD18 ⟹ R1=0x00
                 6'd55: tx <= {8'h01, 40'h00_0000_0000};                        // CMD55 ⟹ R1=0x01
                 6'd41: begin                                                   // ACMD41
                     acmd41_cnt <= acmd41_cnt + 8'd1;
@@ -160,6 +175,16 @@ module sd_card_model #(
     //    SD 规范：命令响应按命令类型定长（R1 = 1 字节），不是统一 48 位。
     wire [12:0] rsp_end_sel = is_cmd17 ? (RSP_START + 13'd8) : RSP_END;
 
+    // 第 n 位对应的数据位（第 n/8 字节 = (n/8)[7:0]，字节内 MSB 先出）
+    function pat_bit;
+        input [12:0] n;
+        reg [7:0] byte_v;
+        begin
+            byte_v = (n >> 3) & 12'h1FF;      // 第几个字节，取低 9 位
+            pat_bit = byte_v[7 - n[2:0]];
+        end
+    endfunction
+
     // 数据块内当前位序号（组合计算，便于直接索引）
     // 用大位宽算完再截断，避免 unsigned 下溢
     wire [16:0] dat_idx_wide = {4'd0, edge_n} - {4'd0, DAT_DATA};
@@ -180,18 +205,35 @@ module sd_card_model #(
             sd_miso <= tx[47 - (edge_n - RSP_START)];         // 响应，MSB 先
         end else if (!is_cmd17) begin
             sd_miso <= 1'b1;
-        end else if (edge_n < DAT_TOKEN) begin
-            sd_miso <= 1'b1;                                  // NOP
-        end else if (edge_n < DAT_DATA) begin
-            // 令牌 0xFE = 8'b1111_1110 ⟹ 那个 0 在【最后一位】，
-            // 不是第一位（我第一次写成第一位了，等于发了个 0x7F）
-            sd_miso <= (edge_n == (DAT_TOKEN + 7)) ? 1'b0 : 1'b1;
-        end else if (edge_n < DAT_CRC) begin
-            sd_miso <= dat_out;                               // 512 字节数据
-        end else if (edge_n < DAT_END) begin
-            sd_miso <= 1'b0;                                  // CRC16（随便填，不校验）
+        end else if (!is_cmd18 && (edge_n < DAT_TOKEN)) begin
+            sd_miso <= 1'b1;                                  // NOP（仅单块）
+        end else if (!is_cmd18) begin
+            //------------------- CMD17：单个数据块 -------------------
+            if (edge_n < DAT_DATA) begin
+                sd_miso <= (edge_n == (DAT_TOKEN + 7)) ? 1'b0 : 1'b1;  // 令牌 0xFE
+            end else if (edge_n < DAT_CRC) begin
+                sd_miso <= dat_out;                           // 512 字节数据
+            end else if (edge_n < DAT_END) begin
+                sd_miso <= 1'b0;                              // CRC16
+            end else begin
+                sd_miso <= 1'b1;
+            end
         end else begin
-            sd_miso <= 1'b1;
+            //------------------- CMD18：连续 BLOCKS 个块 -------------------
+            //   块 k 从 DAT_DATA + k*BLK_BITS 开始，块内：
+            //     0..7     令牌 0xFE
+            //     8..4103  512 字节数据
+            //     4104..   16 位 CRC
+            if ((edge_n >= DAT_DATA) && (blk_idx < BLOCKS)) begin
+                if (in_blk < 8)
+                    sd_miso <= (in_blk == 7) ? 1'b0 : 1'b1;    // 令牌
+                else if (in_blk < (8 + 512*8))
+                    sd_miso <= pat_bit((in_blk - 8));          // 数据
+                else
+                    sd_miso <= 1'b0;                           // CRC
+            end else begin
+                sd_miso <= 1'b1;
+            end
         end
     end
 

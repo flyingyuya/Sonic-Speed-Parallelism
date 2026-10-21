@@ -28,7 +28,13 @@
 
 `timescale 1ns / 1ps
 
-module sd_read (
+module sd_read #(
+    // 一次读多少块（512 字节/块）
+    //   480x272x2 = 261120 字节 = 正好 510 块
+    //   用 CMD18（多块读）：卡自己递增地址，主机只要一直收
+    //   ⟹ 不需要"发 510 次 CMD17"，正好绕开"第 2 次命令卡不响应"的问题
+    parameter integer BLOCKS = 510
+) (
     input  wire        sd_clk,        // SPI 时钟（高速档）
     input  wire        rst_n,         // 复位（低有效，sd_clk 域）
 
@@ -53,7 +59,7 @@ module sd_read (
     localparam integer BLOCK_BYTES = 512;
     // CMD17 = 0x40 | 17 = 0x51；CRC 在 SPI 模式下不检查，填 0xFF
     // 参数紧跟其后（大端 32 位）
-    localparam [5:0] CMD17_IDX = 6'd17;
+    localparam [5:0] CMD18_IDX = 6'd18;   // CMD18 = 多块读（CMD17 是单块）
     // 数据起始令牌是 0xFE（= 8'b1111_1110）⟹ 它的 bit0 = 0，
     // 而之前的 NOP 全是 1 ⟹ "第一个 0" 就是令牌起点，不需要比较整个字节。
     // 这里保留常量是为了让上面这段说明有出处（综合时不产生逻辑）。
@@ -85,12 +91,13 @@ module sd_read (
     reg [2:0]  bit_in_byte;     // 0..7
     reg [7:0]  byte_shift;
     reg [4:0]  crc_bit;         // CRC16 的 16 位计数
+    reg [9:0]  blk_cnt;         // 已收完的块数（0..BLOCKS-1）
     reg [5:0]  mosi_bit;        // MOSI 输出位序号（【negedge 域自己的计数】）
 
     //-------------------------------------------------------------------------
     // 命令字组装
     //-------------------------------------------------------------------------
-    wire [47:0] cmd17 = {2'b01, CMD17_IDX,              // 8'h40 | cmd
+    wire [47:0] cmd18 = {2'b01, CMD18_IDX,              // 8'h40 | cmd
                          sec_addr[31:24], sec_addr[23:16],
                          sec_addr[15:8],  sec_addr[7:0],
                          8'hFF};                        // CRC 不检查
@@ -111,6 +118,7 @@ module sd_read (
             bit_in_byte <= 3'd0;
             byte_shift  <= 8'd0;
             crc_bit     <= 5'd0;
+            blk_cnt     <= 10'd0;
             // mosi_bit 归 negedge 块管，这里不要重复驱动（会 MULTIDRIVEN）
             dout_valid  <= 1'b0;
             dout_data   <= 8'd0;
@@ -122,9 +130,10 @@ module sd_read (
                 ST_IDLE: begin
                     sd_cs <= 1'b1;
                     if (start) begin
-                        cmd_reg <= cmd17;
+                        cmd_reg <= cmd18;
                         cmd_bit <= 6'd0;
                         busy    <= 1'b1;
+                        blk_cnt <= 10'd0;
                         // ⚠️ 不要直接跳 ST_SEND：CS 拉低必须比第一位数据【早一拍】，
                         //    否则卡（以及 TB 里的模型）会在 CS 刚变低的那一拍
                         //    采到"数据之前的空闲高电平"，导致整帧左移一位。
@@ -216,8 +225,16 @@ module sd_read (
                 //-------------------------------------------------------------
                 ST_CRC: begin
                     crc_bit <= crc_bit + 5'd1;
-                    if (crc_bit == 5'd15)
-                        state <= ST_DONE;
+                    if (crc_bit == 5'd15) begin
+                        // 一块收完。CMD18 模式下卡会【紧接着】发下一块的令牌，
+                        // 所以直接回到 ST_WAIT_TOKEN 继续收，不用再发命令。
+                        if (blk_cnt == (BLOCKS - 1)) begin
+                            state <= ST_DONE;          // 收满预定块数，结束
+                        end else begin
+                            blk_cnt <= blk_cnt + 10'd1;
+                            state   <= ST_WAIT_TOKEN;
+                        end
+                    end
                 end
 
                 //-------------------------------------------------------------

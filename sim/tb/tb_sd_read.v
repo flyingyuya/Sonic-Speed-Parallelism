@@ -47,7 +47,7 @@ module tb_sd_read;
     wire        m_cmd_valid;
     wire [7:0]  m_acmd41_cnt;
 
-    sd_read dut (
+    sd_read #(.BLOCKS(1)) dut (   // TB 只测 1 块（多块会跑很久）
         .sd_clk     (sd_clk),
         .rst_n      (rst_n),
         .start      (start),
@@ -61,7 +61,8 @@ module tb_sd_read;
     );
 
     sd_card_model #(
-        .ACMD41_POLLS (3)
+        .ACMD41_POLLS (3),
+        .BLOCKS       (1)
     ) model (
         .sd_clk     (sd_clk),
         .sd_cs      (sd_cs),
@@ -172,12 +173,12 @@ module tb_sd_read;
         // 判据④：必须收到且只收到 1 条 CMD17，参数正确
         //---------------------------------------------------------------------
         n_chk = n_chk + 1;
-        if ((m_cmd_index !== 6'h11) || (m_cmd_arg !== SEC_ADDR)) begin
+        if ((m_cmd_index !== 6'h12) || (m_cmd_arg !== SEC_ADDR)) begin
             n_err = n_err + 1;
             $display("  [ERR] 判据④：命令 = 0x%02h arg=0x%08h（应 0x11 / 0x%08h）",
                      m_cmd_index, m_cmd_arg, SEC_ADDR);
         end else begin
-            $display("  [OK ] 判据④：CMD17 arg=0x%08h 正确", m_cmd_arg);
+            $display("  [OK ] 判据④：CMD18（多块读）arg=0x%08h 正确", m_cmd_arg);
         end
 
         //---------------------------------------------------------------------

@@ -54,7 +54,8 @@ module tb_sd_ctrl_top;
         .FAST_DIV      (4),
         .INIT_HZ       (200_000),
         .POWER_ON_NUM  (20),        // 仿真用：20 拍
-        .OVER_TIME_NUM (500)        // 仿真用
+        .OVER_TIME_NUM (500),       // 仿真用
+        .BLOCKS        (1)          // 仿真只读 1 块
     ) dut (
         .clk         (clk),
         .rst_n       (rst_n),
@@ -79,7 +80,8 @@ module tb_sd_ctrl_top;
     wire [7:0]  m_acmd41_cnt;
 
     sd_card_model #(
-        .ACMD41_POLLS (3)
+        .ACMD41_POLLS (3),
+        .BLOCKS       (1)
     ) model (
         .sd_clk     (sd_clk),
         .sd_cs      (sd_cs),

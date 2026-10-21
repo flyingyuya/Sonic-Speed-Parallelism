@@ -29,7 +29,11 @@ module sd_ctrl_top #(
     parameter integer FAST_DIV      = 4,        // 高速档分频：48M/4 = 12 MHz
     parameter integer INIT_HZ       = 200_000,  // 初始化阶段 SPI 时钟
     parameter integer POWER_ON_NUM  = 5000,     // 上电等待拍数（200kHz 下约 25 ms）
-    parameter integer OVER_TIME_NUM = 25000     // 命令超时拍数
+    parameter integer OVER_TIME_NUM = 25000,    // 命令超时拍数
+    // 一次读多少块（512 字节/块）
+    //   480x272x2 = 261120 字节 = 510 块
+    //   TB 里设成 1 让仿真跑得快
+    parameter integer BLOCKS        = 510
 ) (
     input  wire        clk,             // clk_sys
     input  wire        rst_n,
@@ -124,7 +128,7 @@ module sd_ctrl_top #(
 
     assign rd_start_sd = tog_sync[2] ^ tog_sync[1];   // 检出一次翻转
 
-    sd_read u_read (
+    sd_read #(.BLOCKS(BLOCKS)) u_read (
         .sd_clk     (sd_clk_fast),
         .rst_n      (rst_n),
         .start      (rd_start_sd),
