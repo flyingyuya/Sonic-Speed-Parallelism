@@ -36,7 +36,11 @@
 
 module ui_ctrl #(
     parameter integer NREG        = 8,
-    parameter integer AUTO_PERIOD = 48_000_000 * 4      // 自动切换间隔（4 秒）
+    parameter integer AUTO_PERIOD = 48_000_000 * 4,     // 自动切换间隔（4 秒）
+    // SD 卡里实际写了多少张图（由 scripts/sdcard/mkimage.py 决定）
+    //   图序号按这个数循环：0..IMG_COUNT-1 来回转，
+    //   避免序号一直加大、读到卡里没写过的区域（表现为"随机花屏"）。
+    parameter integer IMG_COUNT   = 3
 ) (
     input  wire        clk,
     input  wire        rst_n,
@@ -203,11 +207,13 @@ module ui_ctrl #(
                                                                : cfg_demo + 1'b1;
                 // IN 输入源 0..1（话筒 / 线路输入）
                 4'h7: cfg_src <= (cfg_src[0]) ? 8'd0 : 8'd1;
-                // SD：切到【图片背景】，同时图序号递增
-                //   （用户要求：BG 和 SD 是两个并列的背景模式，可以来回切）
+                // SD：切到【图片背景】，同时图序号递增（按 IMG_COUNT 循环）
                 4'h8: begin
                     cfg_bg_src  <= 1'b1;
-                    cfg_img_idx <= cfg_img_idx + 8'd1;
+                    if (cfg_img_idx >= (IMG_COUNT - 1))
+                        cfg_img_idx <= 8'd0;
+                    else
+                        cfg_img_idx <= cfg_img_idx + 8'd1;
                 end
                 default: ;          // 其它地址不步进
             endcase
