@@ -342,7 +342,11 @@ module top #(
     wire         spec_frame_done;
 
     spectrum #(
-        .NBARS(60), .DW(25), .HW(9), .DECAY(6), .DB_OFFS(64), .SCALE_SH(2)
+        // 【观感旋钮】用户反馈"频谱偏低、要 50% 音量才有反应"⟹ 提高灵敏度
+        //   DB_OFFS : 门限，越小越灵敏（64 -> 56）
+        //   SCALE_SH: 高度放大，越大柱越高（2 -> 3，即 ×8 而不是 ×4）
+        //   ⚠️ 这两个值互相牵制：调太激进会出现"所有柱都顶满"✗ 再往回调。
+        .NBARS(60), .DW(25), .HW(9), .DECAY(6), .DB_OFFS(56), .SCALE_SH(3)
     ) u_spec (
         .clk        (clk_sys),
         .rst_n      (aud_rst_n),
