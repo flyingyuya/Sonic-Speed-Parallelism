@@ -60,6 +60,57 @@ def rgb888_to_565(r, g, b):
     return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
 
 
+def load_image(path, want_w=LCD_W, want_h=LCD_H):
+    """
+    统一的图片加载入口：BMP 用自带的解析器（不依赖 Pillow），
+    其它格式（PNG/JPG/...) 用 Pillow。
+
+    为什么 BMP 不用 Pillow：这个脚本要在"只有 python 标准库"的机器上也能跑
+    最基本的流程（生成测试图、写 BMP）。Pillow 只在需要解码 PNG/JPG 时才是
+    必要条件 —— 用它的时候才 import，没装就给出清楚的提示。
+    """
+    ext = os.path.splitext(path)[1].lower()
+    if ext == '.bmp':
+        try:
+            return load_bmp(path, want_w, want_h)
+        except ValueError:
+            pass          # BMP 但尺寸/位深不符 ⟹ 退回用 Pillow 处理
+
+    # ---- 非 BMP（或 BMP 但需要转换）：用 Pillow ----
+    try:
+        from PIL import Image
+    except ImportError:
+        sys.exit("需要 Pillow 来处理 PNG/JPG：\n"
+                 "    pip install pillow\n"
+                 "（或者先用别的工具把图片存成 24 位 BMP）")
+
+    im = Image.open(path)
+    # RGBA/P 调色板/灰度都统一转 RGB；透明通道直接丢弃（LCD 没有 alpha）
+    if im.mode in ('RGBA', 'LA', 'P'):
+        bg = Image.new('RGB', im.size, (0, 0, 0))
+        im_rgba = im.convert('RGBA')
+        bg.paste(im_rgba, mask=im_rgba.split()[-1])
+        im = bg
+    else:
+        im = im.convert('RGB')
+
+    if im.size != (want_w, want_h):
+        print(f"    {os.path.basename(path)}: {im.size[0]}x{im.size[1]} -> "
+              f"{want_w}x{want_h}（缩放到目标尺寸）")
+        im = im.resize((want_w, want_h), Image.LANCZOS)
+
+    out = bytearray(want_w * want_h * 2)
+    px = im.load()
+    for y in range(want_h):
+        for x in range(want_w):
+            r, g, b = px[x, y]
+            v = rgb888_to_565(r, g, b)
+            o = (y * want_w + x) * 2
+            out[o]     = v & 0xFF
+            out[o + 1] = (v >> 8) & 0xFF
+    return bytes(out)
+
+
 def load_bmp(path, want_w=LCD_W, want_h=LCD_H):
     """
     读 24 位无压缩 BMP，返回 RGB565 的小端字节串。
@@ -297,7 +348,7 @@ def main():
 
     loaded = []
     for p in args.images:
-        blob = load_bmp(p)
+        blob = load_image(p)
         loaded.append((os.path.basename(p), blob))
 
     write_card(args.device, loaded, dry_run=args.dry_run)
