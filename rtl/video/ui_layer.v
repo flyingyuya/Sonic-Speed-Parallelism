@@ -99,7 +99,7 @@ module ui_layer #(
     //=========================================================================
     //   编号  动作码(act)  含义（由上层解释）
     //    0      0x0        VIEW   切换视图预设
-    //    1      0x1        STYLE  柱体风格
+    //    1      0x1        SPK    喇叭静音开关（原 STYLE 已弃用）
     //    2      0x2        HUESPD 色相速度
     //    3      0x3        WAVEG  波形增益
     //    4      0x4        BGMODE 背景模式
@@ -147,7 +147,7 @@ module ui_layer #(
         begin
             case (i)
                 0: lbl_of = "VIEW  ";
-                1: lbl_of = "STYLE ";
+                1: lbl_of = "SPK   ";
                 2: lbl_of = "HUE   ";
                 3: lbl_of = "GAIN  ";
                 4: lbl_of = "BG    ";

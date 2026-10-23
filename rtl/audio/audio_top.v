@@ -39,6 +39,14 @@ module audio_top #(
     input  wire clk,            // clk_sys = 48 MHz
     input  wire rst_n,
 
+    // 喇叭静音（1 = 静音）。
+    //   实现方式：把送进 i2s_tx 的数据清零 ⟹ WM8960 收到全 0 采样 ⟹ 无声。
+    //   为什么不在 WM8960 里静音（写 R28/R29）：
+    //     那需要在运行时再发 I2C 写 ✗ 而 WM8960_init 是一次性播 ROM 的结构,
+    //     为这个功能加一条 I2C 命令通道代价太大。
+    //     在 FPGA 侧清零数据是零风险的做法 ✓ 而且不会爆音（I2S 时序完全不变）。
+    input  wire        mute,
+
     // ---- I2S 物理接口（从模式：bclk/lrclk 由 WM8960 提供）----
     input  wire bclk,
     input  wire lrclk,
@@ -273,7 +281,9 @@ module audio_top #(
     i2s_tx #(.SLOT(SLOT), .DATA_BITS(DW), .DW(DW)) u_tx (
         .clk(clk), .rst_n(rst_n),
         .bclk_fall(bclk_fall), .frame_start(frame_start), .bit_idx(bit_idx),
-        .l_data(out_dout[2*DW-1:DW]), .r_data(out_dout[DW-1:0]),
+        // 静音时送全 0（保持 data_en，让 I2S 时序不受影响）
+        .l_data(mute ? {DW{1'b0}} : out_dout[2*DW-1:DW]),
+        .r_data(mute ? {DW{1'b0}} : out_dout[DW-1:0]),
         .data_en(~out_empty),
         .sdout(sdout)
     );

@@ -70,7 +70,11 @@ module ui_ctrl #(
 
     //--------------------- 配置输出 ---------------------
     output reg  [7:0]  cfg_view,
+    // ⚠️ 原来的 cfg_style 保留（UART 仍可写），但面板上的 STYLE 按钮
+    //    已经换成 SPK（喇叭静音）—— 实测 STYLE 的两种柱体风格肉眼几乎看不出差别。
     output reg  [7:0]  cfg_style,
+    // 喇叭静音：1 = 静音。面板 SPK 键切换。
+    output reg         cfg_spk_mute,
     output reg  [7:0]  cfg_hue_spd,
     output reg  [7:0]  cfg_wave_gain,
     output reg  [7:0]  cfg_bg_mode,
@@ -163,11 +167,12 @@ module ui_ctrl #(
             cfg_src       <= 8'd0;              // 输入源：默认话筒（与改造前一致）
             cfg_img_idx   <= 8'd0;              // SD 背景图序号
             cfg_bg_src    <= 1'b0;              // 默认程序化背景（与改造前一致）
+            cfg_spk_mute  <= 1'b0;              // 默认不静音
             view_idx      <= 4'd0;              // 对应 preset[0]（柱状+波形，极坐标隐藏）
         end else if (wr_en) begin
             case (wr_addr)
                 4'h0: cfg_view      <= wr_data;
-                4'h1: cfg_style     <= wr_data;
+                4'h1: cfg_spk_mute  <= wr_data[0];   // UART 写 1 = 静音
                 4'h2: cfg_hue_spd   <= wr_data;
                 4'h3: cfg_wave_gain <= wr_data;
                 4'h4: cfg_bg_mode   <= wr_data;
@@ -195,9 +200,8 @@ module ui_ctrl #(
             case (step_addr)
                 // VIEW 用预设轮转（和 KEY1 同一个动作），不走这里
 
-                // STYLE 0..1（实心 / 半透明）
-                4'h1: cfg_style     <= (cfg_style[3:0] >= 4'd1) ? 8'd0
-                                                                 : cfg_style + 1'b1;
+                // SPK 喇叭静音开关（原 STYLE：两种柱体风格肉眼几乎没差别 ✗ 已弃用）
+                4'h1: cfg_spk_mute  <= ~cfg_spk_mute;
                 // HUESPD 0..7，0 = 停住
                 4'h2: cfg_hue_spd   <= (cfg_hue_spd[3:0] >= 4'd7) ? 8'd0
                                                                  : cfg_hue_spd + 1'b1;
