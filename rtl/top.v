@@ -272,11 +272,22 @@ module top #(
     //=========================================================================
     wire signed [23:0] rx_l_dc;
 
+    // 【2026-10 修正：FFT/波形要跟着【输入源】选声道】
+    //   话筒模式：信号在【左路】（LINPUT1）⟹ 用 rx_l
+    //   线路模式：信号在【右路】（RINPUT1）⟹ 用 rx_r
+    //
+    //   为什么之前"线路输入频谱没反应、麦克风正常"：
+    //     原来这里固定接 rx_l ✗ 而线路模式的信号在右路
+    //     ⟹ rx_l 是空的 ⟹ FFT 拿到全零 ⟹ 频谱一动不动 ✓✓✓
+    //     （喇叭那边靠 DATSEL=11 混合，所以听起来是正常的 ✗
+    //       于是很容易误判成"输入通了但显示有问题"）
+    wire signed [23:0] rx_mono = src_sel ? rx_r : rx_l;
+
     dc_block #(.DW(24), .SH(10), .GW(2)) u_dc_block (
         .clk   (clk_sys),
         .rst_n (rst_sys_n),
         .en    (rx_valid),          // 每个采样一个 strobe
-        .din   (rx_l),
+        .din   (rx_mono),
         .dout  (rx_l_dc)
     );
 
