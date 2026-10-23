@@ -156,7 +156,7 @@ module tb_ui_ctrl;
         $display("");
         if (cfg_view !== 8'b0000_0101 || cfg_hue_spd !== 8'd6 ||
             cfg_style !== 8'd0 || cfg_bg_mode !== 8'd0 || cfg_auto !== 8'd0 ||
-            cfg_demo !== 8'd0 || cfg_wave_gain !== 8'd6) begin
+            cfg_demo !== 8'd0 || cfg_wave_gain !== 8'd4) begin
             n_err = n_err + 1;
             $display("  [ERR] 默认值不符：view=%08b style=%0d huespd=%0d bg=%0d auto=%0d demo=%0d wg=%0d",
                      cfg_view, cfg_style, cfg_hue_spd, cfg_bg_mode, cfg_auto, cfg_demo,
