@@ -501,6 +501,22 @@ module disp_top #(
 
     // .ADAPT(1)：门限来自 env_track（自适应）。
     //   固定门限那条路径保留在 wave_buf 里，给 tb_wave_buf 当独立判据基准。
+    //-------------------------------------------------------------------------
+    // 触发迟滞门限：把 env_track 送来的自适应值【夹在上下限之间】
+    //-------------------------------------------------------------------------
+    //   问题（用户实测）：对着话筒吹风时波形出现"多条重叠"。
+    //   原因：wave_buf 的触发是"低于 -th 置位 below ⟹ 再向上过零触发"。
+    //         如果 th 太大 ⟹ below 永远不置位 ⟹ 只能靠超时 to_fire 触发
+    //         ⟹ 每次触发的相位随机 ⟹ 波形左右乱窜 ⟹ 看起来多条重叠 ✓
+    //   修法：给 th 加一个【上下限】。
+    //         下限 4096（= 满幅的 1/2048）保证安静时也能正常触发 ✓
+    //         上限 131072（= 满幅的 1/64）防止大音量时阈值过高 ✓
+    wire signed [23:0] th_lo = 24'sd4096;
+    wire signed [23:0] th_hi = 24'sd131072;
+    wire signed [23:0] wave_th_clamped = (wave_th < th_lo) ? th_lo
+                                       : (wave_th > th_hi) ? th_hi
+                                       : wave_th;
+
     wave_buf #(.DW(24), .AW(10), .SPAN(HDISP), .XW(XW), .ADAPT(1)) u_wave (
         .wclk   (clk_sys),
         .wrst_n (rst_sys_n),
@@ -511,7 +527,7 @@ module disp_top #(
         .sof    (sof),
         .x      (x),
         .dout   (wave_sample),
-        .th_in  (wave_th),
+        .th_in  (wave_th_clamped),
         // 这两个只是给调试/测试用的观测点，显示链不用它们。
         // 【为什么要显式写出来】不写的话 Verilator 报 PINMISSING（真问题类），
         // 显式接空只是 PINCONNECTEMPTY（风格类，已在白名单里）。
