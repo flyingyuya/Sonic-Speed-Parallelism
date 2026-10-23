@@ -42,6 +42,8 @@ module status_line #(
     //--------------------- 要显示的配置 ---------------------
     input  wire [7:0]  cfg_view,
     input  wire [7:0]  cfg_style,
+    // 喇叭静音（面板 SPK 键 / UART 4'h1）。状态栏第 2 行显示它的值。
+    input  wire        cfg_spk_mute,
     input  wire [7:0]  cfg_hue_spd,
     input  wire [7:0]  cfg_wave_gain,
     input  wire [7:0]  cfg_bg_mode,
@@ -167,7 +169,7 @@ module status_line #(
              cfg_wave_gain or cfg_bg_mode or cfg_demo) begin
         case (li)
             3'd0:    vrow = cfg_view;
-            3'd1:    vrow = cfg_style;
+            3'd1:    vrow = {7'd0, cfg_spk_mute};   // SPK：0=开 1=静音
             3'd2:    vrow = cfg_hue_spd;
             3'd3:    vrow = cfg_wave_gain;
             3'd4:    vrow = cfg_bg_mode;
@@ -178,7 +180,7 @@ module status_line #(
     // 敏感列表写全：数组（nm）不能进列表，所以只能用显式清单
     always @(cnt or li or ci or vrow or dbg_adc or dbg_sd_bytes or tp_x or tp_edges or tp_low or
              cfg_view or cfg_style or cfg_hue_spd or cfg_wave_gain or
-             cfg_bg_mode or cfg_demo) begin
+             cfg_bg_mode or cfg_demo or cfg_spk_mute) begin
         li = cnt / NLEN;        // 0..7
         ci = cnt % NLEN;        // 0..16
 

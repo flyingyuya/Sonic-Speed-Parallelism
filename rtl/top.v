@@ -856,6 +856,7 @@ module top #(
         .rst_pix_n  (rst_pix_n),
         .ui_mode    (ui_bg_mode[3:0]),      // 来自 ui_ctrl
         .ui_style   (ui_style[3:0]),
+        .ui_spk_mute(ui_spk_mute),
         .ui_view    (ui_view[2:0]),
         .ui_hue_spd (ui_hue_spd),
         .ui_wave_gain(ui_wave_gain),        // G 命令：波形增益（以前是死控件）
@@ -897,7 +898,13 @@ module top #(
         //     1FE00   ⟹ 130560，整帧写满 ✓
         //   比显示图序号更有用：图序号只说明"按键到了"，
         //   像素数才说明"数据真的搬进去了"。
-        .dbg_adc    ({5'd0, load_pix_cnt}),
+        // 状态栏第 7 行：显示 {IN 状态, SD 图序号}
+        //   原来显示 load_pix_cnt（搬图诊断）✗ 那个已经验证完了
+        //   现在改成用户更想看的两条信息：
+        //     高 8 位  = 图序号（十六进制）
+        //     更高位   = IN 状态（0=话筒 1=线路）
+        //   这里用 24 位：{15'd0, src_sel, ui_img_idx}
+        .dbg_adc    ({15'd0, src_sel, ui_img_idx}),
         // ★ 状态行第 8 行改成显示【ADC 原始值 rx_l】（24 位 Q1.23 补码）
         //   实测"必须接喇叭频谱才有反应"⟹ 怀疑信号来自声学回环，
         //   ADC 通路本身可能是空的。看这一行就能判定：
@@ -1307,6 +1314,7 @@ module top #(
         .rst_pix_n  (rst_hdmi_n),
         .ui_mode    (ui_bg_mode[3:0]),
         .ui_style   (ui_style[3:0]),
+        .ui_spk_mute(ui_spk_mute),
         .ui_view    (ui_view[2:0]),
         .ui_hue_spd (ui_hue_spd),
         .ui_wave_gain(ui_wave_gain),

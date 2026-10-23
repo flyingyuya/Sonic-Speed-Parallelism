@@ -33,7 +33,7 @@ module tb_status_line;
 
     status_line #(.NLEN(LNLEN), .NC(NCB)) dut (
         .clk(clk), .rst_n(rst_n),
-        .cfg_view(cfg_view), .cfg_style(cfg_style), .cfg_hue_spd(cfg_hue_spd),
+        .cfg_view(cfg_view), .cfg_style(cfg_style), .cfg_spk_mute(1'b0), .cfg_hue_spd(cfg_hue_spd),
         .cfg_wave_gain(cfg_wave_gain), .cfg_bg_mode(cfg_bg_mode),
         .cfg_demo(cfg_demo), .tp_x(tp_x), .tp_y(tp_y),
         .tp_edges(tp_edges), .dbg_adc(dbg_adc),
