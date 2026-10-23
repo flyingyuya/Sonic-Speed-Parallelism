@@ -79,8 +79,18 @@ module WM8960_init_table #(
         rom[24] = {7'h0b, 9'b1_1111_1111};  // R DAC digital vol 0dB (update)
         rom[25] = {7'h02, 9'b1_1111_1001};  // LOUT1 vol +0dB
         rom[26] = {7'h03, 9'b1_1111_1001};  // ROUT1 vol +0dB
-        rom[27] = {7'h2d, 9'b0_1000_0000};  // L mixer bypass 0dB
-        rom[28] = {7'h2e, 9'b0_1000_0000};  // R mixer bypass 0dB
+        // ⚠️⚠️ 这两条必须【关掉】（0 = -78.75dB ≈ 静音）
+        //   原来它们把【模拟旁路】打开了 0 dB：
+        //       LINPUT1 ──(模拟直通)──► LOUT1 / 喇叭
+        //       RINPUT1 ──(模拟直通)──► ROUT1
+        //   ⟹ 音频完全【绕过了 DAC、EQ、音量控制】，直接送到喇叭
+        //   上板实测到的三个怪现象全都由此而来：
+        //     ① 按 SPK 静音无效（我们清零的是 DAC 数据 ✗ 旁路不经过 DAC）
+        //     ② 话筒只有【左】喇叭响（LINPUT1 只通 LOUT1）
+        //     ③ 线路只有【右】喇叭响（RINPUT1 只通 ROUT1）
+        //   ⟹ 关掉旁路，让信号走 ADC → FPGA(EQ/FFT) → DAC → 喇叭 ✓
+        rom[27] = {7'h2d, 9'b0_0000_0000};  // L mixer bypass: OFF
+        rom[28] = {7'h2e, 9'b0_0000_0000};  // R mixer bypass: OFF
         rom[29] = {7'h31, 9'b0_1111_0111};  // ClassD ctl: enable speakers
         rom[30] = {7'h28, 9'b1_0111_1111};  // L spk vol: SPKVU=1 +6dB (rst=MUTE)
         rom[31] = {7'h29, 9'b1_0111_1111};  // R spk vol: SPKVU=1 +6dB (rst=MUTE)

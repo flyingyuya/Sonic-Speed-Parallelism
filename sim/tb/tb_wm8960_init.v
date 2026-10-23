@@ -186,8 +186,9 @@ module tb_wm8960_init;
         exp_reg[24] = 7'h0B; exp_dat[24] = 9'h1FF; exp_note[24] = "R DAC digital vol 0dB (update)";
         exp_reg[25] = 7'h02; exp_dat[25] = 9'h1F9; exp_note[25] = "LOUT1 vol +0dB";
         exp_reg[26] = 7'h03; exp_dat[26] = 9'h1F9; exp_note[26] = "ROUT1 vol +0dB";
-        exp_reg[27] = 7'h2D; exp_dat[27] = 9'h080; exp_note[27] = "L mixer bypass 0dB";
-        exp_reg[28] = 7'h2E; exp_dat[28] = 9'h080; exp_note[28] = "R mixer bypass 0dB";
+        // ⚠️ 旁路已关闭（原来 0dB 会把音频直接从输入送到喇叭，绕过 DAC/EQ）
+        exp_reg[27] = 7'h2D; exp_dat[27] = 9'h000; exp_note[27] = "L mixer bypass OFF";
+        exp_reg[28] = 7'h2E; exp_dat[28] = 9'h000; exp_note[28] = "R mixer bypass OFF";
         exp_reg[29] = 7'h31; exp_dat[29] = 9'h0F7; exp_note[29] = "ClassD ctl: enable speakers";
         exp_reg[30] = 7'h28; exp_dat[30] = 9'h17F; exp_note[30] = "L spk vol: SPKVU=1 +6dB (rst=M";
         exp_reg[31] = 7'h29; exp_dat[31] = 9'h17F; exp_note[31] = "R spk vol: SPKVU=1 +6dB (rst=M";
