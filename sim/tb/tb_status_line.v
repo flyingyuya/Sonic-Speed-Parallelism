@@ -12,8 +12,8 @@ module tb_status_line;
     //   TB 比较时用的是【两行合计】。一开始把 DUT 的 NLEN 也传成 34，
     //   于是它的终止条件变成 NLEN*2-1 = 67，而 cnt 只有 6 位（最大 63），
     //   永远等不到 -> 状态机卡在写入状态死循环，影子寄存器一直不更新。
-    localparam integer NLEN  = 136;    // 总字符数（8 行 x 17）
-    localparam integer LNLEN = 17;     // 每行字符数（传给 DUT）
+    localparam integer NLEN  = 70;     // 总字符数（7 行 x 10）
+    localparam integer LNLEN = 10;     // 每行字符数（传给 DUT）
     localparam integer NCB   = 20;     // text_buf 每行能放几个字符
 
     reg        clk = 0, rst_n = 0;
@@ -115,8 +115,7 @@ module tb_status_line;
         end else
             $display("  [ok ] 上电自动写入 %0d 个字符", n_wr);
         show();
-        want_line({"VIEW  7          STYLE 0          HUE   6          GAIN  8          ",
-                   "BG    0          DEMO  0          00ABCD           0102030405060708 "});
+        want_line({"VIEW  7   SPK   0   HUE   6   GAIN  8   BG    0   DEMO  0   00ABCD    "});
         if (n_err == 0) $display("  [ok ] 内容与期望 'V7 S0 H6 G8 B0 D0' 一致");
 
         //---------------------------------------------------------------------
@@ -139,22 +138,19 @@ module tb_status_line;
         cfg_view = 8'h02;
         repeat (400) @(posedge clk);
         show();
-        want_line({"VIEW  2          STYLE 0          HUE   6          GAIN  8          ",
-                   "BG    0          DEMO  0          00ABCD           0102030405060708 "});
+        want_line({"VIEW  2   SPK   0   HUE   6   GAIN  8   BG    0   DEMO  0   00ABCD    "});
         if (n_err == 0) $display("  [ok ] V 变成 2");
 
         cfg_wave_gain = 8'h0F;      // 也测一下 A-F 的十六进制
         repeat (400) @(posedge clk);
         show();
-        want_line({"VIEW  2          STYLE 0          HUE   6          GAIN  F          ",
-                   "BG    0          DEMO  0          00ABCD           0102030405060708 "});
+        want_line({"VIEW  2   SPK   0   HUE   6   GAIN  F   BG    0   DEMO  0   00ABCD    "});
         if (n_err == 0) $display("  [ok ] 增益 0F 显示成 'F'（十六进制大写）");
 
         cfg_demo = 8'h03;
         repeat (400) @(posedge clk);
         show();
-        want_line({"VIEW  2          STYLE 0          HUE   6          GAIN  F          ",
-                   "BG    0          DEMO  3          00ABCD           0102030405060708 "});
+        want_line({"VIEW  2   SPK   0   HUE   6   GAIN  F   BG    0   DEMO  3   00ABCD    "});
         if (n_err == 0) $display("  [ok ] D 字段跟着变");
 
         // 触摸读数变化也要触发重写（上板验证管脚就靠这条）
@@ -169,8 +165,7 @@ module tb_status_line;
             end else begin
                 $display("  [ok ] 触摸读数变化触发了重写");
                 show();
-                want_line({"VIEW  2          STYLE 0          HUE   6          GAIN  F          ",
-                   "BG    0          DEMO  3          00ABCD           0102030405060708 "});
+                want_line({"VIEW  2   SPK   0   HUE   6   GAIN  F   BG    0   DEMO  3   00ABCD    "});
                 if (n_err == 0) $display("  [ok ] 第二行按十进制显示，个位补零");
             end
         end

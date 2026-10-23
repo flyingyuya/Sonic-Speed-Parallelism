@@ -598,7 +598,8 @@ module disp_top #(
     wire [7:0]  text_wdata;
     wire        text_hit, text_lit;
 
-    status_line #(.NLEN(`DISP_TXT_NLEN), .NC(`DISP_TXT_NLEN)) u_status (
+    status_line #(.NLEN(`DISP_TXT_NLEN), .NC(`DISP_TXT_NLEN),
+                  .NROW(`DISP_TXT_NL)) u_status (
         .clk           (clk_pix),
         .rst_n         (rst_pix_n),
         .cfg_view      ({5'b0, ui_view_s}),
@@ -622,7 +623,8 @@ module disp_top #(
     // NL=8 ：6 行配置标签 + 2 行触摸诊断。
     //   旧配置是 NC=60/NL=4（240 项），现在是 160 项 —— 反而更省。
     text_buf #(.NC(`DISP_TXT_NLEN), .NL(`DISP_TXT_NL), .XW(XW), .YW(YW),
-               .TX0(2), .TY0(2)) u_text (
+               // 文本框放到【右侧】：宽 = NLEN*8 = 80px，右边留 4px
+               .TX0(HDISP-80-4), .TY0(2)) u_text (
         .clk   (clk_pix),
         .we    (text_we),
         .waddr (text_waddr),

@@ -276,8 +276,9 @@ module tb_disp_top;
         .we(e_t_we), .waddr(e_t_addr), .wdata(e_t_data)
     );
 
+    // ⚠️ 参考模型的文本框位置必须和 DUT 一致（DUT 里现在放到右侧了）
     text_buf #(.NC(`DISP_TXT_NLEN), .NL(`DISP_TXT_NL), .XW(10), .YW(9),
-               .TX0(2), .TY0(2)) u_text_ref (
+               .TX0(480-80-4), .TY0(2)) u_text_ref (
         .clk(clk_pix), .we(e_t_we), .waddr(e_t_addr), .wdata(e_t_data),
         .x(x_d), .y(y_d), .hit(e_t_hit), .lit(e_t_lit)
     );
