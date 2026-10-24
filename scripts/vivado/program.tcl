@@ -165,14 +165,11 @@ if {$MODE eq "flash"} {
     #   （用户已把它加进 xicom_cfgmem_part_table.csv ✓ 列表里能查到）
     #   ⚠️ 之前候选写的是 w25q128fv/jv ✗ 库里没有 ⟹ 退到 mt25ql128
     #      ⟹ 参数设不进去 ⟹ "Failure to set flash parameters"
-    # 顺序说明：
-    #   ① w25q128fv-qspi-x4-single 是 Vivado 2020.2 原生自带、参数完整的型号
-    #      （用户手工加进 CSV 的 w25q128bv 可能缺参数 ⟹ "Failure to set flash parameters"）
-    #   ② w25q128bv-spi-x1_x2_x4 是用户加的（如果 ① 不行再试）
-    #   ③ 最后退回通用型号
+    # ⚠️ 顺序来自【实测】：
+    #   · w25q128bv-spi-x1_x2_x4  ⟹ 用 Vivado GUI 烧写【成功过】✓ 首选
+    #   · w25q128fv-qspi-x4-single ⟹ CLI 报 "not supported for device xc7a100t" ✗ 不能用
+    #     （qspi-x4-single 是给别的器件族的）
     foreach cand [list \
-            "w25q128fv-qspi-x4-single" \
-            "w25q128fv-qspi-x4-dual_stacked" \
             "w25q128bv-spi-x1_x2_x4" \
             "mt25ql128-spi-x1_x2_x4" \
             "s25fl128sxxxxxx0-spi-x1_x2_x4"] {
@@ -222,7 +219,10 @@ if {$MODE eq "flash"} {
     #   Valid file type extension .mcs or .bin"
     #   （.prm 是 write_cfgmem 顺带生成的说明文件，不是给它用的）
     set_property PROGRAM.FILES         [list $BIN] $CFGMEM
-    set_property PROGRAM.PRM_FILE      {} $CFGMEM
+    # ⚠️⚠️ 这里必须给 .prm 文件！
+    #   我第一版写成 `{}`（空）⟹ 报 "Failure to set flash parameters"
+    #   .prm 里记录了"数据起始地址 + 长度"，Flash 的擦写范围全靠它
+    set_property PROGRAM.PRM_FILE      [list $PRM] $CFGMEM
     set_property PROGRAM.UNUSED_PIN_TERMINATION {pull-none} $CFGMEM
 
     puts "  ③ 擦除 + 写入 + 校验（约 1~3 分钟，别断电）"
