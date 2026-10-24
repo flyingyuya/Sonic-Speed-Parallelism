@@ -84,6 +84,21 @@ module wave_buf #(
     //   把 TH 保留成参数是为了让 TB 能单独测"固定门限"这条路径。
     parameter integer ADAPT  = 0,
 
+    //---------------------------------------------------------------------
+    // HOLD_SHIFT：每 2^HOLD_SHIFT 次采集才【换一次显示】
+    //---------------------------------------------------------------------
+    //   【为什么需要】
+    //     一个 bank 装 SPAN=480 个采样，采样率 48 kHz
+    //     ⟹ 480/48000 = 10 ms 填满一屏 ⟹ 每秒抓 100 屏
+    //     而 LCD 只刷新 60 Hz ⟹ 每帧看到的都是不同的采集
+    //     ⟹ 屏上看起来像"多条波形叠在一起"（不是触发不稳，是太快了看不清）
+    //   注意：这【只影响波形】✗ 频谱走的是另一条路（spectrum→bars）✗ 不受影响 ✓
+    //   参考工程 Music-Spectrum 里也有类似的 hold_cnt（保持计数器）✓
+    //
+    //   0 = 每次采集都换（原来行为）
+    //   3 = 每 8 次换一次（12.5 屏/秒）← 推荐
+    parameter integer HOLD_SHIFT = 0,
+
     // TO_MAX：多少个采样没触发就强行抓一次（自动触发兜底）。
     //     2048 @48kHz = 43 ms —— 比显示帧周期(12 ms)长一些即可：
     //     太短会让"正常模式"被自动触发抢走，太长会让画面冻住几百毫秒才跳一次。
@@ -126,6 +141,7 @@ module wave_buf #(
     reg  [1:0]    st;
     reg  [CB-1:0] cap_idx;      // 已采集点数
     reg           done_tog;     // 每完成一次采集翻转
+    reg  [7:0]    hold_cnt;     // 采集计数（到 2^HOLD_SHIFT 才真的换显示）
     reg           below;        // 迟滞：信号最近到过 -TH 以下
     reg  [15:0]   to_cnt;       // 自动触发计数（按采样数，不按时钟）
 
@@ -167,6 +183,7 @@ module wave_buf #(
             st         <= S_ARM;
             cap_idx    <= {CB{1'b0}};
             done_tog   <= 1'b0;
+            hold_cnt   <= 8'd0;
             below      <= 1'b0;
             to_cnt     <= 16'd0;
             trig_pulse <= 1'b0;
@@ -199,7 +216,17 @@ module wave_buf #(
                 if (we) begin
                     if (cap_idx == SPAN_L - 1'b1) begin
                         st         <= S_WAIT;
-                        done_tog   <= ~done_tog;                // 这一 bank 满了
+                        // ★ 只在 hold_cnt 数满时才换显示 bank
+                        //   （HOLD_SHIFT=0 时每次都换 ✗ 与原行为一致 ✓）
+                        if (HOLD_SHIFT == 0) begin
+                            done_tog <= ~done_tog;
+                            hold_cnt <= 8'd0;
+                        end else if (hold_cnt == ((1 << HOLD_SHIFT) - 1)) begin
+                            done_tog <= ~done_tog;
+                            hold_cnt <= 8'd0;
+                        end else begin
+                            hold_cnt <= hold_cnt + 8'd1;
+                        end
                         done_pulse <= 1'b1;
                     end else begin
                         cap_idx <= cap_idx + 1'b1;

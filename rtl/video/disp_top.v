@@ -545,7 +545,11 @@ module disp_top #(
                                        : (wave_th > th_hi) ? th_hi
                                        : wave_th;
 
-    wave_buf #(.DW(24), .AW(10), .SPAN(HDISP), .XW(XW), .ADAPT(1)) u_wave (
+    // HOLD_SHIFT=3：每 8 次采集才换一屏显示（约 12.5 屏/秒）
+    //   采样率 48 kHz / SPAN 480 ⟹ 原来每秒抓 100 屏 ⟹ 太快看不清
+    //   ⚠️ 只影响【波形】✗ 频谱不受影响 ✓
+    wave_buf #(.DW(24), .AW(10), .SPAN(HDISP), .XW(XW), .ADAPT(1),
+               .HOLD_SHIFT(3)) u_wave (
         .wclk   (clk_sys),
         .wrst_n (rst_sys_n),
         .we     (wave_we),
