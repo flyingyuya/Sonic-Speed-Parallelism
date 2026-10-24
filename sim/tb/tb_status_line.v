@@ -115,7 +115,7 @@ module tb_status_line;
         end else
             $display("  [ok ] 上电自动写入 %0d 个字符", n_wr);
         show();
-        want_line({"VIEW  7   SPK   0   HUE   6   GAIN  8   BG    0   DEMO  0   IN 0      SD 00     "});
+        want_line({"VIEW  7   SPK   0   HUE   6   GAIN  8   BG    0   DEMO  0   IN    0   SD    00  "});
         if (n_err == 0) $display("  [ok ] 内容与期望 'V7 S0 H6 G8 B0 D0' 一致");
 
         //---------------------------------------------------------------------
@@ -138,19 +138,19 @@ module tb_status_line;
         cfg_view = 8'h02;
         repeat (400) @(posedge clk);
         show();
-        want_line({"VIEW  2   SPK   0   HUE   6   GAIN  8   BG    0   DEMO  0   IN 0      SD 00     "});
+        want_line({"VIEW  2   SPK   0   HUE   6   GAIN  8   BG    0   DEMO  0   IN    0   SD    00  "});
         if (n_err == 0) $display("  [ok ] V 变成 2");
 
         cfg_wave_gain = 8'h0F;      // 也测一下 A-F 的十六进制
         repeat (400) @(posedge clk);
         show();
-        want_line({"VIEW  2   SPK   0   HUE   6   GAIN  F   BG    0   DEMO  0   IN 0      SD 00     "});
+        want_line({"VIEW  2   SPK   0   HUE   6   GAIN  F   BG    0   DEMO  0   IN    0   SD    00  "});
         if (n_err == 0) $display("  [ok ] 增益 0F 显示成 'F'（十六进制大写）");
 
         cfg_demo = 8'h03;
         repeat (400) @(posedge clk);
         show();
-        want_line({"VIEW  2   SPK   0   HUE   6   GAIN  F   BG    0   DEMO  3   IN 0      SD 00     "});
+        want_line({"VIEW  2   SPK   0   HUE   6   GAIN  F   BG    0   DEMO  3   IN    0   SD    00  "});
         if (n_err == 0) $display("  [ok ] D 字段跟着变");
 
         // 触摸读数变化也要触发重写（上板验证管脚就靠这条）
@@ -165,7 +165,7 @@ module tb_status_line;
             end else begin
                 $display("  [ok ] 触摸读数变化触发了重写");
                 show();
-                want_line({"VIEW  2   SPK   0   HUE   6   GAIN  F   BG    0   DEMO  3   IN 0      SD 00     "});
+                want_line({"VIEW  2   SPK   0   HUE   6   GAIN  F   BG    0   DEMO  3   IN    0   SD    00  "});
                 if (n_err == 0) $display("  [ok ] 第二行按十进制显示，个位补零");
             end
         end

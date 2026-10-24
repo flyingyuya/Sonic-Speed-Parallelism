@@ -205,17 +205,17 @@ module status_line #(
             //     数字完全不动          -> 没数据 / 顶死在某个电平
             //     只在最低几位随机跳     -> 幅度极小，基本是量化噪声
             //     说话时高几位明显变化   -> 通路是好的，问题在显示链
+            // 对齐：名字占 ci 0..4，ci==5 留空，ci==6 是值（和前 6 行一致）
             if (ci == 0)      ch = "I";
             else if (ci == 1) ch = "N";
-            else if (ci == 2) ch = " ";
-            else if (ci == 3) ch = cfg_src ? "1" : "0";
+            else if (ci == 6) ch = cfg_src ? "1" : "0";
         end else begin
             // ---- 第 8 行：SD 图序号 ----
+            // 对齐同上：ci==6、7 放两位十六进制
             if (ci == 0)      ch = "S";
             else if (ci == 1) ch = "D";
-            else if (ci == 2) ch = " ";
-            else if (ci == 3) ch = hexc(cfg_img_idx[7:4]);
-            else if (ci == 4) ch = hexc(cfg_img_idx[3:0]);
+            else if (ci == 6) ch = hexc(cfg_img_idx[7:4]);
+            else if (ci == 7) ch = hexc(cfg_img_idx[3:0]);
         end
     end
 
