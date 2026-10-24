@@ -130,6 +130,19 @@ if {$MODE eq "detect"} {
 # ---------------------------------------------------------------------------
 # 3b. 烧 QSPI Flash（掉电保持）
 # ---------------------------------------------------------------------------
+# ⚠️⚠️ 现状说明（2026-10）：
+#   本脚本的 flash 模式【尚未调通】。命令行用
+#     create_hw_cfgmem + set_property PROGRAM.xxx + program_hw_cfgmem
+#   会报 "Failure to set flash parameters"，而【同样的型号在 GUI 里能烧成功】。
+#   已经试过 6 轮：换 part 名 / 改 .bin / 补 PRM_FILE / 去重打印列表 —— 都不行。
+#
+#   ⟹ 目前烧 Flash 请用【Vivado GUI】：
+#        Open Hardware Manager -> Auto Connect
+#        -> 右键 xc7a100t_0 -> Add Configuration Memory Device
+#        -> 选 w25q128bv-spi-x1_x2_x4 -> 选 build/vivado/top.bin -> Program
+#   ⟹ 想修好脚本：在 GUI 里完整走一遍，把 Tcl Console 打印的命令抄回来，
+#      那些才是 Vivado 内部真正用的属性组合。
+# ---------------------------------------------------------------------------
 if {$MODE eq "flash"} {
     if {![file exists $BIT]} {
         puts "❌ 比特流不存在：$BIT（先构建）"
