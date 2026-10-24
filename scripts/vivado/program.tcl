@@ -172,9 +172,16 @@ if {$MODE eq "flash"} {
             break
         }
     }
-    puts "     本地库里的 128 Mb 候选（供核对）："
+    # 只打印去重后的关键候选（库里有几百条，全打印没法看）
+    set _seen {}
+    puts "     本地库里的 QSPI 128Mb 候选（去重）："
     foreach pp [get_cfgmem_parts] {
-        if {[string match -nocase "*128*" $pp]} { puts "       - $pp" }
+        if {[string match -nocase "*w25q*" $pp] || [string match -nocase "*128*qspi*" $pp]} {
+            if {[lsearch -exact $_seen $pp] < 0} {
+                lappend _seen $pp
+                puts "       - $pp"
+            }
+        }
     }
     if {$CFGMEM_PART eq ""} {
         puts "  ⚠️ 没在本地器件库里找到匹配的 cfgmem part，尝试用第一个可用的"
@@ -193,9 +200,10 @@ if {$MODE eq "flash"} {
     set_property PROGRAM.VERIFY        1 $CFGMEM
     set_property PROGRAM.CHECKSUM      0 $CFGMEM
     set_property PROGRAM.ADDRESS_RANGE {use_file} $CFGMEM
-    // 注意：program_hw_cfgmem 要求给 .bin 或 .mcs ✗ 给 .prm 会报
-    //   "Invalid configuration file assigned. Valid file type extension .mcs or .bin"
-    //   （.prm 是 write_cfgmem 顺带生成的说明文件，不是给它用的）
+    # 注意：program_hw_cfgmem 要求给 .bin 或 .mcs
+    #   给 .prm 会报 "Invalid configuration file assigned.
+    #   Valid file type extension .mcs or .bin"
+    #   （.prm 是 write_cfgmem 顺带生成的说明文件，不是给它用的）
     set_property PROGRAM.FILES         [list $BIN] $CFGMEM
     set_property PROGRAM.PRM_FILE      {} $CFGMEM
     set_property PROGRAM.UNUSED_PIN_TERMINATION {pull-none} $CFGMEM
