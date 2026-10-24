@@ -161,10 +161,13 @@ if {$MODE eq "flash"} {
     # ⚠️ 顺序很重要：板载是 W25Q128JVSQ ⟹ 必须优先 w25q128 系列
     #    第一次把 s25fl128s 放第一位 ⟹ 用错型号 ⟹ 报
     #    "Flash Programming Unsuccessful: Failure to set flash parameters"
+    # 板载是 W25Q128JVSQ ⟹ 对应的 cfgmem part 是 w25q128bv-spi-x1_x2_x4
+    #   （用户已把它加进 xicom_cfgmem_part_table.csv ✓ 列表里能查到）
+    #   ⚠️ 之前候选写的是 w25q128fv/jv ✗ 库里没有 ⟹ 退到 mt25ql128
+    #      ⟹ 参数设不进去 ⟹ "Failure to set flash parameters"
     foreach cand [list \
+            "w25q128bv-spi-x1_x2_x4" \
             "w25q128fv-spi-x1_x2_x4" \
-            "w25q128jv-spi-x1_x2_x4" \
-            "w25q128-spi-x1_x2_x4" \
             "mt25ql128-spi-x1_x2_x4" \
             "s25fl128sxxxxxx0-spi-x1_x2_x4"] {
         if {[llength [get_cfgmem_parts -quiet $cand]] > 0} {
