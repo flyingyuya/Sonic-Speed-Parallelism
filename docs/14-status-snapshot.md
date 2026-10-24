@@ -21,6 +21,7 @@
 | **SD 图片背景** | ✅ | `SD` 键切图（3 张循环，CMD18 多块读）|
 | **SD 卡工具** | ✅ | `scripts/sdcard/mkimage.py`（BMP/PNG/JPG → 裸扇区）|
 | **按键交互** | ✅ | 单击/双击（KEY1 左移/面板开关，KEY2 右移/确认）|
+| **Flash 固化** | ✅ | `program.tcl -tclargs flash`（W25Q128JVSQ，QSPI x4）|
 
 ---
 
@@ -91,8 +92,14 @@ SYNTH_ONLY=1 vivado -mode batch -source scripts/vivado/build.tcl \
 vivado -mode batch -source scripts/vivado/build.tcl \
     -tclargs xc7a100tfgg484-2 top constrs
 
-# 烧板
+# 烧板（易失，SRAM，10 秒 —— 日常迭代用这个）
 vivado -mode batch -source scripts/vivado/program.tcl
+
+# 固化到 QSPI Flash（掉电保持，约 45 秒）
+#   ⚠️ 内部流程：write_cfgmem → create_hw_cfgmem(-mem_dev) → 先烧 SRAM
+#      （建立 SPI 访问通道）→ program_hw_cfgmem
+#   ⚠️ 验证时必须【拔掉 JTAG 线】再上电（JTAG 优先于 QSPI）
+vivado -mode batch -source scripts/vivado/program.tcl -tclargs flash
 
 # 写 SD 卡图片
 python3 scripts/sdcard/mkimage.py --make-test 3

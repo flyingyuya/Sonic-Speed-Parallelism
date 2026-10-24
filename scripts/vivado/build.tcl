@@ -177,6 +177,17 @@ if {$BUILD_MODE eq "impl"} {
     exit 0
 }
 
+# ---------------------------------------------------------------------------
+# QSPI Flash 自启动所需的比特流配置
+#   板上 Flash 是 W25Q128JVSQ，按【4 线 QSPI】连接。
+#   不加这两行的话，比特流里默认按 x1 配置 ⟹ 烧进 Flash 后上电起不来。
+#   （write_bitstream 之前设置才会写进比特流头部）
+# ---------------------------------------------------------------------------
+set_property BITSTREAM.CONFIG.SPI_BUSWIDTH  4        [current_design]
+set_property BITSTREAM.CONFIG.SPI_FALL_EDGE YES      [current_design]
+set_property BITSTREAM.CONFIG.CONFIGRATE    33       [current_design]
+set_property BITSTREAM.CONFIG.SPI_32BIT_ADDR NO      [current_design]
+
 write_bitstream -force [file join $OUT "${TOP}.bit"]
 
 # ---------------------------------------------------------------------------
