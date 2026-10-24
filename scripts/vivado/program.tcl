@@ -137,29 +137,36 @@ if {$MODE eq "flash"} {
         exit 1
     }
 
-    set MCS [file join $OUT "top.mcs"]
+    set BIN [file join $OUT "top.bin"]
+    set PRM [file join $OUT "top.prm"]
 
     puts ""
-    puts "  ① 生成 .mcs（QSPI x4，16 MB = 128 Mb）"
+    puts "  ① 生成 .bin（QSPI x4，16 MB = 128 Mb）"
     #    -interface SPIx4 : 板上 Flash 按 4 线 QSPI 接
     #    -size 16         : W25Q128 = 128 Mb = 16 MB
     #    -loadbit "up 0x0" : 比特流从地址 0 开始（7 系列 QSPI 启动的规定）
     if {[catch {
-        write_cfgmem -force -format mcs -interface SPIx4 -size 16 \
-            -loadbit "up 0x0 $BIT" $MCS
+        write_cfgmem -force -format bin -interface SPIx4 -size 16 \
+            -loadbit "up 0x0 $BIT" $BIN
     } err]} {
         puts "❌ write_cfgmem 失败：$err"
         close_hw_manager
         exit 1
     }
-    puts "     生成：$MCS（[expr {[file size $MCS]/1024}] KB）"
+    puts "     生成：$BIN（[expr {[file size $BIN]/1024}] KB）"
+    puts "     参数文件：$PRM"
 
     puts "  ② 给器件挂上 cfgmem 配置存储器对象"
     set CFGMEM_PART ""
+    # ⚠️ 顺序很重要：板载是 W25Q128JVSQ ⟹ 必须优先 w25q128 系列
+    #    第一次把 s25fl128s 放第一位 ⟹ 用错型号 ⟹ 报
+    #    "Flash Programming Unsuccessful: Failure to set flash parameters"
     foreach cand [list \
-            "s25fl128sxxxxxx0-spi-x1_x2_x4" \
             "w25q128fv-spi-x1_x2_x4" \
-            "mt25ql128-spi-x1_x2_x4"] {
+            "w25q128jv-spi-x1_x2_x4" \
+            "w25q128-spi-x1_x2_x4" \
+            "mt25ql128-spi-x1_x2_x4" \
+            "s25fl128sxxxxxx0-spi-x1_x2_x4"] {
         if {[llength [get_cfgmem_parts -quiet $cand]] > 0} {
             set CFGMEM_PART $cand
             break
@@ -182,7 +189,7 @@ if {$MODE eq "flash"} {
     set_property PROGRAM.VERIFY        1 $CFGMEM
     set_property PROGRAM.CHECKSUM      0 $CFGMEM
     set_property PROGRAM.ADDRESS_RANGE {use_file} $CFGMEM
-    set_property PROGRAM.FILES         [list $MCS] $CFGMEM
+    set_property PROGRAM.FILES         [list $PRM] $CFGMEM
     set_property PROGRAM.PRM_FILE      {} $CFGMEM
     set_property PROGRAM.UNUSED_PIN_TERMINATION {pull-none} $CFGMEM
 
