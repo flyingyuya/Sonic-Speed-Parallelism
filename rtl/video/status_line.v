@@ -169,7 +169,7 @@ module status_line #(
     // 当前行对应的配置值（按行号选，避免"数组进敏感列表"的警告）
     reg [7:0] vrow;
     always @(li or cfg_view or cfg_style or cfg_hue_spd or
-             cfg_wave_gain or cfg_bg_mode or cfg_demo) begin
+             cfg_wave_gain or cfg_bg_mode or cfg_demo or cfg_spk_mute) begin
         case (li)
             3'd0:    vrow = cfg_view;
             3'd1:    vrow = {7'd0, cfg_spk_mute};   // SPK：0=开 1=静音
