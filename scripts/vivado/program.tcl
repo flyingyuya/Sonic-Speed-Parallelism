@@ -33,6 +33,10 @@ if {$argc > 0} {
     } elseif {$a0 eq "program"} {
         set MODE "program"
         if {$argc > 1} { set BIT [lindex $argv 1] }
+    } elseif {$a0 eq "flash"} {
+        # 烧 QSPI Flash（掉电保持）。可选第二个参数指定 .bit
+        set MODE "flash"
+        if {$argc > 1} { set BIT [lindex $argv 1] }
     } else {
         set BIT $a0
     }
@@ -40,7 +44,8 @@ if {$argc > 0} {
 
 puts "============================================================="
 puts " 模式   : $MODE"
-if {$MODE eq "program"} { puts " 比特流 : $BIT" }
+if {$MODE eq "program"} { puts " 比特流 : $BIT（易失，掉电即失）" }
+if {$MODE eq "flash"}   { puts " 比特流 : $BIT（写进 QSPI Flash，掉电保持）" }
 puts "============================================================="
 
 # ---------------------------------------------------------------------------
@@ -123,7 +128,84 @@ if {$MODE eq "detect"} {
 }
 
 # ---------------------------------------------------------------------------
-# 4. 烧写
+# 3b. 烧 QSPI Flash（掉电保持）
+# ---------------------------------------------------------------------------
+if {$MODE eq "flash"} {
+    if {![file exists $BIT]} {
+        puts "❌ 比特流不存在：$BIT（先构建）"
+        close_hw_manager
+        exit 1
+    }
+
+    set MCS [file join $OUT "top.mcs"]
+
+    puts ""
+    puts "  ① 生成 .mcs（QSPI x4，16 MB = 128 Mb）"
+    #    -interface SPIx4 : 板上 Flash 按 4 线 QSPI 接
+    #    -size 16         : W25Q128 = 128 Mb = 16 MB
+    #    -loadbit "up 0x0" : 比特流从地址 0 开始（7 系列 QSPI 启动的规定）
+    if {[catch {
+        write_cfgmem -force -format mcs -interface SPIx4 -size 16 \
+            -loadbit "up 0x0 $BIT" $MCS
+    } err]} {
+        puts "❌ write_cfgmem 失败：$err"
+        close_hw_manager
+        exit 1
+    }
+    puts "     生成：$MCS（[expr {[file size $MCS]/1024}] KB）"
+
+    puts "  ② 给器件挂上 cfgmem 配置存储器对象"
+    set CFGMEM_PART ""
+    foreach cand [list \
+            "s25fl128sxxxxxx0-spi-x1_x2_x4" \
+            "w25q128fv-spi-x1_x2_x4" \
+            "mt25ql128-spi-x1_x2_x4"] {
+        if {[llength [get_cfgmem_parts -quiet $cand]] > 0} {
+            set CFGMEM_PART $cand
+            break
+        }
+    }
+    if {$CFGMEM_PART eq ""} {
+        puts "  ⚠️ 没在本地器件库里找到匹配的 cfgmem part，尝试用第一个可用的"
+        set CFGMEM_PART [lindex [get_cfgmem_parts] 0]
+    }
+    puts "     使用 part：$CFGMEM_PART"
+
+    if {[llength [get_property PROGRAM.HW_CFGMEM $DEV -quiet]] == 0} {
+        create_hw_cfgmem -hw_device $DEV [lindex [get_cfgmem_parts $CFGMEM_PART] 0]
+    }
+    set CFGMEM [get_property PROGRAM.HW_CFGMEM $DEV]
+
+    set_property PROGRAM.BLANK_CHECK   0 $CFGMEM
+    set_property PROGRAM.ERASE         1 $CFGMEM
+    set_property PROGRAM.CFG_PROGRAM   1 $CFGMEM
+    set_property PROGRAM.VERIFY        1 $CFGMEM
+    set_property PROGRAM.CHECKSUM      0 $CFGMEM
+    set_property PROGRAM.ADDRESS_RANGE {use_file} $CFGMEM
+    set_property PROGRAM.FILES         [list $MCS] $CFGMEM
+    set_property PROGRAM.PRM_FILE      {} $CFGMEM
+    set_property PROGRAM.UNUSED_PIN_TERMINATION {pull-none} $CFGMEM
+
+    puts "  ③ 擦除 + 写入 + 校验（约 1~3 分钟，别断电）"
+    if {[catch {program_hw_cfgmem -hw_cfgmem $CFGMEM} err]} {
+        puts "❌ 烧 Flash 失败：$err"
+        close_hw_manager
+        exit 1
+    }
+
+    puts ""
+    puts "============================================================="
+    puts " ✅ Flash 烧写完成"
+    puts "    断电重上电（或按复位）后，FPGA 会自己从 Flash 加载配置。"
+    puts "    ⚠️ JTAG 优先于 QSPI：如果 JTAG 上还挂着下载器"
+    puts "       （且 VCCO 在），可能仍走 JTAG。拔掉 JTAG 线再上电验证。"
+    puts "============================================================="
+    close_hw_manager
+    exit 0
+}
+
+# ---------------------------------------------------------------------------
+# 4. 烧写（易失，SRAM）
 # ---------------------------------------------------------------------------
 if {![file exists $BIT]} {
     puts "❌ 比特流不存在：$BIT"
