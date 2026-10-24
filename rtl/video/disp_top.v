@@ -123,6 +123,8 @@ module disp_top #(
     input  wire [3:0]            ui_mode,       // 来自 ui_ctrl：背景模式
     input  wire [3:0]            ui_style,      // 来自 ui_ctrl：柱体风格（已弃用）
     input  wire                  ui_spk_mute,   // 来自 ui_ctrl：喇叭静音（状态栏显示）
+    input  wire                  ui_src,        // 来自 ui_ctrl：输入源（状态栏显示）
+    input  wire [7:0]            ui_img_idx,    // 来自 ui_ctrl：SD 图序号
     input  wire [2:0]            ui_view,       // 来自 ui_ctrl：视图使能
     input  wire [7:0]            ui_hue_spd,    // 来自 ui_ctrl：色相滚动速度
 
@@ -250,6 +252,13 @@ module disp_top #(
     wire ui_spk_mute_s;
     cdc_sync u_spk_sync (
         .clk(clk_pix), .rst_n(rst_pix_n), .din(ui_spk_mute), .dout(ui_spk_mute_s));
+
+    wire       ui_src_s;
+    wire [7:0] ui_img_idx_s;
+    cdc_sync u_src_sync (
+        .clk(clk_pix), .rst_n(rst_pix_n), .din(ui_src), .dout(ui_src_s));
+    cdc_sync u_img_sync (
+        .clk(clk_pix), .rst_n(rst_pix_n), .din(ui_img_idx), .dout(ui_img_idx_s));
     // ⚠️ 复位值必须和 ui_ctrl 的上电默认【一致】。ui_ctrl 现在默认 preset[0]
     //    = 3'b101（柱状+波形，极坐标隐藏），这里还写 3'b111 的话，
     //    上电头几帧是三个全开 —— 而且【如果 ui_ctrl 的值一直没变过，
@@ -611,6 +620,8 @@ module disp_top #(
         .cfg_view      ({5'b0, ui_view_s}),
         .cfg_style     ({4'b0, ui_style_s}),
         .cfg_spk_mute  (ui_spk_mute_s),
+        .cfg_src       (ui_src_s),
+        .cfg_img_idx   (ui_img_idx_s),
         .cfg_hue_spd   (ui_hue_spd_s),
         .cfg_wave_gain (ui_wave_gain_s),
         .cfg_bg_mode   ({4'b0, ui_mode_s}),

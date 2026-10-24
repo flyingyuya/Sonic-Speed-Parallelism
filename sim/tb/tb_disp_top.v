@@ -158,7 +158,7 @@ module tb_disp_top;
         .dbg_adc   (dbg_adc_v),
         .dbg_sd_bytes (64'd0),
         .cfg_bg_src   (1'b0),
-        .ui_spk_mute  (1'b0),
+        .ui_spk_mute  (1'b0), .ui_src(1'b0), .ui_img_idx(8'd0),
         .fb_rgb       (16'h0000),
         .fb_addr      (),
         // 新增端口：本用例不测按键，全部给"无活动/无光标"的静默值
@@ -268,7 +268,7 @@ module tb_disp_top;
 
     status_line #(.NLEN(`DISP_TXT_NLEN), .NC(`DISP_TXT_NLEN)) u_status_ref (
         .clk(clk_pix), .rst_n(rst_pix_n),
-        .cfg_view({5'b0, view_en}), .cfg_style(8'd0), .cfg_spk_mute(1'b0),
+        .cfg_view({5'b0, view_en}), .cfg_style(8'd0), .cfg_spk_mute(1'b0), .cfg_src(1'b0), .cfg_img_idx(8'd0),
         .cfg_hue_spd(hue_spd), .cfg_wave_gain(wave_gain),
         .cfg_bg_mode(8'd0), .cfg_demo(ui_demo_v),
         .tp_x(tp_x_v), .tp_y(tp_y_v), .tp_edges(12'd7), .dbg_adc(dbg_adc_v),

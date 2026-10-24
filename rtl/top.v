@@ -857,6 +857,8 @@ module top #(
         .ui_mode    (ui_bg_mode[3:0]),      // 来自 ui_ctrl
         .ui_style   (ui_style[3:0]),
         .ui_spk_mute(ui_spk_mute),
+        .ui_src     (src_sel),
+        .ui_img_idx (ui_img_idx),
         .ui_view    (ui_view[2:0]),
         .ui_hue_spd (ui_hue_spd),
         .ui_wave_gain(ui_wave_gain),        // G 命令：波形增益（以前是死控件）
@@ -1315,6 +1317,8 @@ module top #(
         .ui_mode    (ui_bg_mode[3:0]),
         .ui_style   (ui_style[3:0]),
         .ui_spk_mute(ui_spk_mute),
+        .ui_src     (src_sel),
+        .ui_img_idx (ui_img_idx),
         .ui_view    (ui_view[2:0]),
         .ui_hue_spd (ui_hue_spd),
         .ui_wave_gain(ui_wave_gain),

@@ -34,7 +34,7 @@ module status_line #(
     parameter integer NC   = 20,       // text_buf 每行能放多少字符（地址换算用）
     // 实际写多少行（6 行配置 + 1 行 ADC 诊断 = 7）
     //   原来是 8（多一行 SD 字节诊断 ✗ 那行已经去掉）
-    parameter integer NROW = 7
+    parameter integer NROW = 8
 ) (
     input  wire        clk,
     input  wire        rst_n,
@@ -44,6 +44,9 @@ module status_line #(
     input  wire [7:0]  cfg_style,
     // 喇叭静音（面板 SPK 键 / UART 4'h1）。状态栏第 2 行显示它的值。
     input  wire        cfg_spk_mute,
+    // 输入源（0=话筒 1=线路）显示在第 7 行；SD 图序号显示在第 8 行
+    input  wire        cfg_src,
+    input  wire [7:0]  cfg_img_idx,
     input  wire [7:0]  cfg_hue_spd,
     input  wire [7:0]  cfg_wave_gain,
     input  wire [7:0]  cfg_bg_mode,
@@ -180,7 +183,7 @@ module status_line #(
     // 敏感列表写全：数组（nm）不能进列表，所以只能用显式清单
     always @(cnt or li or ci or vrow or dbg_adc or dbg_sd_bytes or tp_x or tp_edges or tp_low or
              cfg_view or cfg_style or cfg_hue_spd or cfg_wave_gain or
-             cfg_bg_mode or cfg_demo or cfg_spk_mute) begin
+             cfg_bg_mode or cfg_demo or cfg_spk_mute or cfg_src or cfg_img_idx) begin
         li = cnt / NLEN;        // 0..7
         ci = cnt % NLEN;        // 0..16
 
@@ -202,7 +205,17 @@ module status_line #(
             //     数字完全不动          -> 没数据 / 顶死在某个电平
             //     只在最低几位随机跳     -> 幅度极小，基本是量化噪声
             //     说话时高几位明显变化   -> 通路是好的，问题在显示链
-            if (ci <= 5) ch = hexc(dbg_adc[(5-ci)*4 +: 4]);
+            if (ci == 0)      ch = "I";
+            else if (ci == 1) ch = "N";
+            else if (ci == 2) ch = " ";
+            else if (ci == 3) ch = cfg_src ? "1" : "0";
+        end else begin
+            // ---- 第 8 行：SD 图序号 ----
+            if (ci == 0)      ch = "S";
+            else if (ci == 1) ch = "D";
+            else if (ci == 2) ch = " ";
+            else if (ci == 3) ch = hexc(cfg_img_idx[7:4]);
+            else if (ci == 4) ch = hexc(cfg_img_idx[3:0]);
         end
     end
 
