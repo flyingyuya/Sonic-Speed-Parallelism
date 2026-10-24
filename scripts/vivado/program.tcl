@@ -130,18 +130,14 @@ if {$MODE eq "detect"} {
 # ---------------------------------------------------------------------------
 # 3b. 烧 QSPI Flash（掉电保持）
 # ---------------------------------------------------------------------------
-# ⚠️⚠️ 现状说明（2026-10）：
-#   本脚本的 flash 模式【尚未调通】。命令行用
-#     create_hw_cfgmem + set_property PROGRAM.xxx + program_hw_cfgmem
-#   会报 "Failure to set flash parameters"，而【同样的型号在 GUI 里能烧成功】。
-#   已经试过 6 轮：换 part 名 / 改 .bin / 补 PRM_FILE / 去重打印列表 —— 都不行。
-#
-#   ⟹ 目前烧 Flash 请用【Vivado GUI】：
-#        Open Hardware Manager -> Auto Connect
-#        -> 右键 xc7a100t_0 -> Add Configuration Memory Device
-#        -> 选 w25q128bv-spi-x1_x2_x4 -> 选 build/vivado/top.bin -> Program
-#   ⟹ 想修好脚本：在 GUI 里完整走一遍，把 Tcl Console 打印的命令抄回来，
-#      那些才是 Vivado 内部真正用的属性组合。
+# 【关键：顺序】
+#   ① write_cfgmem 生成 .bin
+#   ② create_hw_cfgmem（注意用 -mem_dev）
+#   ③ 设置 PROGRAM.* 属性（PRM_FILE 保持空 ✗ GUI 也是空的）
+#   ④ ★ 先把 .bit 烧进 SRAM ⟹ 让 FPGA 里有一个"带 SPI 核"的设计
+#        否则 program_hw_cfgmem 无法访问 Flash ⟹ "Failure to set flash parameters"
+#   ⑤ program_hw_cfgmem 擦写校验
+#   以上顺序照抄 Vivado GUI 的 Tcl Console，已实测可用。
 # ---------------------------------------------------------------------------
 if {$MODE eq "flash"} {
     if {![file exists $BIT]} {
@@ -217,7 +213,7 @@ if {$MODE eq "flash"} {
     if {[info exists _e] && $_e ne ""} { puts "       （参数读取：$_e）" }
 
     if {[llength [get_property PROGRAM.HW_CFGMEM $DEV -quiet]] == 0} {
-        create_hw_cfgmem -hw_device $DEV [lindex [get_cfgmem_parts $CFGMEM_PART] 0]
+        create_hw_cfgmem -hw_device $DEV -mem_dev [lindex [get_cfgmem_parts $CFGMEM_PART] 0]
     }
     set CFGMEM [get_property PROGRAM.HW_CFGMEM $DEV]
 
@@ -232,13 +228,27 @@ if {$MODE eq "flash"} {
     #   Valid file type extension .mcs or .bin"
     #   （.prm 是 write_cfgmem 顺带生成的说明文件，不是给它用的）
     set_property PROGRAM.FILES         [list $BIN] $CFGMEM
-    # ⚠️⚠️ 这里必须给 .prm 文件！
-    #   我第一版写成 `{}`（空）⟹ 报 "Failure to set flash parameters"
-    #   .prm 里记录了"数据起始地址 + 长度"，Flash 的擦写范围全靠它
-    set_property PROGRAM.PRM_FILE      [list $PRM] $CFGMEM
+    # PRM_FILE 保持空 —— GUI 里也是 {} ✓
+    #   （.bin + ADDRESS_RANGE use_file 时不需要 .prm）
+    set_property PROGRAM.PRM_FILE      {} $CFGMEM
     set_property PROGRAM.UNUSED_PIN_TERMINATION {pull-none} $CFGMEM
 
-    puts "  ③ 擦除 + 写入 + 校验（约 1~3 分钟，别断电）"
+    # ★★★ 关键一步：先把 .bit 烧进 SRAM
+    #   为什么：program_hw_cfgmem 需要 FPGA 里跑着一个【带 SPI/STARTUP 核】的设计，
+    #   才能通过 JTAG 间接访问 QSPI Flash。这一步漏了就会报
+    #   "Failure to set flash parameters"（看起来像型号问题，其实是没建立通道）。
+    puts "  ③ 先烧 SRAM（建立 Flash 访问通道）"
+    set BITS [get_property PROGRAM.HW_CFGMEM_BITFILE $DEV]
+    if {$BITS eq ""} { set BITS $BIT }
+    create_hw_bitstream -hw_device $DEV $BITS
+    if {[catch {program_hw_devices $DEV} err]} {
+        puts "❌ 先烧 SRAM 失败：$err"
+        close_hw_manager
+        exit 1
+    }
+    refresh_hw_device $DEV
+
+    puts "  ④ 擦除 + 写入 + 校验（约 1~3 分钟，别断电）"
     if {[catch {program_hw_cfgmem -hw_cfgmem $CFGMEM} err]} {
         puts "❌ 烧 Flash 失败：$err"
         close_hw_manager
