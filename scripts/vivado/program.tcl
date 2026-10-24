@@ -165,9 +165,15 @@ if {$MODE eq "flash"} {
     #   （用户已把它加进 xicom_cfgmem_part_table.csv ✓ 列表里能查到）
     #   ⚠️ 之前候选写的是 w25q128fv/jv ✗ 库里没有 ⟹ 退到 mt25ql128
     #      ⟹ 参数设不进去 ⟹ "Failure to set flash parameters"
+    # 顺序说明：
+    #   ① w25q128fv-qspi-x4-single 是 Vivado 2020.2 原生自带、参数完整的型号
+    #      （用户手工加进 CSV 的 w25q128bv 可能缺参数 ⟹ "Failure to set flash parameters"）
+    #   ② w25q128bv-spi-x1_x2_x4 是用户加的（如果 ① 不行再试）
+    #   ③ 最后退回通用型号
     foreach cand [list \
+            "w25q128fv-qspi-x4-single" \
+            "w25q128fv-qspi-x4-dual_stacked" \
             "w25q128bv-spi-x1_x2_x4" \
-            "w25q128fv-spi-x1_x2_x4" \
             "mt25ql128-spi-x1_x2_x4" \
             "s25fl128sxxxxxx0-spi-x1_x2_x4"] {
         if {[llength [get_cfgmem_parts -quiet $cand]] > 0} {
@@ -191,6 +197,14 @@ if {$MODE eq "flash"} {
         set CFGMEM_PART [lindex [get_cfgmem_parts] 0]
     }
     puts "     使用 part：$CFGMEM_PART"
+    # 打印该 part 的接口/容量，确认和板子对得上
+    catch {
+        set _p [lindex [get_cfgmem_parts $CFGMEM_PART] 0]
+        puts [format "       size=%s  interface=%s  width=%s" \
+                  [get_property SIZE $_p] [get_property INTERFACE $_p] \
+                  [get_property WIDTH $_p]]
+    } _e
+    if {[info exists _e] && $_e ne ""} { puts "       （参数读取：$_e）" }
 
     if {[llength [get_property PROGRAM.HW_CFGMEM $DEV -quiet]] == 0} {
         create_hw_cfgmem -hw_device $DEV [lindex [get_cfgmem_parts $CFGMEM_PART] 0]
