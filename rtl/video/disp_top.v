@@ -545,11 +545,15 @@ module disp_top #(
                                        : (wave_th > th_hi) ? th_hi
                                        : wave_th;
 
-    // HOLD_SHIFT=3：每 8 次采集才换一屏显示（约 12.5 屏/秒）
-    //   采样率 48 kHz / SPAN 480 ⟹ 原来每秒抓 100 屏 ⟹ 太快看不清
+    // HOLD_SHIFT=2：每 4 次采集换一屏显示（约 25 屏/秒）
     //   ⚠️ 只影响【波形】✗ 频谱不受影响 ✓
+    //   观感对照（实测）：
+    //     1 ⟹ 50 屏/秒   还是有点糊
+    //     2 ⟹ 25 屏/秒   ← 当前：够流畅，也不重叠 ✓
+    //     3 ⟹ 12.5 屏/秒 不重叠但明显卡顿
+    //   想让波形"再看清一点"就往 3 调 ✗ 想更顺就往 1 调
     wave_buf #(.DW(24), .AW(10), .SPAN(HDISP), .XW(XW), .ADAPT(1),
-               .HOLD_SHIFT(3)) u_wave (
+               .HOLD_SHIFT(2)) u_wave (
         .wclk   (clk_sys),
         .wrst_n (rst_sys_n),
         .we     (wave_we),
