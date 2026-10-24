@@ -251,7 +251,11 @@ module tb_disp_top;
     // ⚠️ 位宽和 DUT 保持一致：SH=17 时 wabs[23:17] 是 7 位（0..127）
     //    （DUT 原来写成 6 位 ⟹ 幅度被截半 ⟹ 已修 ✓ 这里同步）
     wire [6:0]  e_wraw = e_wabs[23:`DISP_WAVE_SH];
-    wire [6:0]  e_wamp = (e_wraw > WAVE_AMP[6:0]) ? WAVE_AMP[6:0] : e_wraw;
+    wire [6:0]  e_wamp0 = (e_wraw > WAVE_AMP[6:0]) ? WAVE_AMP[6:0] : e_wraw;
+    // 和 DUT 一致：显示前 ×1.5（×3/2）后再钳位
+    wire [7:0]  e_wamp3 = {e_wamp0, 1'b0} + e_wamp0;
+    wire [6:0]  e_wamp  = (e_wamp3[7:1] > WAVE_AMP[6:0])
+                        ? WAVE_AMP[6:0] : e_wamp3[7:1];
     // 正值朝上（和 DUT 一致）：负值 -> y 变大（往下）
     wire [8:0]  e_wy   = e_wave_d[23] ? (WAVE_CY[8:0] + {2'b00, e_wamp})
                                       : (WAVE_CY[8:0] - {2'b00, e_wamp});
