@@ -522,8 +522,10 @@ module top #(
     wire [7:0] ui_view, ui_style, ui_hue_spd, ui_wave_gain, ui_bg_mode, ui_auto, ui_demo;
     wire [7:0] ui_src;
     wire [7:0] ui_img_idx;              // SD 背景图序号（面板 SD 键 / UART 4'h8）
+    wire       ui_spk_mute;             // 喇叭静音（面板 SPK 键）—— 这里提前声明，
+                                        // 因为下面的 audio_top 例化就要用到它
+                                        // （第 N 次踩"隐式声明"这个坑了）
     wire       ui_bg_src;               // 背景来源：0=程序化(BG键) 1=SD图片(SD键)
-    wire       ui_spk_mute;             // 喇叭静音（面板 SPK 键）
     // SD 卡前 8 字节拼成 64 位，给状态行显示。
     //   ⚠️ 必须在【第一次使用之前】声明：disp_top 的例化在前面，
     //      否则 Vivado 会按 1 位隐式声明，然后报 [Synth 8-992]

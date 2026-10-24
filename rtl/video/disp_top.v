@@ -257,8 +257,17 @@ module disp_top #(
     wire [7:0] ui_img_idx_s;
     cdc_sync u_src_sync (
         .clk(clk_pix), .rst_n(rst_pix_n), .din(ui_src), .dout(ui_src_s));
-    cdc_sync u_img_sync (
-        .clk(clk_pix), .rst_n(rst_pix_n), .din(ui_img_idx), .dout(ui_img_idx_s));
+
+    // ⚠️ cdc_sync 是【1 位】的模块 ✗ 8 位信号要逐位同步
+    //    （直接接 8 位会报 [Synth 8-689] 位宽不匹配，而且只同步最低位）
+    genvar gi;
+    generate
+        for (gi = 0; gi < 8; gi = gi + 1) begin : g_img_sync
+            cdc_sync u_img_sync (
+                .clk(clk_pix), .rst_n(rst_pix_n),
+                .din(ui_img_idx[gi]), .dout(ui_img_idx_s[gi]));
+        end
+    endgenerate
     // ⚠️ 复位值必须和 ui_ctrl 的上电默认【一致】。ui_ctrl 现在默认 preset[0]
     //    = 3'b101（柱状+波形，极坐标隐藏），这里还写 3'b111 的话，
     //    上电头几帧是三个全开 —— 而且【如果 ui_ctrl 的值一直没变过，
