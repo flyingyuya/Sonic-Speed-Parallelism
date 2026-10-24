@@ -553,7 +553,7 @@ module disp_top #(
     //     3 ⟹ 12.5 屏/秒 不重叠但明显卡顿
     //   想让波形"再看清一点"就往 3 调 ✗ 想更顺就往 1 调
     wave_buf #(.DW(24), .AW(10), .SPAN(HDISP), .XW(XW), .ADAPT(1),
-               .HOLD_SHIFT(2)) u_wave (
+               .HOLD_SHIFT(1)) u_wave (
         .wclk   (clk_sys),
         .wrst_n (rst_sys_n),
         .we     (wave_we),

@@ -178,12 +178,15 @@ module disp_mix #(
     //      移位量要按"满量程映射到 WAVE_AMP"来算，不能凭感觉。
     wire [24:0] wabs = wave[23] ? ({1'b0, ~wave} + 1'b1) : {1'b0, wave};
     //   右移量 = `DISP_WAVE_SH（18 -> 满量程 31；17 -> 63）
-    wire [5:0]  wraw = wabs[23:`DISP_WAVE_SH];       // 0..63
-    wire [5:0]  wclamp = (wraw > WAVE_AMP[5:0]) ? WAVE_AMP[5:0] : wraw;
+    // ⚠️ 位宽必须够！SH=17 时取 wabs[23:17] 是【7 位】(0..127)
+    //    原来写成 wire [5:0] ⟹ 只留低 6 位 ⟹ 幅度被截掉一半 ✓
+    //    这就是"WAVE_AMP 从 40 改到 80 但幅度反而变小/没变大"的原因
+    wire [6:0]  wraw = wabs[23:`DISP_WAVE_SH];       // SH=17 -> 0..127
+    wire [6:0]  wclamp = (wraw > WAVE_AMP[6:0]) ? WAVE_AMP[6:0] : wraw;
 
     // × pres_wav/128（右移 7 位）—— 切换波形视图时振幅平滑地长出来
-    wire [12:0] wamp_s = wclamp * pres_wav;          // 6+8 = 14? 实际最大 22*128=2816
-    wire [5:0]  wamp   = wamp_s[12:7];               // /128
+    wire [14:0] wamp_s = wclamp * pres_wav;          // 7+8 = 15 位，最大 127*128=16256
+    wire [7:0]  wamp   = wamp_s[14:7];               // /128 ⟹ 0..127
 
     wire [YW-1:0] wamp_y = wamp;                     // 零扩展到位宽
 
