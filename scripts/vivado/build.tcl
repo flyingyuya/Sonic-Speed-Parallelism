@@ -106,6 +106,50 @@ if {$XDC ne ""} {
 # 头文件搜索路径（rtl/video/disp_cfg.vh 等）
 set_property include_dirs [list [file join $ROOT rtl video] [file join $ROOT rtl common] [file join $ROOT rtl wm8960]] [current_fileset]
 
+#-----------------------------------------------------------------------------
+# 综合警告抑制：Synth 8-7129（Port ... has no load）
+#
+# 【为什么可以抑制 —— 逐条判据】
+#   8-7129 的含义是"这个端口/它的某些位没有负载"。本工程触发它的情形全部是：
+#
+#   ① 参数化模块的【高位地址】超出实际使用范围
+#        bg_src.x[9:5]  —— 网格只需 x[4:0]（GRID=32），渐变只用 y
+#        bg_src.y[9]    —— 360 行只需 y[8:0]
+#        text_buf.waddr[9:8]、wave_buf.x[9] —— 地址空间开得比用的大
+#      ⟹ 端口位宽是按"最大分辨率"预留的，小分辨率下高位天然无负载。
+#        **这是参数化的正常副产品，不是缺陷。**
+#
+#   ② 配置信号的未使用位
+#        cmd_proc.cfg_auto[0] —— 该功能位当前未接
+#      ⟹ 预留位，功能和寄存器定义其它位一致。
+#
+#   ⚠️ 前提若变化（例如以后让 bg_src 用上 x[9:5] 做归一化），
+#      这条抑制会【同时掩盖】真正的"接了线但没人用"的 bug。
+#      ⟹ 届时请删除本抑制，重新检查。
+#
+#   对比：REQP-1839（BRAM 控制脚带异步复位）是【真缺陷】，
+#        已在 sd_img_load 里改设计修掉（wr2_en/wr2_addr 移出异步复位块），
+#        没有豁免。
+#-----------------------------------------------------------------------------
+#   ⚠️ -suppress 和 -limit 互斥，不能同时给
+set_msg_config -id {Synth 8-7129} -suppress
+
+#-----------------------------------------------------------------------------
+# Route 35-328 "Router estimated timing not met" —— 保守估计的假报警
+#
+# 【判据】这条是布线器的【估计】值。本工程 route_design 完成后，
+#   post_route_timing.rpt 里所有时钟组的 WNS 全部为正：
+#       clk_sys   +1.779 ns
+#       clk_hdmi  +4.028 ns
+#       clk_pix   （远大于 0）
+#   ⟹ 实际时序满足 ⟹ 该估计未命中不影响正确性。
+#
+# 【怎么自动复核】不要只看这条警告，直接看报告：
+#       grep -A5 "^Clock.*WNS" build/vivado/post_route_timing.rpt
+#   若出现负 WNS ⟹ 删掉这条抑制，那条才是真问题。
+#-----------------------------------------------------------------------------
+set_msg_config -id {Route 35-328} -suppress
+
 synth_design -top $TOP -part $PART -flatten_hierarchy none
 write_checkpoint -force [file join $OUT post_synth.dcp]
 report_utilization    -file [file join $OUT post_synth_util.rpt]

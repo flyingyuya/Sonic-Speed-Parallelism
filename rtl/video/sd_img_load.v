@@ -96,19 +96,23 @@ module sd_img_load #(
             pix_cnt  <= 19'd0;
             x_cnt    <= 16'd0;
             y_cnt    <= 16'd0;
-            wr2_en   <= 1'b0;
-            wr2_addr <= 19'd0;
+            // ⚠️ wr2_en / wr2_addr 同样【不能带异步复位】：
+            //    它们驱动 BRAM 的 ENARDEN / ADDRARDADDR ⟹ DRC REQP-1839
+            //    （漏了这条 ⟹ 合成报 40 条 REQP-1839 警告）
         end else begin
-            wr_en <= 1'b0;          // 默认单拍
+            wr_en  <= 1'b0;         // 默认单拍
+            wr2_en <= 1'b0;         // 同理：使能必须每拍给值，不能"保持"
 
             if (start) begin
                 hi_lo   <= 1'b0;
                 lo_byte <= 8'd0;
                 done    <= 1'b0;
                 pix_cnt <= 19'd0;
-                wr_addr <= 19'd0;
-                x_cnt   <= 16'd0;
-                y_cnt   <= 16'd0;
+                wr_addr  <= 19'd0;
+                x_cnt    <= 16'd0;
+                y_cnt    <= 16'd0;
+                wr2_en   <= 1'b0;
+                wr2_addr <= 19'd0;
             end else if (byte_valid && !done) begin
                 // ⚠️ 必须加 !done：写满之后 pix_cnt 停住了，但 byte_valid 还会来
                 //    （SD 卡一次读的是整块 512 扇区 = 262144 字节，比一帧的
