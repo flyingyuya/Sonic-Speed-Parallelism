@@ -48,6 +48,10 @@ module disp_top #(
     //   用参数门控而不是删代码 ⟹ 两个实例可以共用一个模块 ✗ 零 fork ✓
     // 显示用多少根柱（HDMI 那路传 80 ✗ 640/80 = 8 整除 ✗ 柱宽仍然 8px ✓）
     //   ⚠️ 但数据只有 60 根 ⟹ 用 (dbar*60)/80 映射（3/4 缩放 ✗ 会有 2~3 根共用同一数据）
+    // 波形缓冲的地址位宽（bank 深度 = 2^(WAVE_AW-1)）
+    //   LCD : HDISP=480 ⟹ 需要 >=512 ⟹ AW=10 ✓
+    //   HDMI: HDISP=640 ⟹ 需要 >=1024 ⟹ AW=11 ✓（原来也是 10 ⟹ 越界 ⟹ 波形中间不动 ✓）
+    parameter integer WAVE_AW    = 10,
     parameter integer NBARS_DISP = 60,
     parameter integer WITH_UI    = 1,
     parameter integer WITH_TEXT  = 1,
@@ -562,7 +566,7 @@ module disp_top #(
     //     2 ⟹ 25 屏/秒   ← 当前：够流畅，也不重叠 ✓
     //     3 ⟹ 12.5 屏/秒 不重叠但明显卡顿
     //   想让波形"再看清一点"就往 3 调 ✗ 想更顺就往 1 调
-    wave_buf #(.DW(24), .AW(10), .SPAN(HDISP), .XW(XW), .ADAPT(1),
+    wave_buf #(.DW(24), .AW(WAVE_AW), .SPAN(HDISP), .XW(XW), .ADAPT(1),
                .HOLD_SHIFT(2)) u_wave (
         .wclk   (clk_sys),
         .wrst_n (rst_sys_n),
