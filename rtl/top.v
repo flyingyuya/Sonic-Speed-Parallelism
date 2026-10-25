@@ -561,7 +561,11 @@ module top #(
     //   而它们的原声明在后面的 SD 段里 ⟹ Vivado 会按 1 位隐式声明，
     //   然后报一串 [Synth 8-992] "already implicitly declared earlier"。
     //   这次一次踩了 3 个（fb_rd_data / fb_rd_addr / sd_rd_count）。
-    wire [15:0] fb_rd_data;             // 帧缓冲读出的 RGB565
+    wire [15:0] fb_rd_data;
+    wire [18:0] fb_rd_addr_hdmi;
+    wire [15:0] fb_rd_data_hdmi;
+    wire        load_wr2_en;
+    wire [18:0] load_wr2_addr;             // 帧缓冲读出的 RGB565
     wire [18:0] fb_rd_addr;             // 帧缓冲读地址（由 disp_top 产生）
     reg  [15:0] sd_rd_count;            // 本轮已读到的字节数
     wire [18:0] load_pix_cnt;           // 已搬进帧缓冲的像素数（sd_img_load）
@@ -1165,7 +1169,9 @@ module top #(
             load_start <= img_changed;     // img_changed 是 1 拍脉冲
     end
 
-    sd_img_load #(.W(320), .H(180)) u_img_load (
+    // 写第一份（480x272 全图）+ 第二份（裁剪 320x180）
+    sd_img_load #(.W(480), .H(272),
+                  .EN_CROP(1), .CX(80), .CY(46), .CW(320), .CH(180)) u_img_load (
         .clk        (clk_sys),
         .rst_n      (rst_sys_n),
         .start      (load_start),
@@ -1174,6 +1180,8 @@ module top #(
         .wr_en      (load_wr_en),
         .wr_addr    (load_wr_addr),
         .wr_data    (load_wr_data),
+        .wr2_en     (load_wr2_en),
+        .wr2_addr   (load_wr2_addr),
         .done       (load_done),
         .pix_cnt    (load_pix_cnt)
     );
@@ -1181,7 +1189,12 @@ module top #(
     // 帧缓冲：写口在这里，读口留给显示端（下一步接）
 
 
-    frame_buf #(.W(320), .H(180)) u_fb (
+    //-------------------------------------------------------------------------
+    // 两份帧缓冲：尺寸不同 ⟹ 各自"1 写 1 读" ⟹ 可靠推断成 BRAM
+    //   LCD  那份 480x272（完整图）✗ HDMI 那份 320x180（中心裁剪 ✗ 写侧过滤）
+    //   （"1 写 2 读跨时钟"会被 Vivado 退化成 LUTRAM ⟹ LUT 爆掉）
+    //-------------------------------------------------------------------------
+    frame_buf #(.W(480), .H(272)) u_fb_lcd (
         .wr_clk  (clk_sys),
         .wr_en   (load_wr_en),
         .wr_addr (load_wr_addr),
@@ -1189,6 +1202,16 @@ module top #(
         .rd_clk  (clk_pix),
         .rd_addr (fb_rd_addr),
         .rd_data (fb_rd_data)
+    );
+
+    frame_buf #(.W(320), .H(180)) u_fb_hdmi (
+        .wr_clk  (clk_sys),
+        .wr_en   (load_wr2_en),
+        .wr_addr (load_wr2_addr),
+        .wr_data (load_wr_data),
+        .rd_clk  (clk_hdmi),
+        .rd_addr (fb_rd_addr_hdmi),
+        .rd_data (fb_rd_data_hdmi)
     );
 
     assign led[0] = init_done;          // 常亮 = WM8960 配置完成
@@ -1322,8 +1345,9 @@ module top #(
     disp_top #(
         .WITH_UI(0), .WITH_TEXT(0),
         // HDMI：图片 2 倍放大满屏（320x180 -> 640x360）
+        // HDMI：读裁剪后的 320x180 缓冲，2 倍放大满屏
         .FB_SW(320), .FB_SH(180), .FB_W(640), .FB_H(360),
-        .FB_X0(0), .FB_Y0(0), .SHIFT(1),
+        .FB_X0(0), .FB_Y0(0), .SHIFT(1), .FB_CX(0), .FB_CY(0),
         .NBARS_DISP(80),        // 640 / 80 = 8 px/柱 ✗ 铺满全宽 ✗ 恒等映射 ✓
         .WAVE_AW(11),           // 640 采样需要 >=1024 的 bank（原来 10 ⟹ 越界）
         .ANIM_STEP  (ANIM_STEP),
@@ -1401,9 +1425,9 @@ module top #(
         //   原来直接写 sel_idx ⟹ 又一条跨域路径（实测报 -3.134ns 违例）。
         .dbg_adc    ({20'd0, ui_sel_hdmi}),
         .dbg_sd_bytes (sd_dbg_q),
-        .cfg_bg_src (ui_bg_src & load_done),   // HDMI 也用 SD 图片（帧缓冲读口给 LCD）
-        .fb_rgb     (16'd0),
-        .fb_addr    (),
+        .cfg_bg_src (ui_bg_src & load_done),   // HDMI 也用 SD 图片
+        .fb_rgb     (fb_rd_data_hdmi),         // 读裁剪后的 320x180 缓冲
+        .fb_addr    (fb_rd_addr_hdmi),
         .wave_we    (wave_we_sel),
         .lcd_rgb    (hdmi_rgb),
         .lcd_hs     (hdmi_hs),

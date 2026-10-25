@@ -35,6 +35,8 @@ module tb_sd_img_load;
     wire       wr_en;
     wire [18:0] wr_addr;
     wire [15:0] wr_data;
+    wire        wr2_en;
+    wire [18:0] wr2_addr;
     wire       done;
     wire [18:0] pix_cnt;
 

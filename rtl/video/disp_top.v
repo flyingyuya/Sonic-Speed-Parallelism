@@ -72,6 +72,10 @@ module disp_top #(
     parameter integer FB_X0      = 0,
     parameter integer FB_Y0      = 0,
     parameter integer SHIFT      = 0,
+    // 裁剪偏移（存储坐标）：读到缓冲的哪个位置开始（一般 0；
+    //   若缓冲本身就是裁剪过的（如 HDMI 的 320x180 缓冲）则为 0）
+    parameter integer FB_CX      = 0,
+    parameter integer FB_CY      = 0,
     parameter integer WAVE_AW    = 10,
     parameter integer NBARS_DISP = 60,
     parameter integer WITH_UI    = 1,
@@ -557,8 +561,9 @@ module disp_top #(
     wire [YW-1:0] fb_ly = fb_in_y ? (y - FB_Y0_U) : {YW{1'b0}};
 
     // 放大：显示坐标 >> SHIFT 得到存储坐标（2 倍放大 ⟹ 右移 1 位，零算术）
-    wire [XW-1:0] fb_sx = fb_lx >> SHIFT;
-    wire [YW-1:0] fb_sy = fb_ly >> SHIFT;
+    // 先缩放（右移 SHIFT）再平移裁剪偏移（FB_CX/FB_CY）
+    wire [XW-1:0] fb_sx = (fb_lx >> SHIFT) + FB_CX[XW-1:0];
+    wire [YW-1:0] fb_sy = (fb_ly >> SHIFT) + FB_CY[YW-1:0];
 
     // +1 是"提前一个像素"的预取（BRAM 有 1 拍延迟）
     assign fb_addr = (fb_sy * FB_SW_U) + fb_sx + 19'd1;
