@@ -1248,9 +1248,38 @@ module top #(
     wire [23:0] hdmi_rgb;
     wire        hdmi_hs, hdmi_vs, hdmi_de;
 
+    //-------------------------------------------------------------------------
+    // HDMI 域的复位：比 sys 域【晚释放】一段
+    //-----------------------------------------------------------------------------
+    //   为什么需要延迟：
+    //     wave_buf / spec_sync 的两侧分别在 clk_sys 和 clk_hdmi 域，
+    //     靠 done_tog / wr_tog 这类单比特翻转信号跨域。
+    //     如果两个域【几乎同时】退出复位，写侧可能先开始填 bank，
+    //     而读侧的同步器还在复位态 ⟹ bank 指针永久错位
+    //     ⟹ 画面半屏撕裂（实测：按复位键有时坏、有时好 ✓ 典型的复位竞争）
+    //   ⟹ 让 HDMI 域多等 256 个 clk_hdmi 周期（约 10 us）再释放复位 ✓
+    //-------------------------------------------------------------------------
+    reg [7:0] rst_hdmi_cnt;
+    reg       rst_hdmi_done;
+
+    always @(posedge clk_hdmi or negedge rst_sys_n) begin
+        if (!rst_sys_n) begin
+            rst_hdmi_cnt  <= 8'd0;
+            rst_hdmi_done <= 1'b0;
+        end else if (!rst_hdmi_done) begin
+            if (rst_hdmi_cnt == 8'hFF)
+                rst_hdmi_done <= 1'b1;
+            else
+                rst_hdmi_cnt <= rst_hdmi_cnt + 8'd1;
+        end
+    end
+
+    // 先用 rst_sys_n 把异步复位拉低 ✗ 再由 rst_hdmi_done 决定何时释放
+    wire rst_hdmi_pre = rst_sys_n & rst_hdmi_done;
+
     rst_sync u_rst_hdmi (
         .clk         (clk_hdmi),
-        .rst_async_n (rst_sys_n),
+        .rst_async_n (rst_hdmi_pre),
         .rst_n       (rst_hdmi_n)
     );
 
