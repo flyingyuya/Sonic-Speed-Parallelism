@@ -873,8 +873,9 @@ module top #(
     //=========================================================================
     // LCD：图片 1:1 居中（320x180 在 480x272 正中 ⟹ 偏移 (480-320)/2=80, (272-180)/2=46）
     disp_top #(.ANIM_STEP(ANIM_STEP),
-               .FB_SW(320), .FB_SH(180), .FB_W(320), .FB_H(180),
-               .FB_X0(80), .FB_Y0(46), .SHIFT(0)) u_disp (
+               // LCD：读 480x272 完整缓冲，1:1 满屏（无偏移、不缩放、不裁剪）
+               .FB_SW(480), .FB_SH(272), .FB_W(480), .FB_H(272),
+               .FB_X0(0), .FB_Y0(0), .SHIFT(0), .FB_CX(0), .FB_CY(0)) u_disp (
         .panel_tog  (panel_tog),            // KEY1 双击 -> 面板开/关
         .panel_open (panel_open_pix),       // 面板是否展开 -> 回 clk_sys 约束按键
         .key_act    (key_act_tog),          // 按键活动 -> 重置空闲计时
