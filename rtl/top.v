@@ -379,6 +379,28 @@ module top #(
         .frame_done (spec_frame_done)
     );
 
+    //-------------------------------------------------------------------------
+    // 第二个 spectrum：给 HDMI 大屏单独输出 80 根柱
+    //   为什么：HDMI 屏宽 640 ✗ 640/80 = 8 px/柱 ⟹ 正好整除 ✓
+    //   如果沿用 60 根数据铺到 80 根显示柱 ✗ 会有 2~3 根共用同一数据
+    //   ⟹ 视觉上"4 根一组变化"✗ 不自然 ✓
+    //   两个实例都吃同一个 FFT 输出 ⟹ 只是分频段的粒度不同 ✓ 代价很小
+    //-------------------------------------------------------------------------
+    wire [719:0] spec_bars80;           // 80 根 x 9 bit
+    wire         spec_frame_done80;
+
+    spectrum #(
+        .NBARS(80), .DW(25), .HW(9), .DECAY(6), .DB_OFFS(56), .SCALE_SH(3)
+    ) u_spec80 (
+        .clk        (clk_sys),
+        .rst_n      (aud_rst_n),
+        .in_valid   (fft_valid),
+        .in_index   (fft_index),
+        .in_mag     (fft_mag),
+        .bar_flat   (spec_bars80),
+        .frame_done (spec_frame_done80)
+    );
+
     //=========================================================================
     // 6. UI 控制（扩展点 ②：按键 / 触摸 / UART 都写同一组寄存器）
     //    现在只接了按键；以后接 UART 或触摸屏时，再挂一个上游写同一个端口即可。
@@ -1292,14 +1314,14 @@ module top #(
         .V_BACK     (152),
         .NBARS      (60),
         // 布局按 480x272 横向 x1.33、纵向 x(360/272)=1.32 重算
-        .BARS_Y0    (130),              // 上半留给波形
-        .BARS_H     (230),              // 130..360 铺满，无底部留白
+        .BARS_Y0    (15),
+        .BARS_H     (340),              // 15..355 铺满，无底部留白
         .BAR_GAP    (2),
         .POL_CX     (320),
         .POL_CY     (78),
         .POL_RIN    (16),
         .POL_RMAX   (62),
-        .WAVE_CY    (68),               // 波形中心（上方区域）
+        .WAVE_CY    (180),              // 和 LCD 一样放在中间
         .WAVE_AMP   (60),               // 和 LCD 的 80 相当（屏更高）
         .UI_BY0     (312),              // 360 - 48
         .UI_BW      (88),               // 7x88 + 6x2 = 628 <= 640 ✓
@@ -1318,8 +1340,8 @@ module top #(
         .ui_btn_press(),
         .clk_sys    (clk_sys),
         .rst_sys_n  (rst_sys_n),
-        .spec_wr    (spec_wr_sel),
-        .spec_din   (spec_bars_sel),
+        .spec_wr    (demo_on ? demo_wr : spec_frame_done80),   // HDMI：80 根那路
+        .spec_din   (demo_on ? demo_bars : spec_bars80),
         .clk_pix    (clk_hdmi),
         .rst_pix_n  (rst_hdmi_n),
         .ui_mode    (ui_bg_mode[3:0]),
