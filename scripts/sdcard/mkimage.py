@@ -52,7 +52,12 @@ IMG_SECTOR_BASE = 2048          # 必须与 rtl/top.v 的 IMG_SECTOR_BASE 一致
 IMG_SECTORS     = 512           # 每张图占 512 扇区 = 256 KB
 IMG_BYTES       = IMG_SECTORS * SECTOR_SIZE
 
-LCD_W, LCD_H    = 480, 272      # 和 LCD 分辨率一致
+# 存储尺寸 = 320×180 @ RGB565（全彩 ✗ 无色带）
+#   LCD  ⟹ 1:1 居中（480×272 里放 320×180，偏移 80,46）
+#   HDMI ⟹ 2 倍放大满屏（320×180 -> 640×360）
+#   为什么不是 640×360：640×360×16 要 103 块 BRAM ⟹ 98% ⟹ 时序崩
+#   为什么不用 8 位色：256 色在渐变图上色带太明显 ⟹ 降分辨率比降色深观感好
+LCD_W, LCD_H    = 320, 180
 
 
 def rgb888_to_565(r, g, b):

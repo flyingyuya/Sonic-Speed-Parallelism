@@ -51,6 +51,27 @@ module disp_top #(
     // 波形缓冲的地址位宽（bank 深度 = 2^(WAVE_AW-1)）
     //   LCD : HDISP=480 ⟹ 需要 >=512 ⟹ AW=10 ✓
     //   HDMI: HDISP=640 ⟹ 需要 >=1024 ⟹ AW=11 ✓（原来也是 10 ⟹ 越界 ⟹ 波形中间不动 ✓）
+    //-------------------------------------------------------------------------
+    // SD 图片帧缓冲：320x180 @ RGB565（全彩 ✗ 无色带）
+    //   FB_SW/FB_SH = 存储尺寸（帧缓冲里真实有多少像素）
+    //   FB_W /FB_H  = 显示尺寸（放大后占多少屏像素）
+    //   SHIFT       = 放大倍数 log2：0=1:1，1=2 倍，2=4 倍
+    //   FB_X0/FB_Y0 = 图片在屏幕上的左上角
+    //
+    //   LCD （480x272）⟹ 1:1 居中：FB_W=320 FB_H=180 FB_X0=80 FB_Y0=46 SHIFT=0
+    //   HDMI（640x360）⟹ 2 倍满屏：FB_W=640 FB_H=360 FB_X0=0  FB_Y0=0  SHIFT=1
+    //
+    //   ⚠️ 为什么是 320x180：640x360x16 要 103 块 BRAM ⟹ 98% ⟹ 时序崩
+    //      320x180x16 只要 26 块 ✓ 而 2 倍放大只是"地址右移 1 位"⟹ 零成本
+    //      降分辨率（略糊）比降色深（色带）对图片观感伤害小得多
+    //-------------------------------------------------------------------------
+    parameter integer FB_SW      = 320,
+    parameter integer FB_SH      = 180,
+    parameter integer FB_W       = 320,
+    parameter integer FB_H       = 180,
+    parameter integer FB_X0      = 0,
+    parameter integer FB_Y0      = 0,
+    parameter integer SHIFT      = 0,
     parameter integer WAVE_AW    = 10,
     parameter integer NBARS_DISP = 60,
     parameter integer WITH_UI    = 1,
@@ -521,9 +542,28 @@ module disp_top #(
                              fb_rgb[15:11],3'b000};  // R5 -> 低 8 位
 
     // 读地址：y*HDISP + (x+1)，位宽写死 19 位避免混用
-    assign fb_addr = ({14'd0, y} * HDISP) + {14'd0, x} + 19'd1;
+    //-------------------------------------------------------------------------
+    // 图片区域判定（区域外回落到程序化背景）
+    //-------------------------------------------------------------------------
+    localparam [18:0] FB_SW_U   = FB_SW;
+    localparam [XW-1:0] FB_X0_U = FB_X0;
+    localparam [YW-1:0] FB_Y0_U = FB_Y0;
 
-    wire [23:0] bg_rgb_sel = cfg_bg_src ? fb_rgb888 : bg_rgb;
+    wire fb_in_x   = (x >= FB_X0_U) && (x < (FB_X0_U + FB_W[XW-1:0]));
+    wire fb_in_y   = (y >= FB_Y0_U) && (y < (FB_Y0_U + FB_H[YW-1:0]));
+    wire fb_inside = fb_in_x && fb_in_y;
+
+    wire [XW-1:0] fb_lx = fb_in_x ? (x - FB_X0_U) : {XW{1'b0}};
+    wire [YW-1:0] fb_ly = fb_in_y ? (y - FB_Y0_U) : {YW{1'b0}};
+
+    // 放大：显示坐标 >> SHIFT 得到存储坐标（2 倍放大 ⟹ 右移 1 位，零算术）
+    wire [XW-1:0] fb_sx = fb_lx >> SHIFT;
+    wire [YW-1:0] fb_sy = fb_ly >> SHIFT;
+
+    // +1 是"提前一个像素"的预取（BRAM 有 1 拍延迟）
+    assign fb_addr = (fb_sy * FB_SW_U) + fb_sx + 19'd1;
+
+    wire [23:0] bg_rgb_sel = (cfg_bg_src && fb_inside) ? fb_rgb888 : bg_rgb;
 
     bg_src #(.HDISP(HDISP), .VDISP(VDISP), .XW(XW), .YW(YW)) u_bg (
         .x    (x),

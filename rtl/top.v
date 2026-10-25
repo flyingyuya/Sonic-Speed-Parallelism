@@ -867,7 +867,10 @@ module top #(
     //=========================================================================
     // 7. 显示（含跨时钟域快照）
     //=========================================================================
-    disp_top #(.ANIM_STEP(ANIM_STEP)) u_disp (
+    // LCD：图片 1:1 居中（320x180 在 480x272 正中 ⟹ 偏移 (480-320)/2=80, (272-180)/2=46）
+    disp_top #(.ANIM_STEP(ANIM_STEP),
+               .FB_SW(320), .FB_SH(180), .FB_W(320), .FB_H(180),
+               .FB_X0(80), .FB_Y0(46), .SHIFT(0)) u_disp (
         .panel_tog  (panel_tog),            // KEY1 双击 -> 面板开/关
         .panel_open (panel_open_pix),       // 面板是否展开 -> 回 clk_sys 约束按键
         .key_act    (key_act_tog),          // 按键活动 -> 重置空闲计时
@@ -1162,7 +1165,7 @@ module top #(
             load_start <= img_changed;     // img_changed 是 1 拍脉冲
     end
 
-    sd_img_load #(.W(480), .H(272)) u_img_load (
+    sd_img_load #(.W(320), .H(180)) u_img_load (
         .clk        (clk_sys),
         .rst_n      (rst_sys_n),
         .start      (load_start),
@@ -1178,7 +1181,7 @@ module top #(
     // 帧缓冲：写口在这里，读口留给显示端（下一步接）
 
 
-    frame_buf #(.W(480), .H(272)) u_fb (
+    frame_buf #(.W(320), .H(180)) u_fb (
         .wr_clk  (clk_sys),
         .wr_en   (load_wr_en),
         .wr_addr (load_wr_addr),
@@ -1318,6 +1321,9 @@ module top #(
     // HDMI 大屏：不画 UI 面板、不画状态栏 ✗ 只要柱谱+波形+背景
     disp_top #(
         .WITH_UI(0), .WITH_TEXT(0),
+        // HDMI：图片 2 倍放大满屏（320x180 -> 640x360）
+        .FB_SW(320), .FB_SH(180), .FB_W(640), .FB_H(360),
+        .FB_X0(0), .FB_Y0(0), .SHIFT(1),
         .NBARS_DISP(80),        // 640 / 80 = 8 px/柱 ✗ 铺满全宽 ✗ 恒等映射 ✓
         .WAVE_AW(11),           // 640 采样需要 >=1024 的 bank（原来 10 ⟹ 越界）
         .ANIM_STEP  (ANIM_STEP),
@@ -1395,7 +1401,7 @@ module top #(
         //   原来直接写 sel_idx ⟹ 又一条跨域路径（实测报 -3.134ns 违例）。
         .dbg_adc    ({20'd0, ui_sel_hdmi}),
         .dbg_sd_bytes (sd_dbg_q),
-        .cfg_bg_src (1'b0),             // HDMI：暂用程序化背景（帧缓冲读口给 LCD）
+        .cfg_bg_src (ui_bg_src & load_done),   // HDMI 也用 SD 图片（帧缓冲读口给 LCD）
         .fb_rgb     (16'd0),
         .fb_addr    (),
         .wave_we    (wave_we_sel),
