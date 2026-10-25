@@ -1264,7 +1264,9 @@ module top #(
         .din(key_act_tog), .dout(key_act_hdmi)
     );
 
+    // HDMI 大屏：不画 UI 面板、不画状态栏 ✗ 只要柱谱+波形+背景
     disp_top #(
+        .WITH_UI(0), .WITH_TEXT(0),
         .ANIM_STEP  (ANIM_STEP),
         //-------------------------------------------------------------------------
         // 大屏布局：640x360@60（16:9）。

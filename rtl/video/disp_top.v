@@ -42,6 +42,13 @@ module disp_top #(
     parameter integer POL_CY     = `DISP_POL_CY,
     parameter integer POL_RIN    = `DISP_POL_RIN,
     parameter integer POL_RMAX   = `DISP_POL_RMAX,
+    // 是否绘制 UI 面板 / 状态栏
+    //   1 = 画（LCD 那条用 ✗ 保留全部交互）
+    //   0 = 不画（HDMI 大屏用 ✗ 只要柱谱+波形+背景 ✗ 画面更干净）
+    //   用参数门控而不是删代码 ⟹ 两个实例可以共用一个模块 ✗ 零 fork ✓
+    parameter integer WITH_UI    = 1,
+    parameter integer WITH_TEXT  = 1,
+
     parameter integer WAVE_CY    = `DISP_WAVE_CY,
     parameter integer WAVE_AMP   = `DISP_WAVE_AMP,
     parameter integer WAVE_TH    = `DISP_WAVE_TH,
@@ -826,9 +833,11 @@ module disp_top #(
         .pres_bar(pres_bar),
         .pres_pol(pres_pol),
         .pres_wav(pres_wav),
-        .text_hit(text_hit),
-        .text_lit(text_lit),
-        .ui_draw (ui_draw),
+        // WITH_TEXT=0 ⟹ 不把状态行的命中/点亮传给混色器（等于不画）
+        .text_hit(WITH_TEXT ? text_hit : 1'b0),
+        .text_lit(WITH_TEXT ? text_lit : 1'b0),
+        // WITH_UI=0 ⟹ 不画面板
+        .ui_draw (WITH_UI ? ui_draw : 1'b0),
         .ui_rgb  (ui_rgb),
         .rgb     (rgb_in)
     );
