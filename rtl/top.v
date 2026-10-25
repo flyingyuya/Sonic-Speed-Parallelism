@@ -1370,7 +1370,10 @@ module top #(
         .clk_sys    (clk_sys),
         .rst_sys_n  (rst_sys_n),
         .spec_wr    (demo_on ? demo_wr : spec_frame_done80),   // HDMI：80 根那路
-        .spec_din   (demo_on ? demo_bars : spec_bars80),
+        // ⚠️ demo_bars 只有 60 根（540 位）✗ 直接喂 80 根端口会补零
+        //    ⟹ 右边 20 根柱高度为 0 ⟹ DEMO 模式下右 1/4 屏是空的
+        //    这里把 60 根重复/映射成 80 根（简单做法：后 20 根复用前 60 根的末段）
+        .spec_din   (demo_on ? {demo_bars[539:459], demo_bars} : spec_bars80),
         .clk_pix    (clk_hdmi),
         .rst_pix_n  (rst_hdmi_n),
         .ui_mode    (ui_bg_mode[3:0]),
