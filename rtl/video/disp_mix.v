@@ -51,6 +51,12 @@ module disp_mix #(
     //   这里把移位量提出来，至少让当前这套能参数化。
     //-------------------------------------------------------------------------
     parameter integer BAR_SH   = 3,
+    // 显示用多少根柱（决定每根柱占多少像素）
+    //   LCD  : 480 / 60 = 8  ⟹ BAR_SH=3 ✗ NBARS_DISP == NBARS ⟹ 走【恒等分支】
+    //   HDMI : 640 / 60 = 10.67 ⟹ 不整除 ✗ 用乘法映射（g_scale 分支）
+    //   ⚠️ 用 generate 分两支的目的：LCD 那路【一个除法都不经过】✗ 逐位不变 ✓
+    //      （上次我把公共路径改成乘法 ✗ 把 LCD 改坏了 ✗ 已回退过 ✓）
+    parameter integer NBARS_DISP = 60,
 
     // ---- 柱状频谱区 ----
     //   BARS_H 原来是 VDISP-BARS_Y0 推导的（96）。现在显式给：
@@ -121,7 +127,24 @@ module disp_mix #(
     //=========================================================================
     // 1. 柱状频谱
     //=========================================================================
-    wire [AW-1:0] bbar = x[BAR_SH+AW-1 : BAR_SH];    // 每根柱 2^BAR_SH 像素
+    //-------------------------------------------------------------------------
+    // 柱号：把屏幕列 x 映射到"第几根柱"
+    //   LCD（NBARS_DISP == NBARS）⟹ 恒等：x[8:3] 直接就是柱号（480 = 8×60 ✓）
+    //   HDMI（不整除）        ⟹ (x * NBARS) / NBARS_DISP（常数除法 ⟹ 乘法+移位）
+    //-------------------------------------------------------------------------
+    localparam integer AW_D = $clog2(NBARS_DISP);
+    wire [AW_D-1:0] dbar = x[BAR_SH+AW_D-1 : BAR_SH];
+
+    wire [AW-1:0] bbar;
+    generate
+        if (NBARS_DISP == NBARS) begin : g_ident
+            // LCD 路径：结构上就是一根线 ✗ 综合器看不到任何算术 ✓
+            assign bbar = dbar[AW-1:0];
+        end else begin : g_scale
+            // HDMI 路径：60 根数据柱铺到 NBARS_DISP 根显示柱上
+            assign bbar = (dbar * NBARS) / NBARS_DISP;
+        end
+    endgenerate
     wire [HW-1:0] bbh  = bars[bbar*HW +: HW];
 
     // 柱高 × pres_bar/128（右移 7 位，零成本）—— 切换视图时柱子在“长/缩”

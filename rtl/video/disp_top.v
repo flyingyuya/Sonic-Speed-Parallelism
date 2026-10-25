@@ -46,6 +46,9 @@ module disp_top #(
     //   1 = 画（LCD 那条用 ✗ 保留全部交互）
     //   0 = 不画（HDMI 大屏用 ✗ 只要柱谱+波形+背景 ✗ 画面更干净）
     //   用参数门控而不是删代码 ⟹ 两个实例可以共用一个模块 ✗ 零 fork ✓
+    // 显示用多少根柱（HDMI 那路传 80 ✗ 640/80 = 8 整除 ✗ 柱宽仍然 8px ✓）
+    //   ⚠️ 但数据只有 60 根 ⟹ 用 (dbar*60)/80 映射（3/4 缩放 ✗ 会有 2~3 根共用同一数据）
+    parameter integer NBARS_DISP = 60,
     parameter integer WITH_UI    = 1,
     parameter integer WITH_TEXT  = 1,
 
@@ -816,7 +819,8 @@ module disp_top #(
     // 7. 混合
     //=========================================================================
     disp_mix #(
-        .HDISP(HDISP), .VDISP(VDISP), .NBARS(NBARS), .HW(HW),
+        .HDISP(HDISP), .VDISP(VDISP), .NBARS(NBARS),
+        .NBARS_DISP(NBARS_DISP), .HW(HW),
         .XW(XW), .YW(YW),
         .BARS_Y0(BARS_Y0), .BARS_H(BARS_H), .BAR_GAP(BAR_GAP),
         .POL_CX(POL_CX), .POL_CY(POL_CY), .POL_RIN(POL_RIN), .POL_RMAX(POL_RMAX),
