@@ -1259,23 +1259,18 @@ module top #(
     //     ⟹ 画面半屏撕裂（实测：按复位键有时坏、有时好 ✓ 典型的复位竞争）
     //   ⟹ 让 HDMI 域多等 256 个 clk_hdmi 周期（约 10 us）再释放复位 ✓
     //-------------------------------------------------------------------------
-    // ⚠️ 计数器从 8 位改成 16 位：延迟从 10 us 变成 2.6 ms
-    //   实测：复位后 HDMI 右半屏撕裂（DEMO 模式也坏 ⟹ TMDS 层问题）
-    //   怀疑 OSERDESE2 复位释放后的前若干周期输出不确定，
-    //   而扫描紧接着开始 ⟹ 前半帧正常、后半帧乱 ✓
-    //   ⟹ 让 HDMI 域晚 2.6 ms 释放（覆盖整整一帧）✗ 视觉上察觉不到
-    reg [15:0] rst_hdmi_cnt;
-    reg        rst_hdmi_done;
+    reg [7:0] rst_hdmi_cnt;
+    reg       rst_hdmi_done;
 
     always @(posedge clk_hdmi or negedge rst_sys_n) begin
         if (!rst_sys_n) begin
-            rst_hdmi_cnt  <= 16'd0;
+            rst_hdmi_cnt  <= 8'd0;
             rst_hdmi_done <= 1'b0;
         end else if (!rst_hdmi_done) begin
-            if (rst_hdmi_cnt == 16'hFFFF)      // 65535 / 25MHz ≈ 2.6 ms
+            if (rst_hdmi_cnt == 8'hFF)
                 rst_hdmi_done <= 1'b1;
             else
-                rst_hdmi_cnt <= rst_hdmi_cnt + 16'd1;
+                rst_hdmi_cnt <= rst_hdmi_cnt + 8'd1;
         end
     end
 
