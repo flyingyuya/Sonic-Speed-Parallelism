@@ -26,6 +26,9 @@ gen_spectrum_map.py —— 生成频谱柱的「bin 分组表」
 import os, sys, math
 
 NBARS   = 60      # 柱数。与屏幕宽度的关系见下：
+#   ⚠️ 可以用 --nbars N 覆盖（LCD 用 60 ✗ HDMI 大屏用 80）
+#      60 根：480/60 = 8 px/柱 ✓
+#      80 根：640/80 = 8 px/柱 ✓（HDMI 640 宽）
                   #   480 px / 60 根 = 每根正好 8 px -> bar_idx = x[8:3]，零运算
                   #   原则：柱数要能让 480/N 落成 2 的幂，否则算下标要做除法。
 NLINEAR = 16      # 低频线性段的柱数（柱 0..NLINEAR-1 各覆盖 1 个 bin）
@@ -37,6 +40,12 @@ FS      = 48000.0
 # =============================================================================
 # 计算每根柱的 bin 起点
 # =============================================================================
+def _arg(name, default):
+    if name in sys.argv:
+        return sys.argv[sys.argv.index(name) + 1]
+    return default
+
+
 def build_starts():
     """返回 NBARS+1 个「本柱第一个 bin 编号」，最后一项固定为 NBINS。"""
     st = [0] * (NBARS + 1)
@@ -57,6 +66,10 @@ def build_starts():
 
 
 def main():
+    global NBARS
+    NBARS = int(_arg('--nbars', NBARS))
+    OUT_NAME = _arg('--out', 'spectrum_map.v')
+    MOD_NAME = _arg('--module', 'spectrum_map')
     st = build_starts()
     assert st[NBARS] == NBINS, f"末位应为 {NBINS}，实得 {st[NBARS]}"
     assert len(st) == NBARS + 1
@@ -82,7 +95,7 @@ def main():
     A("//=============================================================================")
     A("`timescale 1ns/1ps")
     A("")
-    A("module spectrum_map #(")
+    A(f"module {MOD_NAME} #(")
     A(f"    parameter integer NBARS = {NBARS},")
     A(f"    parameter integer AW    = {AW}          // 柱编号位宽 = $clog2(NBARS)")
     A(") (")
@@ -105,7 +118,7 @@ def main():
     assert not long_lines, f"超长行: {long_lines}"
 
     if '--write' in sys.argv:
-        dst = os.path.join(root, 'rtl', 'audio', 'spectrum_map.v')
+        dst = os.path.join(root, 'rtl', 'audio', OUT_NAME)
         open(dst, 'w', encoding='utf-8').write(verilog)
         print(f"已写入 {dst}", file=sys.stderr)
     else:

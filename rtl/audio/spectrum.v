@@ -104,10 +104,28 @@ module spectrum #(
     wire [AW-1:0]     bcur   = fstart ? {AW{1'b0}} : bar_cur;
     wire [8:0]        last_bin;
 
-    spectrum_map #(.NBARS(NBARS), .AW(AW)) u_map (
-        .bar      (bcur),
-        .last_bin (last_bin)
-    );
+    //-------------------------------------------------------------------------
+    // bin 分组表：按 NBARS 选表
+    //   NBARS=60 ⟹ spectrum_map   （LCD ✗ 480/60 = 8 px/柱）
+    //   NBARS=80 ⟹ spectrum_map80 （HDMI ✗ 640/80 = 8 px/柱）
+    //   ⚠️ 两张表都由 scripts/golden/gen_spectrum_map.py 生成
+    //      参数（--nbars / --out / --module）见脚本注释
+    //      default 分支会给 last_bin=0 ⟹ frame_done 永不触发 ⟹ 柱谱全没
+    //      （这个坑踩过了：用 NBARS=80 却用 60 的表 ⟹ 画面全空）
+    //-------------------------------------------------------------------------
+    generate
+        if (NBARS == 80) begin : g_map80
+            spectrum_map80 #(.NBARS(80), .AW(AW)) u_map (
+                .bar      (bcur),
+                .last_bin (last_bin)
+            );
+        end else begin : g_map60
+            spectrum_map #(.NBARS(60), .AW(AW)) u_map (
+                .bar      (bcur),
+                .last_bin (last_bin)
+            );
+        end
+    endgenerate
 
     //=========================================================================
     // 幅度 -> 高度（log2 Q5.3 压缩）
