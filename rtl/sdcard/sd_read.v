@@ -1,32 +1,24 @@
-//=============================================================================
-// sd_read.v  ——  SD 卡 SPI 模式单块读（CMD17）
-//=============================================================================
-//   【一次读操作完整流程】
-//      ① 拉低 CS，发 CMD17（48 位，参数 = 扇区地址）
-//      ② 收 R1（只要 1 字节；0x00 = 成功）
-//      ③ 卡先发若干 NOP(0xFF)，然后是【数据起始令牌 0xFE】
-//      ④ 紧跟 512 字节数据 + 2 字节 CRC16
-//      ⑤ 拉高 CS，结束
+//////////////////////////////////////////////////////////////////////////////////
+// Company:        个人项目 / SonicTwin-Engine
+// Engineer:       flyingyu
 //
-//   【为什么用"检测 0"来判起始令牌】
-//      0xFE = 8'b1111_1110 ⟹ 它的 bit0 是 0，而之前的 NOP 全是 1
-//      所以"第一个 0"就是令牌的起点。R1 的检测也是同一招（R1 的 bit7 = 0）。
-//      ⚠️ 但这招有个前提：令牌之后不会再出现"前导 1"，
-//         所以一旦进了收数据状态就要【按位计数】，不能再用"检测 0"。
+// Create Date:    2026-10-26
+// Design Name:    sd_read
+// Module Name:    sd_read
+// Project Name:   音速双擎（SonicTwin-Engine）
+// Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
+// Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
+// Description:    sd_read.v  ——  SD 卡 SPI 模式单块读（CMD17）
+//                 【一次读操作完整流程】
+//                 ① 拉低 CS，发 CMD17（48 位，参数 = 扇区地址）
+// Dependencies:   无
 //
-//   【数据接收为什么按 16 位打包】
-//     512 字节 = 256 个 16 位字，下游做 RGB888→RGB565 时正好两字节一处理。
-//     这里输出 8 位字节流（dout_data/dout_valid），打包交给下游更灵活。
+// Revision:
+// Revision 0.01 - File Created
 //
-//   【时钟】
-//     本模块完全工作在 sd_clk 域（= sd_ctrl_top 送来的高速 SPI 时钟）：
-//       · 采样 sd_miso 用 posedge sd_clk（数据稳定中点）
-//       · 驱动 sd_mosi 用 negedge sd_clk（避开对方的采样沿）
-//     dout_valid/dout_data 也在 sd_clk 域 ⟹ 跨到 clk_sys 由下游的
-//     async_fifo（rtl/common/async_fifo.v）负责，本模块不做 CDC。
-//=============================================================================
-
+//////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns / 1ps
+
 
 module sd_read #(
     // 一次读多少块（512 字节/块）

@@ -1,21 +1,24 @@
-//=============================================================================
-// uart_rx.v - UART 接收（8N1，参数化波特率）
-//-----------------------------------------------------------------------------
-// 【为什么不用 rtl/common/uart_byte_rx.v】
-//   那份参考工程抄过来的代码里有 `rx_r[0] <= #1 uart_rx;` 这种**延时赋值**。
-//   Vivado 综合时会报"ignored delay"警告，而本工程要求零警告。
-//   另外它的时钟频率写死 50 MHz，我们是 48 MHz。
-//   所以重写一份：无延时、全参数化、和工程风格一致。
+//////////////////////////////////////////////////////////////////////////////////
+// Company:        个人项目 / SonicTwin-Engine
+// Engineer:       flyingyu
 //
-// 【采样策略】
-//   不用 16 倍过采样，直接"每个比特周期数 DIV 个 clk、在正中采样"：
-//       等半个比特 -> 确认起始位仍是 0（滤掉毛刺）
-//       然后每 DIV 个 clk 采一位，共 8 位
-//       最后检查停止位 = 1，否则报帧错误
-//   误差余量：115200 baud @48MHz 时 DIV = 416.7 -> 取整 416，
-//   累积到第 10 位偏差 0.16%，远小于半个比特（50%）。
-//=============================================================================
+// Create Date:    2026-10-26
+// Design Name:    uart_rx
+// Module Name:    uart_rx
+// Project Name:   音速双擎（SonicTwin-Engine）
+// Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
+// Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
+// Description:    uart_rx.v - UART 接收（8N1，参数化波特率）
+//                 【为什么不用 rtl/common/uart_byte_rx.v】
+//                 那份参考工程抄过来的代码里有 `rx_r[0] <= #1 uart_rx;` 这种**延时赋值**。
+// Dependencies:   无
+//
+// Revision:
+// Revision 0.01 - File Created
+//
+//////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns/1ps
+
 
 module uart_rx #(
     parameter integer CLK_HZ = 48_000_000,

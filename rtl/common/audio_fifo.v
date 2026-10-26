@@ -1,10 +1,24 @@
-//=============================================================================
-// audio_fifo.v - 同步 FIFO（寄存器实现，深度小、面积小、零 BRAM）
-//-----------------------------------------------------------------------------
-// 用途：隔离 I2S 帧节拍与 DSP 处理节拍，吸收抖动、防止欠载/溢出丢样。
-// 指针多一位用于区分"满"和"空"。
-//=============================================================================
+//////////////////////////////////////////////////////////////////////////////////
+// Company:        个人项目 / SonicTwin-Engine
+// Engineer:       flyingyu
+//
+// Create Date:    2026-10-26
+// Design Name:    audio_fifo
+// Module Name:    audio_fifo
+// Project Name:   音速双擎（SonicTwin-Engine）
+// Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
+// Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
+// Description:    audio_fifo.v - 同步 FIFO（寄存器实现，深度小、面积小、零 BRAM）
+//                 用途：隔离 I2S 帧节拍与 DSP 处理节拍，吸收抖动、防止欠载/溢出丢样。
+//                 指针多一位用于区分"满"和"空"。
+// Dependencies:   无
+//
+// Revision:
+// Revision 0.01 - File Created
+//
+//////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns/1ps
+
 
 module audio_fifo #(
     parameter integer DW    = 48,

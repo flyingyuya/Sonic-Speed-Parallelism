@@ -1,19 +1,24 @@
-//=============================================================================
-// fft_twiddle_rom.v - 1024 点 FFT 旋转因子表
-//-----------------------------------------------------------------------------
-//   **本文件由 scripts/golden/gen_fft_twiddle.py 自动生成，不要手改**
+//////////////////////////////////////////////////////////////////////////////////
+// Company:        个人项目 / SonicTwin-Engine
+// Engineer:       flyingyu
 //
-//   W_N^k = cos(2*pi*k/N) - j*sin(2*pi*k/N)      k = 0 ~ 511
-//   （后半圈 W^(k+N/2) = -W^k，由蝶形单元取负得到，不占 ROM）
+// Create Date:    2026-10-26
+// Design Name:    fft_twiddle_rom
+// Module Name:    fft_twiddle_rom
+// Project Name:   音速双擎（SonicTwin-Engine）
+// Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
+// Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
+// Description:    fft_twiddle_rom.v - 1024 点 FFT 旋转因子表
+//                 本文件由 scripts/golden/gen_fft_twiddle.py 自动生成，不要手改**
+//                 W_N^k = cos(2*pi*k/N) - j*sin(2*pi*k/N)      k = 0 ~ 511
+// Dependencies:   无
 //
-//   定点：Q1.15，字宽 32bit = {imag[15:0], real[15:0]}
-//         |W| 恒为 1，实虚部都在 [-1, +1) 内
-//         注意 W^0 = 1.0 量化后是 32768，超出上限 32767，已钳位
+// Revision:
+// Revision 0.01 - File Created
 //
-//   地址 9 位，深度 512
-//   综合后应映射为分布式 LUT ROM 或 1 个 BRAM18
-//=============================================================================
+//////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns/1ps
+
 
 module fft_twiddle_rom (
     input  wire [8:0] addr,      // 0 ~ 511

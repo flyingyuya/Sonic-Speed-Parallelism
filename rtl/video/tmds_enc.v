@@ -1,36 +1,24 @@
-//=============================================================================
-// tmds_enc.v —— TMDS 8b/10b 编码器（DVI / HDMI 的数据通道编码）
-//=============================================================================
-// 【为什么必须自己写】
-//   Xilinx 没有提供 TMDS 编码的"原语"（能在代码里例化一个名字就出来的那种）。
-//   XAPP495 参考设计里确实附带了一份 encode.v，但那是【源码】，不是原语。
-//   串行化(OSERDESE2) 和 差分(OBUFDS) 才有原语 —— 那两个不用自己写。
+//////////////////////////////////////////////////////////////////////////////////
+// Company:        个人项目 / SonicTwin-Engine
+// Engineer:       flyingyu
 //
-// 【算法来源 —— 两个独立实现逐行比对过，完全一致才敢用】
-//   ① XAPP495 (dvi_demo/rtl/tx/encode.v)           —— Xilinx 官方
-//   ② github pthalin/video_lag_tester/tmds_encoder.v
-//      注明 "based on Digital Visual Interface Revision 1.0, Page 29"
-//   ③ sa89a.net/ele/fpga_hdmi/dvi_enc.v            —— 紧凑版
-//   ⚠️ 我不凭记忆写这段 DC 平衡逻辑 —— 它分支多、cnt 还有符号，
-//      记错一个分支的 cnt 更新就会让画面"偏色/闪"。
-//      （这一轮已经因为"凭记忆写位域"栽过两次了：XPT2046 命令字节、lut[15:9]。）
+// Create Date:    2026-10-26
+// Design Name:    tmds_enc
+// Module Name:    tmds_enc
+// Project Name:   音速双擎（SonicTwin-Engine）
+// Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
+// Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
+// Description:    tmds_enc.v —— TMDS 8b/10b 编码器（DVI / HDMI 的数据通道编码）
+//                 【为什么必须自己写】
+//                 Xilinx 没有提供 TMDS 编码的"原语"（能在代码里例化一个名字就出来的那种）。
+// Dependencies:   无
 //
-// 【两级流水】
-//   第一级：D -> q_m（9 位：8 位数据 + 1 位"是否反相"标志）
-//   第二级：q_m -> Q（10 位），同时更新运行不一致度 cnt
-//   ⟹ 输出比输入晚 2 拍。DE/C0/C1 也跟着打两拍，保证和 Q 对齐。
+// Revision:
+// Revision 0.01 - File Created
 //
-// 【一次传输 24 位色怎么分】
-//   蓝通道：D = blue[7:0]，C0 = hsync，C1 = vsync   ← 控制期靠它传同步
-//   绿通道：D = green[7:0]，C0 = 0，    C1 = 0
-//   红通道：D = red[7:0]，  C0 = 0，    C1 = 0
-//   （DVI 规范里绿/红的 C0/C1 是保留位，置 0）
-//
-// 【为什么要有"控制期"】
-//   视频消隐期（DE=0）不发像素，改装 TMDS 的"控制码"来传同步信号。
-//   这 10 位是专门挑过的：跳变足够多，接收端好恢复时钟。
-//=============================================================================
+//////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns/1ps
+
 `default_nettype none
 
 module tmds_enc (

@@ -1,20 +1,24 @@
-//=============================================================================
-// font_rom.v - 点阵字库 ROM（**由脚本生成，不要手改**）
-//-----------------------------------------------------------------------------
-// 生成脚本： scripts/golden/gen_font.py
-//   重新生成： python3 scripts/golden/gen_font.py
+//////////////////////////////////////////////////////////////////////////////////
+// Company:        个人项目 / SonicTwin-Engine
+// Engineer:       flyingyu
 //
-// 规格： 5x7 点阵，占 8 行/字符（第 7 行留空当行距）
-//   每个字符 8 个字节，每字节 bit4..bit0 = 该行从左到右的 5 个像素
-//   （bit4 是最左）。行 0 在最上面。
+// Create Date:    2026-10-26
+// Design Name:    font_rom
+// Module Name:    font_rom
+// Project Name:   音速双擎（SonicTwin-Engine）
+// Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
+// Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
+// Description:    font_rom.v - 点阵字库 ROM（**由脚本生成，不要手改**）
+//                 生成脚本： scripts/golden/gen_font.py
+//                 重新生成： python3 scripts/golden/gen_font.py
+// Dependencies:   无
 //
-//   取字： idx = char_code * 8 + row
-//          bit = rom[idx] >> (4 - col) & 1      col ∈ 0..4
+// Revision:
+// Revision 0.01 - File Created
 //
-// 收录字符：   % - . / 0 1 2 3 4 5 6 7 8 9 : = A B C D E F G H I J K L M N O P Q R S T U V W X Y Z
-// 未收录的字符在渲染侧一律当空格处理。
-//=============================================================================
+//////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns/1ps
+
 
 module font_rom #(
     parameter integer NCH = 91,      // 收录的字符数（按 ASCII 码直接寻址）

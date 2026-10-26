@@ -1,20 +1,24 @@
-//=============================================================================
-// WM8960_init.v - WM8960 上电初始化（通过 I2C 顺序写寄存器表）
-//-----------------------------------------------------------------------------
-// 来源：参考 docs/Music-Spectrum 工程的 WM8960_Init.v，针对我们的板子做了
-//       五处必要修改（见文件末尾「相对参考工程的改动」）。
+//////////////////////////////////////////////////////////////////////////////////
+// Company:        个人项目 / SonicTwin-Engine
+// Engineer:       flyingyu
 //
-// 【为什么要留延时 DLY_MS】
-//   我们的配置启用 WM8960 内部 PLL：24 MHz 晶振 -> PLL -> SYSCLK = 12.288 MHz。
-//   PLL 从使能到锁定需要时间（典型 1~10 ms）。如果在这之前就把 CLKSEL 切到
-//   PLL，SYSCLK 会短暂没有时钟 —— BCLK/LRCLK 乱掉，而 FPGA 侧是 I2S 从机，
-//   会收到一堆垃圾。
-//   寄存器表把 `CLKSEL=1` 放在【最后一条】，并在每条之间留 DLY_MS 毫秒，
-//   这样从 PLLEN=1 到 CLKSEL=1 之间至少有几个 ms，足够锁定。
+// Create Date:    2026-10-26
+// Design Name:    WM8960_init
+// Module Name:    WM8960_init
+// Project Name:   音速双擎（SonicTwin-Engine）
+// Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
+// Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
+// Description:    WM8960_init.v - WM8960 上电初始化（通过 I2C 顺序写寄存器表）
+//                 来源：参考 docs/Music-Spectrum 工程的 WM8960_Init.v，针对我们的板子做了
+//                 五处必要修改（见文件末尾「相对参考工程的改动」）。
+// Dependencies:   见文件内 `include
 //
-// 【时序预算】LUT_SIZE(20) x DLY_MS(1ms) ≈ 20 ms，只在 Go 拉高时跑一次。
-//=============================================================================
+// Revision:
+// Revision 0.01 - File Created
+//
+//////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns / 1ps
+
 
 module WM8960_init #(
     parameter integer CLK_FREQ_HZ = 48_000_000,   // 本模块工作时钟频率

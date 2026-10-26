@@ -1,15 +1,24 @@
-//=============================================================================
-// spectrum_map.v - 频谱柱的 bin 分组表（bar -> 本柱最后一个 bin 编号）
-//-----------------------------------------------------------------------------
-// ⚠️ 由 scripts/golden/gen_spectrum_map.py 自动生成，请勿手工修改。
+//////////////////////////////////////////////////////////////////////////////////
+// Company:        个人项目 / SonicTwin-Engine
+// Engineer:       flyingyu
 //
-// 分组方式：
-//   柱 0..15    : bin 0..15        （线性，每柱 1 个 bin）
-//   柱 16..59   : bin 16 -> 511     （对数均分）
+// Create Date:    2026-10-26
+// Design Name:    spectrum_map
+// Module Name:    spectrum_map
+// Project Name:   音速双擎（SonicTwin-Engine）
+// Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
+// Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
+// Description:    spectrum_map.v - 频谱柱的 bin 分组表（bar -> 本柱最后一个 bin 编号）
+//                 ⚠️ 由 scripts/golden/gen_spectrum_map.py 自动生成，请勿手工修改。
+//                 分组方式：
+// Dependencies:   无
 //
-//   bin k 的频率 = k x fs/N = k x 48000/1024 = k x 46.875 Hz
-//=============================================================================
+// Revision:
+// Revision 0.01 - File Created
+//
+//////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns/1ps
+
 
 module spectrum_map #(
     parameter integer NBARS = 60,

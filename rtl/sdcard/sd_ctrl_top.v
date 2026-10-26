@@ -1,28 +1,24 @@
-//=============================================================================
-// sd_ctrl_top.v  ——  SD 卡子系统顶层
-//=============================================================================
-//   【它做什么】
-//     把 sd_init（初始化）和 sd_read（读数据块）组合成"一根 SPI 总线"，
-//     并负责：
-//       ① 初始化阶段的低速时钟（sd_init 内部产生，200 kHz）
-//       ② 工作阶段的高速时钟（本模块产生，clk/4）
-//       ③ CS / MOSI 的归属切换
-//       ④ 用户侧 start 脉冲从 clk 域跨到 SPI 时钟域的同步
+//////////////////////////////////////////////////////////////////////////////////
+// Company:        个人项目 / SonicTwin-Engine
+// Engineer:       flyingyu
 //
-//   【时钟切换的安全性 —— 为什么这个 mux 是安全的】
-//     两个时钟都来自 clk_sys 分频（同源），切换只发生在 init_done 拉高时。
-//     那一刻 sd_cs 一定是高电平（卡空闲）⟹ SD 卡在 CS 高电平时忽略一切时钟
-//     ⟹ 即使 mux 输出出现一个 21 ns 的窄脉冲也无害。
-//     ⚠️ 前提：切换时刻 sd_cs 必须为高。本模块保证只有 init_done 为 1
-//        （= 初始化完全结束、CS 已拉高）才会切。
+// Create Date:    2026-10-26
+// Design Name:    sd_ctrl_top
+// Module Name:    sd_ctrl_top
+// Project Name:   音速双擎（SonicTwin-Engine）
+// Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
+// Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
+// Description:    sd_ctrl_top.v  ——  SD 卡子系统顶层
+//                 【它做什么】
+//                 把 sd_init（初始化）和 sd_read（读数据块）组合成"一根 SPI 总线"，
+// Dependencies:   无
 //
-//   【为什么不彻底改成"单时钟 + 使能"】
-//     那样要重构两个已验证模块（sd_init / sd_read 都要改内部时钟结构），
-//     改动面和"时钟 mux"的风险相当，但工作量大一个数量级。
-//     如果以后要接更多 SPI 从设备，再统一重构。
-//=============================================================================
-
+// Revision:
+// Revision 0.01 - File Created
+//
+//////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns / 1ps
+
 
 module sd_ctrl_top #(
     parameter integer CLK_HZ        = 48_000_000,

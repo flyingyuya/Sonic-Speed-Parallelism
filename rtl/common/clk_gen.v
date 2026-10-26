@@ -1,32 +1,24 @@
-//=============================================================================
-// clk_gen.v - 板载 200 MHz 差分时钟 → 系统所需全部时钟
-//-----------------------------------------------------------------------------
-// 输入：200 MHz 差分（R4/T4 = IO_L13P/N_MRCC_34，bank 34，Vcco = 1.5V）
-// 输出：clk_sys      48   MHz  —— 音频 + 控制全部逻辑
-//       clk_pix      12.5 MHz  —— LCD 时序 + Overlay
-//       mmcm_locked           —— 供顶层合成复位
+//////////////////////////////////////////////////////////////////////////////////
+// Company:        个人项目 / SonicTwin-Engine
+// Engineer:       flyingyu
 //
-// 【为什么是 48 MHz 而不是 96 MHz】
-//   阶段一综合实测：均衡器关键路径 16.2 ns → Fmax ≈ 61.6 MHz（-2 速度等级）。
-//   96 MHz（周期 10.4 ns）时序不收敛；48 MHz（20.8 ns）有 +4.6 ns 正裕量。
+// Create Date:    2026-10-26
+// Design Name:    clk_gen
+// Module Name:    clk_gen
+// Project Name:   音速双擎（SonicTwin-Engine）
+// Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
+// Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
+// Description:    clk_gen.v - 板载 200 MHz 差分时钟 → 系统所需全部时钟
+//                 输入：200 MHz 差分（R4/T4 = IO_L13P/N_MRCC_34，bank 34，Vcco = 1.5V）
+//                 输出：clk_sys      48   MHz  —— 音频 + 控制全部逻辑
+// Dependencies:   无
 //
-// 【为什么一个 MMCM 就能同时出 48 和 12.5 MHz】
-//   MMCM 的 7 个输出计数器共用同一个 VCO，所以两个频率必须都是它的分频：
-//       VCO = 48 × O_sys = 12.5 × O_pix   →   O_pix = 3.84 × O_sys
-//   3.84 = 96/25，故 O_sys 必须是 6.25 的倍数。VCO 落在 [600,1200] 内只有三个解：
-//       O_sys = 12.5  → VCO =  600 MHz（卡下边界，不选）
-//       O_sys = 18.75 → VCO =  900 MHz  ← 选它：居中，jitter 余量最好
-//       O_sys = 25    → VCO = 1200 MHz（卡上边界，不选）
-//   18.75 是小数，只能放 CLKOUT0_DIVIDE_F（只有它支持 1/8 步进）；
-//   72 是整数，放 CLKOUT1_DIVIDE 即可。
+// Revision:
+// Revision 0.01 - File Created
 //
-// 【硬件约束提醒（来自官方例程与手册）】
-//   * DIFF_TERM 必须为 FALSE —— 内部 100Ω 差分端接只支持 LVDS 类标准，
-//     DIFF_SSTL15 不在支持列表内（端接靠板载电阻/DCI）。
-//   * IBUF_LOW_PWR 用 FALSE —— 低功耗模式输入带宽受限，200 MHz 正好在边界。
-//   * clk_200m 不引出模块 —— 只有 MMCM 用它，省一个 BUFG。
-//=============================================================================
+//////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns/1ps
+
 
 module clk_gen (
     input  wire clk_200m_p,      // R4  IO_L13P_MRCC_34

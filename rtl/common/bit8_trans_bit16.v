@@ -1,20 +1,23 @@
-/////////////////////////////////////////////////////////////////////////////////
-// Company       : 武汉芯路恒科技有限公司
-//                 http://xiaomeige.taobao.com
-// Web           : http://www.corecourse.cn
+//////////////////////////////////////////////////////////////////////////////////
+// Company:        个人项目 / SonicTwin-Engine
+// Engineer:       flyingyu
 //
-// Create Date   : 2019/05/01 00:00:00
-// Module Name   : bit8_trans_bit16
-// Description   : 数据位宽转换，8bit输入转16bit输出
-//
-// Dependencies  :
+// Create Date:    2026-10-26
+// Design Name:    bit8_trans_bit16
+// Module Name:    bit8_trans_bit16
+// Project Name:   音速双擎（SonicTwin-Engine）
+// Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
+// Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
+// Description:    http://xiaomeige.taobao.com
+//                 Web           : http://www.corecourse.cn
+// Dependencies:   无
 //
 // Revision:
 // Revision 0.01 - File Created
-// Additional Comments:
 //
-/////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns / 1ps
+
 
 module bit8_trans_bit16(
     input             clk,

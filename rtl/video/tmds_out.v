@@ -1,42 +1,24 @@
-//=============================================================================
-// tmds_out.v —— 三个 TMDS 数据通道 + 时钟通道（DVI/HDMI 发送端物理层）
-//=============================================================================
-// 【结构】每个颜色通道：
+//////////////////////////////////////////////////////////////////////////////////
+// Company:        个人项目 / SonicTwin-Engine
+// Engineer:       flyingyu
 //
-//   tmds_enc ──10bit──┬─ OSERDESE2(MASTER)  D1..D8 = din[7:0]  ── OQ ─┐
-//                     └─ OSERDESE2(SLAVE)   D3/D4 = din[9:8]         │
-//                              SHIFTOUT1/2 ──► SHIFTIN1/2           │
-//                                                                   ▼
-//                                                                OBUFDS ── TMDS 差分对
+// Create Date:    2026-10-26
+// Design Name:    tmds_out
+// Module Name:    tmds_out
+// Project Name:   音速双擎（SonicTwin-Engine）
+// Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
+// Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
+// Description:    tmds_out.v —— 三个 TMDS 数据通道 + 时钟通道（DVI/HDMI 发送端物理层）
+//                 【结构】每个颜色通道：
+//                 tmds_enc ──10bit──┬─ OSERDESE2(MASTER)  D1..D8 = din[7:0]  ── OQ ─┐
+// Dependencies:   无
 //
-//   时钟通道：TMDS 时钟就是【像素时钟本身】（不编码、不串行化），
-//            直接 OBUFDS 出去。数据通道才是 10 倍速率。
+// Revision:
+// Revision 0.01 - File Created
 //
-// 【为什么串行化不用自己写】
-//   OSERDESE2 是 Xilinx 原语，本来就干这件事。
-//   ⚠️ .DATA_RATE_TQ 用 "BUF" 而不是参考例程里的 "DDR"：
-//      我们根本不走三态路径（T1..T4 / TCE 全接 0，TQ 空接）。
-//      设成 "DDR" 时 Vivado 会报 [DRC AVAL-70]：
-//      "DATA_RATE_TQ set DDR expects TRISTATE_WIDTH to be set 4" ——
-//      所以要么 TRISTATE_WIDTH 填 4，要么干脆声明这条路径是 BUF。
-//      后者更符合实际用法，也省得以后忘了这个约束。
-//   一个只支持 8:1，所以要 10:1 必须【两个级联】（MASTER 收低 8 位、SLAVE 收高 2 位）。
-//   模型细节见 sim/tb/xilinx_stub.v 里的注释（依据 A7_LITE 教程原文）。
-//
-// 【时钟关系】
-//   clk_5x = 5 × clk_pix。DDR（双沿）⟹ 5 个 clk_5x 周期吐 10 位 = 1 个像素周期 ✓
-//   ⚠️ clk_5x 和 clk_pix 必须【同源】（同一个 MMCM 出），否则相位会漂。
-//
-// 【极性 / 顺序】
-//   输出的差分对是 {P, N}，N = ~P（OBUFDS 保证）。
-//   各通道映射（DVI 连接器约定）：
-//     通道 0（D0）= 蓝
-//     通道 1（D1）= 绿
-//     通道 2（D2）= 红
-//     时钟通道   = 像素时钟
-//   蓝通道在消隐期还要传 hsync/vsync（所以只有它接 c0/c1）。
-//=============================================================================
+//////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns/1ps
+
 `default_nettype none
 
 module tmds_out (

@@ -1,12 +1,24 @@
-//=============================================================================
-// uart_tx.v - UART 发送（8N1，参数化波特率）
-//-----------------------------------------------------------------------------
-// 用途：把配置查询的回执、上电横幅送回电脑，方便确认板子活着、参数改对了。
+//////////////////////////////////////////////////////////////////////////////////
+// Company:        个人项目 / SonicTwin-Engine
+// Engineer:       flyingyu
 //
-// 接口：拉高 `send` 一拍，模块把 `data` 按 8N1 发出去，期间 `busy` 为 1。
-//       调用方必须等 `busy` 落回 0 才能发下一字节（否则会被丢掉）。
-//=============================================================================
+// Create Date:    2026-10-26
+// Design Name:    uart_tx
+// Module Name:    uart_tx
+// Project Name:   音速双擎（SonicTwin-Engine）
+// Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
+// Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
+// Description:    uart_tx.v - UART 发送（8N1，参数化波特率）
+//                 用途：把配置查询的回执、上电横幅送回电脑，方便确认板子活着、参数改对了。
+//                 接口：拉高 `send` 一拍，模块把 `data` 按 8N1 发出去，期间 `busy` 为 1。
+// Dependencies:   无
+//
+// Revision:
+// Revision 0.01 - File Created
+//
+//////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns/1ps
+
 
 module uart_tx #(
     parameter integer CLK_HZ = 48_000_000,

@@ -1,19 +1,24 @@
-//=============================================================================
-// eq_coeff_rom.v - 均衡器系数表（**本文件由 scripts/golden/gen_all.py 自动生成**）
-//-----------------------------------------------------------------------------
-// 结构：{频段, 增益档} -> 该段双二阶的 5 个系数 {b0,b1,b2,a1,a2}
-//   频段 : 0..4 对应 100/300/1000/3000/8000 Hz
-//   增益 : 0..20 对应 -10.0 .. 10.0 dB，步进 1.0 dB
-//   地址 : (band*21 + gain)*5 + k
+//////////////////////////////////////////////////////////////////////////////////
+// Company:        个人项目 / SonicTwin-Engine
+// Engineer:       flyingyu
 //
-// 系数格式：18bit signed Q2.16（范围 [-2,2)，分辨率 1.5e-5）
-//   —— 不能用 Q1.17，低架滤波器的 b1 会超过 -1 被削顶。
+// Create Date:    2026-10-26
+// Design Name:    eq_coeff_rom
+// Module Name:    eq_coeff_rom
+// Project Name:   音速双擎（SonicTwin-Engine）
+// Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
+// Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
+// Description:    eq_coeff_rom.v - 均衡器系数表（**本文件由 scripts/golden/gen_all.py 自动生成**）
+//                 结构：{频段, 增益档} -> 该段双二阶的 5 个系数 {b0,b1,b2,a1,a2}
+//                 频段 : 0..4 对应 100/300/1000/3000/8000 Hz
+// Dependencies:   无
 //
-// 为什么用 ROM 表而不是片上实时计算系数：
-//   实时计算需要 sin/cos/sqrt/除法，定点误差难以控制；离线用 Python 高精度算好后
-//   量化到 Q1.17，片上只需一次查表 + 5 次寄存器写，零 DSP、零精度风险。
-//=============================================================================
+// Revision:
+// Revision 0.01 - File Created
+//
+//////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns/1ps
+
 
 module eq_coeff_rom (
     input  wire [9:0] addr,

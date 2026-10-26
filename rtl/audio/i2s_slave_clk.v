@@ -1,34 +1,24 @@
-//=============================================================================
-// i2s_slave_clk.v - I2S 从模式时钟恢复（替代 i2s_clkgen）
-//-----------------------------------------------------------------------------
-// 背景：本工程 WM8960 是 I2S 主（手册 P56：数字音频接口也从 SYSCLK 派生，
-//       MCLK 必须与 BCLK/LRCLK 同源）。所以 FPGA 侧只能当从机，
-//       BCLK / LRCLK 都是【外部输入】。
+//////////////////////////////////////////////////////////////////////////////////
+// Company:        个人项目 / SonicTwin-Engine
+// Engineer:       flyingyu
 //
-// 本模块的职责：把外部输入的 BCLK/LRCLK 恢复成 i2s_rx / i2s_tx 需要的那一组
-// 选通信号（bclk_rise / bclk_fall / frame_start / half_start / bit_idx），
-// **输出契约与 i2s_clkgen 完全一致** —— 所以 i2s_rx / i2s_tx / eq_cascade /
-// audio_fifo 一个字都不用改。
+// Create Date:    2026-10-26
+// Design Name:    i2s_slave_clk
+// Module Name:    i2s_slave_clk
+// Project Name:   音速双擎（SonicTwin-Engine）
+// Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
+// Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
+// Description:    i2s_slave_clk.v - I2S 从模式时钟恢复（替代 i2s_clkgen）
+//                 背景：本工程 WM8960 是 I2S 主（手册 P56：数字音频接口也从 SYSCLK 派生，
+//                 MCLK 必须与 BCLK/LRCLK 同源）。所以 FPGA 侧只能当从机，
+// Dependencies:   无
 //
-// 时钟比：clk_sys = 48 MHz，BCLK = 3.072 MHz -> 每个 BCLK 周期约 15.6 个 clk。
-//   RX：WM8960 在 BCLK 下降沿更新 ADCDAT，我们在检测到的上升沿采样，
-//       数据眼宽约 163 ns，检测偏差最多 1 个 clk（20.8 ns），余量充足。
-//   TX：我们在检测到的下降沿更新 SDIN，WM8960 在下一个上升沿采样，
-//       仍有约 122 ns 的建立时间。足够。
+// Revision:
+// Revision 0.01 - File Created
 //
-// 【对齐为什么用"电平比较"而不是"边沿检测"】
-//   LRCLK 是在 BCLK 下降沿翻转的，和 BCLK 边沿几乎同时到达。
-//   如果靠"检测 LRCLK 的跳变沿"来对齐，两个信号各自过同步器时可能落在
-//   不同的 clk 周期上（±1 拍竞争），对齐就会整个差一位。
-//
-//   改用：在【BCLK 上升沿】采样 LRCLK。上升沿位于数据位正中间，
-//   此时 LRCLK 已经稳定了半个 BCLK 周期（163 ns），不存在竞争。
-//   然后拿采样值和计数器隐含的声道比较，不一致就直接纠正计数器 ——
-//   这是纯电平比较，天然免疫 ±1 拍抖动。
-//
-//   正常工作时 BCLK 和 LRCLK 同源、不会相对漂移，所以纠正只在启动时发生一次。
-//=============================================================================
+//////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns/1ps
+
 
 module i2s_slave_clk #(
     parameter integer SLOT = 32          // 每个声道位数

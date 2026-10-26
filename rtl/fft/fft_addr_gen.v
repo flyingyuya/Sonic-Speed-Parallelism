@@ -1,39 +1,24 @@
-//=============================================================================
-// fft_addr_gen.v - FFT 蝶形地址与旋转因子索引生成（纯组合逻辑）
-//-----------------------------------------------------------------------------
-// 功能：给定"第几级(s)"和"本级第几个蝶形(cnt)"，算出：
-//         p      —— 蝶形第一个点的 BRAM 地址
-//         q      —— 蝶形第二个点的 BRAM 地址
-//         tw_idx —— 该蝶形要用的旋转因子在 ROM 里的索引
+//////////////////////////////////////////////////////////////////////////////////
+// Company:        个人项目 / SonicTwin-Engine
+// Engineer:       flyingyu
 //
-// 【算法依据】见 docs/11-fft-design.md §4
+// Create Date:    2026-10-26
+// Design Name:    fft_addr_gen
+// Module Name:    fft_addr_gen
+// Project Name:   音速双擎（SonicTwin-Engine）
+// Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
+// Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
+// Description:    fft_addr_gen.v - FFT 蝶形地址与旋转因子索引生成（纯组合逻辑）
+//                 功能：给定"第几级(s)"和"本级第几个蝶形(cnt)"，算出：
+//                 p      —— 蝶形第一个点的 BRAM 地址
+// Dependencies:   无
 //
-//   把 cnt 拆成：  [ 高 (LOG2N-1-s) 位：组号 group ][ 低 s 位：组内偏移 j ]
+// Revision:
+// Revision 0.01 - File Created
 //
-//   朴素写法（硬件上要除法器，太贵）：
-//       half  = 1 << s
-//       group = cnt / half
-//       j     = cnt % half
-//       p     = group * 2 * half + j
-//       q     = p + half
-//       tw    = j << (LOG2N-1-s)
-//
-//   本模块用的位操作写法（只要移位器，等价但便宜几十倍）：
-//       p = 把 cnt 的高位左移一格、第 s 位补 0、低 s 位不变   ← "插 0"
-//       q = 把 p 的第 s 位置 1                              ← "插 1"
-//       tw= j 左移 (LOG2N-1-s)
-//
-//   ★ 关键结论：p 和 q 只差第 s 位。这是整个地址发生器的精髓。
-//
-// 【参数化说明】
-//   LOG2N 可配，方便用小点数（如 8 点）做穷举自检。
-//   LOG2N=10 → 1024 点：cnt 9 位、p/q 10 位、tw_idx 9 位
-//   LOG2N= 3 →    8 点：cnt 2 位、p/q  3 位、tw_idx 2 位
-//
-// 【时序】
-//   纯组合，无时钟。综合后是一堆移位器和位或 —— 桶形移位器由综合器自动生成。
-//=============================================================================
+//////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns/1ps
+
 
 module fft_addr_gen #(
     parameter integer LOG2N = 10            // N = 2^LOG2N

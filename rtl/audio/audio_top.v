@@ -1,30 +1,24 @@
-//=============================================================================
-// audio_top.v - 音频链路顶层（I2S → 低延迟均衡 → I2S）
-//-----------------------------------------------------------------------------
-// 【从模式】WM8960 是本工程的 I2S 主（手册 P56：数字音频接口也从 SYSCLK 派生，
-// MCLK 必须与 BCLK/LRCLK 同源），所以 bclk / lrclk 在这里是**输入**。
-// 时序恢复由 i2s_slave_clk 完成，输出契约与原来的 i2s_clkgen 完全一致，
-// 所以 i2s_rx / i2s_tx / eq_cascade / audio_fifo 一个字都没改。
+//////////////////////////////////////////////////////////////////////////////////
+// Company:        个人项目 / SonicTwin-Engine
+// Engineer:       flyingyu
 //
-//                          ┌────────────────┐
-//   sdin ─▶ i2s_rx ─▶ fifo ─▶ eq_cascade L ─┐
-//                          └▶ eq_cascade R ─┴─▶ fifo ─▶ i2s_tx ──▶ sdout
-//                ▲                                              │
-//                └──── i2s_slave_clk（从 bclk/lrclk 恢复时序）──┘
+// Create Date:    2026-10-26
+// Design Name:    audio_top
+// Module Name:    audio_top
+// Project Name:   音速双擎（SonicTwin-Engine）
+// Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
+// Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
+// Description:    audio_top.v - 音频链路顶层（I2S → 低延迟均衡 → I2S）
+//                 【从模式】WM8960 是本工程的 I2S 主（手册 P56：数字音频接口也从 SYSCLK 派生，
+//                 MCLK 必须与 BCLK/LRCLK 同源），所以 bclk / lrclk 在这里是**输入**。
+// Dependencies:   无
 //
-// 单一时钟域：clk = clk_sys = 48 MHz。在从模式下本模块不再需要
-// "BCLK = clk/4" 这种整数关系 —— i2s_slave_clk 靠过采样恢复边沿，
-// 只要 clk 明显快于 BCLK 即可（48 MHz / 3.072 MHz = 15.6 倍）。
+// Revision:
+// Revision 0.01 - File Created
 //
-// 系数由 eq_coeff_rom 提供：5 个频段 x 21 个增益档，每个频段独立选档。
-// 换挡时本地 FSM 把 25 个系数重新灌进两个声道的 eq_cascade。
-//
-// 为什么收发两侧都要加 FIFO：
-//   RX 在帧尾（bit_idx=2*SLOT-1）才吐出样本，而 TX 必须在下一帧起点装载。
-//   EQ 又要 6 个 clk。FIFO 把"帧节拍"和"处理节拍"解耦，
-//   同时吸收系数装载期间的样本堆积。
-//=============================================================================
+//////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns/1ps
+
 
 module audio_top #(
     parameter integer DW      = 24,

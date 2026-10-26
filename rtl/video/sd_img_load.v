@@ -1,27 +1,24 @@
-//=============================================================================
-// sd_img_load.v  ——  把 SD 卡的字节流搬成像素，写进帧缓冲
-//=============================================================================
-//   【数据格式约定】
-//     PC 端脚本（scripts/sdcard/mkimage.py）按【RGB565 小端】写盘：
-//       第 0 字节 = 像素 0 的低 8 位
-//       第 1 字节 = 像素 0 的高 8 位
-//       第 2 字节 = 像素 1 的低 8 位
-//       ...
-//     所以这里"两字节凑一个像素"，先来的放低位。
+//////////////////////////////////////////////////////////////////////////////////
+// Company:        个人项目 / SonicTwin-Engine
+// Engineer:       flyingyu
 //
-//   【为什么地址就是计数器】
-//     图片是逐行紧凑存的：像素线性地址 = y*W + x。
-//     SD 读到第 n 个像素，就写帧缓冲的第 n 个地址 ⟹ 地址 = 计数器，
-//     不需要行/列展开（那是显示端的事）。
+// Create Date:    2026-10-26
+// Design Name:    sd_img_load
+// Module Name:    sd_img_load
+// Project Name:   音速双擎（SonicTwin-Engine）
+// Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
+// Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
+// Description:    sd_img_load.v  ——  把 SD 卡的字节流搬成像素，写进帧缓冲
+//                 【数据格式约定】
+//                 PC 端脚本（scripts/sdcard/mkimage.py）按【RGB565 小端】写盘：
+// Dependencies:   无
 //
-//   【和 sd_read 的握手】
-//     byte_valid 是 sd_read 的 dout_valid（每个字节一个脉冲）。
-//     本模块只在 byte_valid 时推进，所以 SD 读多慢都不会丢数据
-//     —— 前提是 sd_read 的字节输出速率不超过 clk 的处理能力，
-//     而 sd_read 跑在 clk/4，本模块跑在 clk ⟹ 天然满足。
-//=============================================================================
-
+// Revision:
+// Revision 0.01 - File Created
+//
+//////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns / 1ps
+
 
 module sd_img_load #(
     parameter integer W = 480,

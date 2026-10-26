@@ -1,14 +1,24 @@
-//=============================================================================
-// i2s_rx.v - I2S 接收（主模式，单时钟域）
-//-----------------------------------------------------------------------------
-// 在 bclk 上升沿采样 sdin，按 64 位移位寄存器拼帧，帧末（bit_idx = 2*SLOT-1）
-// 同时得到左/右声道数据并输出一个 sample_valid 脉冲。
+//////////////////////////////////////////////////////////////////////////////////
+// Company:        个人项目 / SonicTwin-Engine
+// Engineer:       flyingyu
 //
-// 声道对齐：I2S 标准下 LRCLK 下降沿后的第一个上升沿是左声道 MSB，
-//           因此先收到的 SLOT 位是左声道，后 SLOT 位是右声道。
-// 数据对齐：24bit 音频数据位于 32bit 槽的高 24 位（低位补零）。
-//=============================================================================
+// Create Date:    2026-10-26
+// Design Name:    i2s_rx
+// Module Name:    i2s_rx
+// Project Name:   音速双擎（SonicTwin-Engine）
+// Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
+// Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
+// Description:    i2s_rx.v - I2S 接收（主模式，单时钟域）
+//                 在 bclk 上升沿采样 sdin，按 64 位移位寄存器拼帧，帧末（bit_idx = 2*SLOT-1）
+//                 同时得到左/右声道数据并输出一个 sample_valid 脉冲。
+// Dependencies:   无
+//
+// Revision:
+// Revision 0.01 - File Created
+//
+//////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns/1ps
+
 
 module i2s_rx #(
     parameter integer SLOT      = 32,   // 槽位宽

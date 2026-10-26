@@ -1,33 +1,24 @@
-//=============================================================================
-// i2s_clkgen.v - I2S 主模式时钟生成（BCLK / LRCLK / 位计数 / 边沿选通）
-//-----------------------------------------------------------------------------
-// 全部逻辑运行在 clk（clk_audio = 12.288 MHz）单一时钟域内，输出 bclk/lrclk
-// 给外部 codec，同时产生与 bclk 边沿严格对齐的选通脉冲，供 i2s_rx / i2s_tx 使用
-// —— **整个 I2S 接口无跨时钟域，无亚稳态风险**。
+//////////////////////////////////////////////////////////////////////////////////
+// Company:        个人项目 / SonicTwin-Engine
+// Engineer:       flyingyu
 //
-// 参数：
-//   DIV   : BCLK 半周期占据的 clk 个数；BCLK 周期 = 2*DIV 个 clk
-//           clk=12.288MHz, DIV=2  -> BCLK = 3.072 MHz = 48kHz x 64
-//   SLOT  : 每个声道位数（BCLK 周期数/声道），32 -> LRCLK = 48 kHz
+// Create Date:    2026-10-26
+// Design Name:    i2s_clkgen
+// Module Name:    i2s_clkgen
+// Project Name:   音速双擎（SonicTwin-Engine）
+// Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
+// Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
+// Description:    i2s_clkgen.v - I2S 主模式时钟生成（BCLK / LRCLK / 位计数 / 边沿选通）
+//                 全部逻辑运行在 clk（clk_audio = 12.288 MHz）单一时钟域内，输出 bclk/lrclk
+//                 给外部 codec，同时产生与 bclk 边沿严格对齐的选通脉冲，供 i2s_rx / i2s_tx 使用
+// Dependencies:   无
 //
-// 时序（SLOT=4 示意，实际 SLOT=32）：
-//            _   _   _   _   _   _   _   _
-//   bclk    | |_| |_| |_| |_| |_| |_| |_| |_
-//   bit_idx  0   1   2   3 | 0   1   2   3 | 0 ...
-//   lrclk   ________________|¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯|
-//             左声道(32bit)   右声道(32bit)   下一帧
-//           ^frame_start                    ^frame_start
-//                            ^half_start
+// Revision:
+// Revision 0.01 - File Created
 //
-// 关键点：
-//   1) LRCLK 由 bit_idx 直接译码得到（bit_idx >= SLOT），而不是"每个帧翻转一次"，
-//      否则 LRCLK 半周期会变成 2*SLOT 个 BCLK（分频比错一倍）。
-//   2) LRCLK 在 BCLK 下降沿翻转，其后第一个上升沿采到的是该声道 MSB，
-//      符合标准 Philips I2S 时序。
-//   3) frame_start 只在"整帧起点（左声道起点）"脉冲；右声道起点是 half_start。
-//      发送端只能在 frame_start 重载整帧，绝不能在 half_start 重载。
-//=============================================================================
+//////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns/1ps
+
 
 module i2s_clkgen #(
     parameter integer DIV  = 2,     // BCLK 半周期 clk 数

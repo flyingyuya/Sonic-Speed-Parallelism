@@ -1,17 +1,24 @@
-//=============================================================================
-// rainbow_rom.v - 彩虹颜色表（128 级 RGB888）
-//-----------------------------------------------------------------------------
-// ⚠️ 由 scripts/golden/gen_rainbow.py 自动生成，请勿手工修改。
+//////////////////////////////////////////////////////////////////////////////////
+// Company:        个人项目 / SonicTwin-Engine
+// Engineer:       flyingyu
 //
-// 配色：HSL(H, S=0.85, L=0.6)，H = 0..360 均分 128 级
-//   H=0 -> 红   H=1/3 -> 绿   H=2/3 -> 蓝   循环回红
-//   这个公式是从参考工程 Music-Spectrum 的 RGB565 表反推验证出来的：
-//   它的 rom[0] = 16'b11110_010000_01000 = (30,16,8)，
-//   恰好等于 HSL(0, 0.85, 0.6) 量化到 RGB565 的结果。
+// Create Date:    2026-10-26
+// Design Name:    rainbow_rom
+// Module Name:    rainbow_rom
+// Project Name:   音速双擎（SonicTwin-Engine）
+// Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
+// Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
+// Description:    rainbow_rom.v - 彩虹颜色表（128 级 RGB888）
+//                 ⚠️ 由 scripts/golden/gen_rainbow.py 自动生成，请勿手工修改。
+//                 配色：HSL(H, S=0.85, L=0.6)，H = 0..360 均分 128 级
+// Dependencies:   无
 //
-// 地址是【循环】的：调用方对 128 取模即可实现彩虹滚动效果。
-//=============================================================================
+// Revision:
+// Revision 0.01 - File Created
+//
+//////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns/1ps
+
 
 module rainbow_rom (
     input  wire [6:0]   addr,       // 0..127
