@@ -14,35 +14,50 @@
 ```
 top（板级顶层：管脚、IBUFDS、MMCM）
 │
-├── clk_gen                      🚧  200MHz 差分 → 全部时钟 + locked
-├── rst_gen                      🚧  各时钟域复位同步
+├── clk_gen / MMCM1              ✅  200MHz 差分 → clk_sys 48 + clk_pix 12.5 + locked
+├── MMCM2（HDMI）                 ✅  VCO 1000 → clk_hdmi 25 + clk_5x 125
+├── rst_sync                     ✅  各时钟域复位同步（HDMI 域额外延迟释放）
 │
 ├── 【主域 clk_sys = 48 MHz】  ← 音频 + 控制全部跑这里，无跨域
-│   ├── uart_rx / uart_tx        🚧  CH340E，调参 + 数据回传
-│   ├── cmd_proc                 🚧  命令解析 → 配置寄存器
-│   ├── i2c_master               🚧  通用 I2C 主机
+│   ├── uart_rx / uart_tx        ✅  CH340E，调参 + 数据回传
+│   ├── cmd_proc                 ✅  命令解析 → 配置寄存器
+│   ├── i2c_control              ✅  通用 I2C 主机
 │   ├── wm8960_init              ✅  上电配置序列（I2C，20 条寄存器）
-│   ├── audio_top                ✅  I2S 收发 + 5 段均衡（阶段一完成）
-│   │   ├── i2s_slave_clk        ✅  **替代 i2s_clkgen**（从模式恢复时序）
-│   │   ├── i2s_rx / i2s_tx      ✅  接口不变，直接复用
+│   ├── ui_ctrl                  ✅  8 按钮配置寄存器组（含 SD 切图/CBG）
+│   ├── audio_top                ✅  I2S 收发 + 5 段均衡 + 静音
+│   │   ├── i2s_slave_clk        ✅  从模式恢复时序
+│   │   ├── i2s_rx / i2s_tx      ✅
 │   │   ├── eq_cascade ×2        ✅
 │   │   ├── eq_coeff_rom         ✅
 │   │   └── audio_fifo ×2        ✅
 │   ├── fft_core                 ✅  1024 点实数 FFT（1004 LUT + 2 BRAM）
-│   ├── spectrum                 ✅  512 bin -> 32 柱高（473 LUT）
-│   └── spectrum_map             ✅  频率分组表（脚本生成）
+│   ├── spectrum ×2              ✅  512 bin -> 60 柱（LCD）/ 80 柱（HDMI）
+│   └── spectrum_map / map80     ✅  频率分组表（脚本生成，参数化）
 │
-├── 【显示域 clk_pix = 12.5 MHz】
-│   ├── lcd_timing               ✅  480x272 时序（56 LUT / 47 FF）
-│   ├── spec_sync                ✅  跨域快照（复用 async_fifo）
-│   ├── bg_src                   ✅  背景生成（扩展点①）
-│   ├── disp_mix                 ✅  背景 + 频谱柱合成
-│   ├── rainbow_rom              ✅  128 级彩虹表（脚本生成）
-│   ├── polar_map                ✅  极坐标变换（64 扇区）
-│   └── wave_buf                 ✅  波形缓冲（双时钟 BRAM）
+├── 【SD 卡子系统】
+│   ├── sd_ctrl_top              ✅  时钟切换 + start 跨域 + 引脚归属
+│   ├── sd_init                  ✅  CMD0/8/55/41（SPI 模式，5/5 PASS）
+│   ├── sd_read                  ✅  CMD18 多块读 × 510 块（4/4 PASS）
+│   ├── sd_img_load              ✅  字节流 → RGB565，双写口（全图 + 裁剪区）
+│   └── frame_buf ×2             ✅  480×272（LCD）+ 320×180（HDMI），各 1W1R
+│
+├── 【显示域 clk_pix = 12.5 MHz】+【HDMI 域 clk_hdmi = 25 MHz】
+│   ├── disp_top（两份实例）      ✅  同样的渲染核心，`WITH_UI`/`WITH_TEXT` 参数门控
+│   │   ├── lcd_timing           ✅  480×272 / 640×360 参数化
+│   │   ├── ui_layer             ✅  8 按钮面板（HDMI 侧门控关闭）
+│   │   ├── status_line          ✅  8 行状态栏（HDMI 侧门控关闭）
+│   │   ├── text_buf             ✅  字符位图缓冲（HDMI 侧门控关闭）
+│   │   ├── bg_src               ✅  程序化背景（渐变按 VDISP 归一化）
+│   │   ├── disp_mix             ✅  背景 + 柱谱 + 波形合成（`NBARS_DISP` 参数）
+│   │   ├── rainbow_rom          ✅  128 级彩虹表（脚本生成）
+│   │   ├── polar_map            ✅  极坐标变换（64 扇区）
+│   │   ├── wave_buf             ✅  波形缓冲（双时钟 BRAM，`HOLD_SHIFT`）
+│   │   └── demo_src             ✅  DEMO 模式柱高源
+│   └── hdmi_top → tmds_out      ✅  TMDS 编码 + OSERDESE2 5:1 + OBUFDS
 │
 └── 跨时钟域
-    └── spec_dpram               🚧  双口 BRAM：音频域写 / 显示域读
+    ├── spec_sync / async_fifo   ✅  音频域 → 显示域（柱高 + 波形）
+    └── sd_ctrl_top 内的握手     ✅  电平翻转 + 双打 + 边沿检测
 ```
 
 **音频通路与显示通路并行**：两者在不同时钟域、用不同硬件资源，
@@ -111,7 +126,7 @@ rst_async_n = sys_rst_n（R14 按键，低有效） & mmcm_locked
 
 ## 4. 接口契约
 
-### 4.1 `clk_gen` 🚧
+### 4.1 `clk_gen` ✅
 
 ```verilog
 module clk_gen (
@@ -227,7 +242,7 @@ clk_pix : 1250 周期 / 100us -> 12.5000 MHz   ✅
 
 ---
 
-### 4.1b `i2s_slave_clk` 🚧（替代 `i2s_clkgen`）
+### 4.1b `i2s_slave_clk` ✅（替代 `i2s_clkgen`）
 
 ```verilog
 module i2s_slave_clk #(
@@ -262,7 +277,7 @@ BCLK 半周期 ≈ 7.8 个 `clk_sys` —— 边沿检测和建立时间都绰绰
 
 ---
 
-### 4.2 `rst_gen` 🚧
+### 4.2 `rst_sync` ✅
 
 ```verilog
 module rst_gen (
@@ -276,7 +291,7 @@ module rst_gen (
 
 ---
 
-### 4.3 `uart_rx` / `uart_tx` 🚧
+### 4.3 `uart_rx` / `uart_tx` ✅
 
 ```verilog
 module uart_rx #(parameter integer CLK_FREQ = 96_000_000,
@@ -301,7 +316,7 @@ module uart_tx #(parameter integer CLK_FREQ = 96_000_000,
 
 ---
 
-### 4.4 `i2c_master` 🚧
+### 4.4 `i2c_control` ✅
 
 ```verilog
 module i2c_master #(parameter integer CLK_FREQ = 96_000_000,
@@ -330,7 +345,7 @@ module i2c_master #(parameter integer CLK_FREQ = 96_000_000,
 
 ---
 
-### 4.5 `wm8960_init` 🚧
+### 4.5 `wm8960_init` ✅
 
 ```verilog
 module wm8960_init (
@@ -365,7 +380,7 @@ module wm8960_init (
 
 ---
 
-### 4.6 `cmd_proc` 🚧
+### 4.6 `cmd_proc` ✅
 
 ```verilog
 module cmd_proc (
@@ -419,7 +434,7 @@ module audio_top #(...) (
 );
 ```
 
-**待扩展**（🚧）：
+**已扩展**（✅）：
 
 | 新增端口 | 方向 | 说明 |
 | --- | --- | --- |
@@ -469,7 +484,7 @@ module fft_core #(
 
 ---
 
-### 4.9 `spectrum` 🚧
+### 4.9 `spectrum` ✅
 
 ```verilog
 module spectrum (
@@ -490,7 +505,7 @@ module spectrum (
 
 ---
 
-### 4.10 `spec_dpram` 🚧（跨时钟域）
+### 4.10 `spec_sync` / `async_fifo` ✅（跨时钟域）
 
 ```verilog
 module spec_dpram (
@@ -551,7 +566,7 @@ module lcd_timing #(
 
 ---
 
-### 4.12 `overlay` 🚧
+### 4.12 `disp_mix` ✅（原 overlay，已改名）
 
 ```verilog
 module overlay (
@@ -677,22 +692,30 @@ module overlay (
 vivado -mode batch -source scripts/vivado/build.tcl -tclargs xc7a100tfgg484-2 top constrs
 ```
 
+### 当前实测（2026-10，含 SD 卡 + HDMI + 双路图片背景）
+
 | 项 | 实测 |
 | --- | --- |
-| **WNS** | **+0.581 ns** |
-| **WHS** | **+0.082 ns** |
-| WPWS | +1.100 ns |
-| TNS | 0（无失败端点） |
-| Slice LUTs | **4211 / 63400（6.64%）** |
-| Slice Registers | 3159 / 126800（2.49%） |
-| Block RAM | 2 / 135（1.48%） |
-| DSP48 | 14 / 240（5.83%） |
-| MMCM / BUFG | 1 / 2 |
-| Bonded IOB | 38 / 285 |
-| 比特流 | `build/vivado/top.bit`（1230 KB） |
-| CDC | 183 + 3 端点，**Safe 全部安全、Unsafe = 0、缺 ASYNC_REG = 0** |
+| **`clk_sys` WNS** | **+1.779 ns** ✅ |
+| **`clk_hdmi` WNS** | **+4.028 ns** ✅ |
+| **`clk_pix` WNS** | **远大于 0** ✅ |
+| **TNS** | **0（无失败端点）** |
+| Slice LUTs | **11,768 / 63,400（18.56%）** |
+| Block RAM | **100.5 / 135（74.44%）** |
+| DSP48 | **26 / 240（10.83%）** |
+| MMCM | **2**（MMCM1: 48+12.5 ✗ MMCM2: 25+125）|
+| **构建警告** | **0 CRITICAL / 0 WARNING** ✅ |
+| 比特流 | `build/vivado/top.bit`（~2043 KB） |
 
-**资源占用非常宽裕**（LUT 不到 7%），留给极坐标视图、按键交互、背景图绰绰有余。
+**资源现状**：LUT 宽裕（18%），但 **BRAM 已到 74%**
+（两份帧缓冲占 84 块）⟹ **再加大存储前必须先规划：降位深 / 降分辨率 / 上外部存储器**。
+
+### 早期基线（阶段四，仅音频 + 60 柱 + 单路 LCD）
+
+| 项 | 实测 |
+| --- | --- |
+| WNS | +0.581 ns ｜ Slice LUTs 4211（6.64%）｜ Block RAM 2 ｜ DSP48 14 |
+| CDC | 183 + 3 端点，**Safe 全部安全、Unsafe = 0、缺 ASYNC_REG = 0** |
 
 ### ⚠️ 整机集成暴露的两件事
 

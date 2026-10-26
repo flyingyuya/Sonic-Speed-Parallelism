@@ -148,7 +148,7 @@ vivado -mode batch -source scripts/vivado/build.tcl -tclargs xc7a100tfgg484-2 to
 
 ---
 
-## 阶段四：上板验证 ⏳ 等音频模块到货
+## 阶段四：上板验证 ✅ 已完成
 
 详细步骤见 [13-todo.md](13-todo.md) P0。
 
