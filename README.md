@@ -89,7 +89,7 @@ docs/                   设计文档（01~13）
 **所有模块都用 Python 定点黄金模型逐位对拍**，而不是"看着波形差不多"：
 
 ```bash
-bash scripts/sim/run_iv.sh          # 全量回归（20 项，约 40 秒）
+bash scripts/sim/run_iv.sh          # 全量回归（41 项，约 1 分 30 秒）
 bash scripts/sim/run_iv.sh fft_core # 单项
 bash scripts/sim/run_iv.sh tools    # 只查工具链
 ```
@@ -114,14 +114,15 @@ bash scripts/sim/run_iv.sh tools    # 只查工具链
 
 | 项 | 实测 | 占比 |
 | --- | --- | --- |
-| Slice LUTs | 5648 | **8.91%** |
-| Slice Registers | 3629 | 2.86% |
-| Block RAM | 3 | 2.22% |
-| DSP48 | 16 | 6.67% |
-| **WNS** | **+1.548 ns**（clk_sys 48 MHz）/ **+41.573 ns**（clk_pix）| 分域实测 |
-| 比特流 | ~1258 KB | |
+| Slice LUTs | **11,768** | **18.56%** |
+| Block RAM | **100.5** | **74.44%** |
+| DSP48 | **26** | 10.83% |
+| **WNS** | **clk_sys +1.779 ns** / **clk_hdmi +4.028 ns** / **clk_pix**（远大于 0）| 分域实测 |
+| **DRC / 警告** | **0 CRITICAL / 0 WARNING** | ✅ |
+| 比特流 | ~2043 KB | |
 
-余量充足 —— 后续的 UI 框架、背景图、触摸屏都放得下。
+BRAM 已到 74%（两份帧缓冲：480×272 给 LCD、320×180 裁剪给 HDMI）。
+再加大存储前需要先规划：**降位深 / 降分辨率 / 上外部存储器**。
 
 ---
 
@@ -133,14 +134,15 @@ bash scripts/sim/run_iv.sh tools    # 只查工具链
 | [02 路线图](docs/02-roadmap.md) | 分阶段计划与进度 |
 | [03 验证方法](docs/03-verification.md) | 黄金模型、对拍策略 |
 | [06 板级资源](docs/06-board-resources.md) | 52 条管脚映射、液晶、音频模块、扩展口 |
-| [08 问题账本](docs/08-skills-index.md) | **43 条**：现象 / 根因 / 修复 / 量化改善 |
+| [08 问题账本](docs/08-skills-index.md) | **816 条**：现象 / 根因 / 修复 / 量化改善 |
+| [14 状态快照](docs/14-status-snapshot.md) | **当前能用的 / 已知受限的 / 待办的** ⭐ 先看这个 |
 | [09 WM8960](docs/09-wm8960-module.md) | 模块接口、PLL 配置、验证过的寄存器表 |
 | [10 顶层设计](docs/10-top-design.md) | 接口契约、开发依赖图、整机结果 |
 | [11 FFT 设计](docs/11-fft-design.md) | 算法推导、地址发生器原理、5 个实施踩坑 |
 | [12 显示链设计](docs/12-display-design.md) | 三视图合成、极坐标近似、波形缓冲、交互 |
 | [13 待做清单](docs/13-todo.md) | 按优先级排的 TODO + 明确不做的事 |
 
-**问题账本**是这个项目最有价值的积累：43 条里**只有不到 10 条是仿真能发现的**，
+**问题账本**是这个项目最有价值的积累：816 条里**大部分是仿真发现不了的**，
 其余分别靠综合报错、DRC、资源报告、时序报告、CDC 报告、以及"先看清楚工具到底在算什么"。
 
 ---
@@ -148,7 +150,7 @@ bash scripts/sim/run_iv.sh tools    # 只查工具链
 ## 工具链
 
 ```bash
-bash scripts/sim/run_iv.sh              # iverilog 全量回归（20 项 / 40 秒）
+bash scripts/sim/run_iv.sh              # iverilog 全量回归（41 项 / 1 分 30 秒）
 bash scripts/sim/run_xsim.sh <tb>       # 需要 Xilinx 原语的用 xsim
 bash scripts/vivado/build.tcl ...       # 综合 → 布局布线 → 比特流
 bash scripts/vivado/synth_check.tcl ... # 单模块 OOC 检查（资源 + DRC + CDC）

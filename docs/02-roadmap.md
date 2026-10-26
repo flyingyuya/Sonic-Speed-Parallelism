@@ -161,3 +161,15 @@ vivado -mode batch -source scripts/vivado/build.tcl -tclargs xc7a100tfgg484-2 to
 
 见 [13-todo.md](13-todo.md)：P1 交互体验（UI 框架三件套 / 触摸屏 / EQ 实时可调）、
 P2 背景图、P3 锦上添花。
+
+---
+
+## 2026-10 完成项
+
+| 项 | 状态 |
+|---|---|
+| **HDMI 显示 SD 卡图片** | ✅ **完成**（480×272 全图给 LCD ✗ 320×180 裁剪给 HDMI 再 2× 放大）|
+| **颜色/RB 顺序修正** | ✅ **HDMI 路径补一次 R/B 交换** |
+| **两屏背景一致性** | ✅ **`bg_src` 渐变按 `VDISP` 归一化** |
+| **综合警告清零** | ✅ **0 CRITICAL / 0 WARNING** |
+| **HDMI 2× 放大平滑** | ⏳ **搁置**，方案见 [16-hdmi-smooth-plan.md](16-hdmi-smooth-plan.md) |

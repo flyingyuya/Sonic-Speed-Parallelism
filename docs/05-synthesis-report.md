@@ -1,5 +1,11 @@
 # 05 综合实现报告（实测数据）
 
+> ⚠️ **本文是历史记录（阶段一的 `audio_top` 子模块报告）**，数字已不是当前状态。
+> **当前整机数字请以 [14-status-snapshot.md](14-status-snapshot.md) 为准**：
+> LUT 11,768（18.56%）/ BRAM 100.5（74.44%）/ DSP 26 /
+> `clk_sys` +1.779 ns / `clk_hdmi` +4.028 ns / **0 CRITICAL · 0 WARNING**。
+
+
 > 生成命令：
 > ```bash
 > vivado -mode batch -source scripts/vivado/build.tcl \

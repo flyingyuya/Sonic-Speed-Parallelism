@@ -540,7 +540,7 @@ python3 scripts/uart_term.py -c '?' -c V02 -c '?'
 | 音频链路（I2S / EQ / FFT / 频谱 / 显示 / 交互 / UART） | ✅ 完成，**20/20 TB PASS** |
 | 整机实现 | ✅ **0 WARNING / 0 CRITICAL / DRC 0 违规**，`clk_sys` WNS +2.563 ns |
 | **P0-A 上板（不含音频）** | ✅ **完成** —— JTAG、LED、LCD 背景、UART 21/21、`V`/`A`/`B`/KEY2 全部目视确认 |
-| 问题账本 | 51 条 |
+| 问题账本 | 816 条 |
 | 文档 | `docs/01`~`docs/13` |
 
 ### 还没做的（按建议顺序）

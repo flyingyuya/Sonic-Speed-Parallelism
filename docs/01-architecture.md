@@ -372,3 +372,31 @@ UART ─┘
 | **DRC** | **0 违规**（waived 50 条 DSP 流水建议，判据见 [13](13-todo.md)）| |
 
 **余量非常充足**（LUT 不到 11%），足够后续加 UI 框架、背景图、触摸屏 ✓
+
+---
+
+## 附：双路显示的帧缓冲架构（2026-10）
+
+```
+SD 卡 (480×272 RGB565 裸扇区)
+   │
+   ▼ sd_read (CMD18 多块)  ──► sd_img_load
+                                  │
+                    ┌─────────────┴─────────────┐
+                    ▼                           ▼
+         frame_buf u_fb_lcd            frame_buf u_fb_hdmi
+           480×272 (58 块)               320×180 (26 块)
+           每像素都写                 只写中心裁剪区 [80,400)×[46,226)
+                    │                           │
+                    ▼                           ▼
+              disp_top (LCD)              disp_top (HDMI)
+              1:1 满屏 ✗ clk_pix          2× 放大 ✗ clk_hdmi
+                    │                           │
+                    ▼                           ▼
+              LCD 480×272                 HDMI 640×360 (TMDS)
+              + UI/状态栏                  + 80 根柱谱 + 波形
+```
+
+**为什么是两份不同尺寸**：Vivado 的 BRAM 推断不支持"1 写 2 读跨时钟"，
+会退化成 LUTRAM。两份各是简单 1W1R ⟹ 可靠推断成 BRAM ⟹ 总 100.5 块。
+详见 [12-display-design.md](12-display-design.md) §X。
