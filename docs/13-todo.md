@@ -112,7 +112,7 @@ python3 scripts/uart_term.py -c '?' -c V02 -c '?'
 | 项 | 结果 |
 | --- | --- |
 | JTAG | `Digilent/210251170403` → `xc7a100t` IDCODE 认到 ✅ |
-| 烧写 | `top.bit` 1258 KB 下载成功 ✅ |
+| 烧写 | `top.bit` 下载成功 ✅（当时 1258 KB，现约 2043 KB）|
 | `led[1]` 心跳 | 闪烁 ✅ |
 | `led[0]` | 不亮（无音频模块，符合预期）✅ |
 | LCD 网格背景 | 显示 ✅ |

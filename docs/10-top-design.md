@@ -727,6 +727,7 @@ vivado -mode batch -source scripts/vivado/build.tcl -tclargs xc7a100tfgg484-2 to
 Vivado 把 clk_sys↔clk_pix 的跨域路径按同步关系硬算。
 
 补上 `constrs/clocks.xdc` 后：**WNS -1.497 → +0.581 ns，TNS -249 → 0** ✓
+（这是**当时**的数据；当前为 `clk_sys` +1.779 ns，见上表。）
 
 > 这条路径本来就不需要算 —— 跨域全靠 `async_fifo` 的格雷码指针保证。
 > **和第 26 条同类：先看清工具到底在算什么。**

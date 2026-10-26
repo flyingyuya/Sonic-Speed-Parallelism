@@ -121,14 +121,13 @@ vivado -mode batch -source scripts/vivado/build.tcl -tclargs xc7a100tfgg484-2 to
 
 | 项 | 实测 |
 | --- | --- |
-| **WNS** | 分域：**clk_sys +1.548 ns** / clk_pix +41.573 ns |
-| Slice LUTs | **5648 / 63400（8.91%）** |
-| Slice Registers | 3629（2.86%） |
-| Block RAM | 3（2 个 FFT + 1 个波形） |
-| DSP48 | 16 / 240（6.67%） |
-| MMCM / BUFG | 1 / 2 |
-| Bonded IOB | 42 |
-| 比特流 | 约 1258 KB |
+| **WNS** | 分域：**clk_sys +1.779 ns** / **clk_hdmi +4.028 ns** / clk_pix 远大于 0 |
+| Slice LUTs | **11,768 / 63400（18.56%）** |
+| Block RAM | **100.5 / 135（74.44%）**（两份帧缓冲占 84）|
+| DSP48 | 26 / 240（10.83%） |
+| MMCM | 2（MMCM1: 48+12.5 ／ MMCM2: 25+125）|
+| **DRC / 警告** | **0 CRITICAL / 0 WARNING** |
+| 比特流 | 约 2043 KB |
 | CDC | 两端 Unsafe = 0，缺 ASYNC_REG = 0 |
 | **DRC** | **Violations 0**（其中 waived 50，全为 DSP 流水建议，判据见 `scripts/vivado/drc_waivers.tcl`）|
 | **综合/实现警告** | **0 WARNING，0 CRITICAL WARNING** |
