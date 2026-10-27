@@ -383,8 +383,6 @@ module top #(
     reg        tp_go;
     wire       tp_busy, tp_valid;
     wire [11:0] tp_x, tp_y;
-    // wire [11:0] tp_edges;
-    // wire        tp_low;
 
     always @(posedge clk_sys) begin
         if (!rst_sys_n) begin
@@ -978,8 +976,8 @@ module top #(
         .ui_demo    (ui_demo),
         .tp_x       (tp_x),
         .tp_y       (tp_y),
-        .tp_edges   (tp_edges),
-        .tp_low     (tp_low),
+        .tp_edges   (),                         // 诊断量，HDMI 侧不接
+        .tp_low     (),
         .wave_din   (wave_din_sel),
         .wave_th    (wave_th),
         // 诊断显示
