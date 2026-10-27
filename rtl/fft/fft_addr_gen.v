@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    fft_addr_gen
 // Module Name:    fft_addr_gen
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    fft_addr_gen.v - FFT 蝶形地址与旋转因子索引生成（纯组合逻辑）
-//                 功能：给定"第几级(s)"和"本级第几个蝶形(cnt)"，算出：
-//                 p      —— 蝶形第一个点的 BRAM 地址
 // Dependencies:   无
 //
 // Revision:

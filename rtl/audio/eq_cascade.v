@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    eq_cascade
 // Module Name:    eq_cascade
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    eq_cascade.v - 多段双二阶（Biquad）均衡器，时分复用 MAC
-//                 结构：NSECT 个 Direct-Form-II-Transposed 双二阶级联，
-//                 共用同一套乘法/加法运算器，每个样本消耗 NSECT+1 个时钟周期。
 // Dependencies:   无
 //
 // Revision:

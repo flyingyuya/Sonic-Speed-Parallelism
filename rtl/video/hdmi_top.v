@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    hdmi_top
 // Module Name:    hdmi_top
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    hdmi_top.v —— HDMI 输出（DVI 兼容）：把一路像素流变成 TMDS 差分对
-//                 【它现在只做三件事】
-//                 ① 接收一路【已经带时序的】像素流（rgb + de + hsync + vsync）
 // Dependencies:   无
 //
 // Revision:

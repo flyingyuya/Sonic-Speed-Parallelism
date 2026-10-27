@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    i2s_slave_clk
 // Module Name:    i2s_slave_clk
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    i2s_slave_clk.v - I2S 从模式时钟恢复（替代 i2s_clkgen）
-//                 背景：本工程 WM8960 是 I2S 主（手册 P56：数字音频接口也从 SYSCLK 派生，
-//                 MCLK 必须与 BCLK/LRCLK 同源）。所以 FPGA 侧只能当从机，
 // Dependencies:   无
 //
 // Revision:

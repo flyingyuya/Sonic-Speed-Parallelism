@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    clk_gen
 // Module Name:    clk_gen
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    clk_gen.v - 板载 200 MHz 差分时钟 → 系统所需全部时钟
-//                 输入：200 MHz 差分（R4/T4 = IO_L13P/N_MRCC_34，bank 34，Vcco = 1.5V）
-//                 输出：clk_sys      48   MHz  —— 音频 + 控制全部逻辑
 // Dependencies:   无
 //
 // Revision:

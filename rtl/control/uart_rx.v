@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    uart_rx
 // Module Name:    uart_rx
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    uart_rx.v - UART 接收（8N1，参数化波特率）
-//                 【为什么不用 rtl/common/uart_byte_rx.v】
-//                 那份参考工程抄过来的代码里有 `rx_r[0] <= #1 uart_rx;` 这种**延时赋值**。
 // Dependencies:   无
 //
 // Revision:

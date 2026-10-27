@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    sd_img_load
 // Module Name:    sd_img_load
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    sd_img_load.v  ——  把 SD 卡的字节流搬成像素，写进帧缓冲
-//                 【数据格式约定】
-//                 PC 端脚本（scripts/sdcard/mkimage.py）按【RGB565 小端】写盘：
 // Dependencies:   无
 //
 // Revision:

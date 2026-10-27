@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    wave_buf
 // Module Name:    wave_buf
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    wave_buf.v - 波形缓冲（示波器式【触发采集】+ 双 bank 乒乓）
-//                 用途：把 clk_sys 域（音频 48 kHz）的采样送到 clk_pix 域，供波形显示。
-//                 【为什么不是"最近 N 个点"】
 // Dependencies:   无
 //
 // Revision:

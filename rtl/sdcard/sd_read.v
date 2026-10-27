@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    sd_read
 // Module Name:    sd_read
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    sd_read.v  ——  SD 卡 SPI 模式单块读（CMD17）
-//                 【一次读操作完整流程】
-//                 ① 拉低 CS，发 CMD17（48 位，参数 = 扇区地址）
 // Dependencies:   无
 //
 // Revision:

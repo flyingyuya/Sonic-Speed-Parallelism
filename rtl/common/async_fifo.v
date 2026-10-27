@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    async_fifo
 // Module Name:    async_fifo
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    async_fifo.v - 异步 FIFO（双时钟，格雷码指针，show-ahead 输出）
-//                 用途：本工程有两处必须跨时钟域传数据
-//                 ① BCLK 域（WM8960 输出的 3.072 MHz）→ clk_sys 域（48 MHz）
 // Dependencies:   无
 //
 // Revision:

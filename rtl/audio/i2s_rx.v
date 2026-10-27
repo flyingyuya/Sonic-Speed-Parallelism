@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    i2s_rx
 // Module Name:    i2s_rx
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    i2s_rx.v - I2S 接收（主模式，单时钟域）
-//                 在 bclk 上升沿采样 sdin，按 64 位移位寄存器拼帧，帧末（bit_idx = 2*SLOT-1）
-//                 同时得到左/右声道数据并输出一个 sample_valid 脉冲。
 // Dependencies:   无
 //
 // Revision:

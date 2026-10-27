@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    key_gesture
 // Module Name:    key_gesture
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    key_gesture.v —— 把按键的"按了一下"翻译成【单击】/【双击】
-//                 【为什么需要它】
-//                 板子上只有两个按键（KEY1/KEY2），但要表达四种动作：
 // Dependencies:   无
 //
 // Revision:

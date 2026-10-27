@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    frame_buf
 // Module Name:    frame_buf
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    frame_buf.v  ——  一帧图片的帧缓冲（双口 BRAM）
-//                 【为什么需要它】
-//                 SD 卡的随机访问延迟是毫秒级，而一个像素行只有 20~40 us。
 // Dependencies:   无
 //
 // Revision:
@@ -38,19 +36,29 @@ module frame_buf #(
 
     localparam integer DEPTH = W * H;
 
-    // 综合器会把这块推成 BRAM（简单双口：一个写口 + 一个读口）
+    //=========================================================================
+    // 存储体：简单双口（1 写 + 1 读）⟹ 综合器可靠推断成 BRAM
+    //=========================================================================
+    //   ⚠️ 同一个 mem 被【两个不同时钟】读会被退化成 LUTRAM
+    //      ⟹ 需要多路同时读时，复制实例，不要加读口
     reg [15:0] mem [0:DEPTH-1];
 
+    //=========================================================================
+    // 写口（搬帧，通常 clk_sys）
+    //=========================================================================
     always @(posedge wr_clk) begin
         if (wr_en && (wr_addr < DEPTH[18:0]))
             mem[wr_addr] <= wr_data;
     end
 
+    //=========================================================================
+    // 读口（显示扫描，clk_pix / clk_hdmi）：1 拍延迟
+    //=========================================================================
     always @(posedge rd_clk) begin
         if (rd_addr < DEPTH[18:0])
             rd_data <= mem[rd_addr];
         else
-            rd_data <= 16'd0;
+            rd_data <= 16'd0;                   // 越界读给 0，避免 X 传播
     end
 
 endmodule

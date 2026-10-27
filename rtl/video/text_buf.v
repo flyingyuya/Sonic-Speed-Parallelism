@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    text_buf
 // Module Name:    text_buf
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    text_buf.v - 字符缓冲 + 点阵渲染
-//                 【在"扫描到哪算到哪"的架构里怎么画文字】
-//                 本工程没有 framebuffer，每个像素是【组合算出来】的。文字也一样：
 // Dependencies:   无
 //
 // Revision:

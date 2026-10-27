@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    sd_init
 // Module Name:    sd_init
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    sd_init.v  ——  SD 卡 SPI 模式初始化
-//                 【这个模块做什么】
-//                 让一张 SD 卡从"上电状态"进入"SPI 模式且已完成初始化"，
 // Dependencies:   无
 //
 // Revision:

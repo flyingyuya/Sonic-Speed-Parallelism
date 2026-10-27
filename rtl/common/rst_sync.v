@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    rst_sync
 // Module Name:    rst_sync
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    rst_sync.v - 异步复位、同步释放
-//                 输入 rst_async_n（来自按键/上电复位，异步），输出 rst_n 在 clk 域同步释放，
-//                 保证所有触发器在同一个时钟沿退出复位，避免复位撤销时的亚稳态。
 // Dependencies:   无
 //
 // Revision:
@@ -21,18 +19,23 @@
 
 
 module rst_sync (
-    input  wire clk,
-    input  wire rst_async_n,
-    output wire rst_n
+    input  wire clk,                    // 目标时钟域
+    input  wire rst_async_n,            // 异步复位输入，低有效
+    output wire rst_n                   // 同步释放后的复位，低有效
 );
 
+    //=========================================================================
+    // 两级同步链：异步置位 / 同步释放
+    //=========================================================================
+    //   ASYNC_REG 告诉综合器把这两级放在同一片 SLICE
+    //   ⟹ 布线延迟最小 ⟹ 降低复位撤销时的亚稳态概率
     (* ASYNC_REG = "TRUE" *) reg [1:0] sync_q;
 
     always @(posedge clk or negedge rst_async_n) begin
-        if (!rst_async_n) sync_q <= 2'b00;
-        else              sync_q <= {sync_q[0], 1'b1};
+        if (!rst_async_n) sync_q <= 2'b00;          // 异步置 0：复位立刻生效
+        else              sync_q <= {sync_q[0], 1'b1};  // 逐级移入 1：同步释放
     end
 
-    assign rst_n = sync_q[1];
+    assign rst_n = sync_q[1];                       // 第二级输出，最稳定
 
 endmodule

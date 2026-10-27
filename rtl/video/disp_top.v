@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    disp_top
 // Module Name:    disp_top
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    disp_top.v - 显示链顶层（把时序 / 跨域快照 / 背景 / 混合 串起来）
-//                 数据流：
-//                 clk_sys 域                       clk_pix 域（12.5 MHz）
 // Dependencies:   见文件内 `include
 //
 // Revision:

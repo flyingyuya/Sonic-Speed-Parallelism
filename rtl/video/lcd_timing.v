@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    lcd_timing
 // Module Name:    lcd_timing
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    lcd_timing.v - 480x272 液晶屏时序发生器
-//                 屏幕特性（璞致 4.3 寸，PCBA 子卡 0 欧姆把 LCD_DE 直接拉高，所以没有 DE 脚）：
-//                 · 分辨率 480 x 272
 // Dependencies:   无
 //
 // Revision:

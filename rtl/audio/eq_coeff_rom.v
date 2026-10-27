@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    eq_coeff_rom
 // Module Name:    eq_coeff_rom
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    eq_coeff_rom.v - 均衡器系数表（**本文件由 scripts/golden/gen_all.py 自动生成**）
-//                 结构：{频段, 增益档} -> 该段双二阶的 5 个系数 {b0,b1,b2,a1,a2}
-//                 频段 : 0..4 对应 100/300/1000/3000/8000 Hz
 // Dependencies:   无
 //
 // Revision:

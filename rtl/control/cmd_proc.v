@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    cmd_proc
 // Module Name:    cmd_proc
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    cmd_proc.v - UART 命令解析（ASCII，给人在终端里敲）
-//                 【命令格式】一句话：一个字母 + 两位十六进制，回车生效。
-//                 V07<回车>     设置 VIEW   = 0x07（三视图全开）
 // Dependencies:   无
 //
 // Revision:

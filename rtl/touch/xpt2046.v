@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    xpt2046
 // Module Name:    xpt2046
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    xpt2046.v - XPT2046 电阻触摸屏控制器（四线 SPI）
-//                 【XPT2046 怎么读】
-//                 SPI 模式 0（空闲低、上升沿采样），一次转换 24 个 DCLK：
 // Dependencies:   无
 //
 // Revision:

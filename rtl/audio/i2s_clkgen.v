@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    i2s_clkgen
 // Module Name:    i2s_clkgen
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    i2s_clkgen.v - I2S 主模式时钟生成（BCLK / LRCLK / 位计数 / 边沿选通）
-//                 全部逻辑运行在 clk（clk_audio = 12.288 MHz）单一时钟域内，输出 bclk/lrclk
-//                 给外部 codec，同时产生与 bclk 边沿严格对齐的选通脉冲，供 i2s_rx / i2s_tx 使用
 // Dependencies:   无
 //
 // Revision:

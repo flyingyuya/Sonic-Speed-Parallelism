@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    sd_ctrl_top
 // Module Name:    sd_ctrl_top
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    sd_ctrl_top.v  ——  SD 卡子系统顶层
-//                 【它做什么】
-//                 把 sd_init（初始化）和 sd_read（读数据块）组合成"一根 SPI 总线"，
 // Dependencies:   无
 //
 // Revision:

@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    uart_tx
 // Module Name:    uart_tx
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    uart_tx.v - UART 发送（8N1，参数化波特率）
-//                 用途：把配置查询的回执、上电横幅送回电脑，方便确认板子活着、参数改对了。
-//                 接口：拉高 `send` 一拍，模块把 `data` 按 8N1 发出去，期间 `busy` 为 1。
 // Dependencies:   无
 //
 // Revision:

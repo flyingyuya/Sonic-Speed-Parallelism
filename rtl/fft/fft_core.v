@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    fft_core
 // Module Name:    fft_core
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    fft_core.v - 1024 点实数 FFT 顶层（存储式，单蝶形时分复用）
-//                 这是把前三块拼起来的地方：
-//                 fft_twiddle_rom  —— 旋转因子表
 // Dependencies:   无
 //
 // Revision:

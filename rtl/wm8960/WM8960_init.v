@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    WM8960_init
 // Module Name:    WM8960_init
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    WM8960_init.v - WM8960 上电初始化（通过 I2C 顺序写寄存器表）
-//                 来源：参考 docs/Music-Spectrum 工程的 WM8960_Init.v，针对我们的板子做了
-//                 五处必要修改（见文件末尾「相对参考工程的改动」）。
 // Dependencies:   见文件内 `include
 //
 // Revision:

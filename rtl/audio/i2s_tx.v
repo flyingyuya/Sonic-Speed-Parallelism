@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    i2s_tx
 // Module Name:    i2s_tx
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    i2s_tx.v - I2S 发送（主模式，单时钟域）
-//                 每个帧起始的 bclk 下降沿装载新的立体声帧，其后每个下降沿输出下一位。
-//                 数据在 bclk 下降沿变化，接收端在上升沿采样 —— 标准 I2S 时序。
 // Dependencies:   无
 //
 // Revision:

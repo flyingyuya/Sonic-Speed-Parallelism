@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    bg_src
 // Module Name:    bg_src
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    bg_src.v - 背景像素源（扩展点 ①）
-//                 接口刻意做成【纯组合】：(x, y, mode) -> rgb
-//                 这样显示混合逻辑只要"扫描到哪算到哪"，不需要渲染状态机、不需要行缓存。
 // Dependencies:   无
 //
 // Revision:

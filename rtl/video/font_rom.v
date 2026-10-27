@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    font_rom
 // Module Name:    font_rom
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    font_rom.v - 点阵字库 ROM（**由脚本生成，不要手改**）
-//                 生成脚本： scripts/golden/gen_font.py
-//                 重新生成： python3 scripts/golden/gen_font.py
 // Dependencies:   无
 //
 // Revision:

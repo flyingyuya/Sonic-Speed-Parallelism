@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    WM8960_init_table
 // Module Name:    WM8960_init_table
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    WM8960_init_table.v - WM8960 初始化寄存器表
-//                 ⚠️ 本文件由 scripts/golden/gen_wm8960_table.py 自动生成，请勿手工修改。
-//                 要改寄存器值请编辑脚本里的 SPEC 表然后重新生成。
 // Dependencies:   无
 //
 // Revision:

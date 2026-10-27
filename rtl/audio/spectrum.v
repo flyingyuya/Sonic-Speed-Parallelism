@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    spectrum
 // Module Name:    spectrum
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    spectrum.v - 频谱柱高生成（clk_sys 域，FFT 的直接下游）
-//                 输入：fft_core 顺序输出的 512 个频点 (index, magnitude)
-//                 输出：60 根柱的高度（9 位，0..511），带峰值保持与线性衰减
 // Dependencies:   无
 //
 // Revision:

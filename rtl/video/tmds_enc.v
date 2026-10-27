@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    tmds_enc
 // Module Name:    tmds_enc
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    tmds_enc.v —— TMDS 8b/10b 编码器（DVI / HDMI 的数据通道编码）
-//                 【为什么必须自己写】
-//                 Xilinx 没有提供 TMDS 编码的"原语"（能在代码里例化一个名字就出来的那种）。
 // Dependencies:   无
 //
 // Revision:

@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    ui_ctrl
 // Module Name:    ui_ctrl
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    ui_ctrl.v - 统一配置寄存器组（扩展点 ②）
-//                 设计意图：**按键、触摸、UART 三个输入源最终都写同一组寄存器，显示链只读它。**
-//                 按键 ─┐
 // Dependencies:   见文件内 `include
 //
 // Revision:

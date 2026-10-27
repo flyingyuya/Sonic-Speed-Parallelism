@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    ui_layer
 // Module Name:    ui_layer
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    ui_layer.v - 按钮层（UI 三件套之「图层表驱动」）
-//                 【在"扫描到哪算到哪"的架构里怎么做按钮】
-//                 本工程没有 framebuffer，每个像素是组合算出来的。按钮也一样：
 // Dependencies:   见文件内 `include
 //
 // Revision:

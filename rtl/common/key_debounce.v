@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    key_debounce
 // Module Name:    key_debounce
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    key_debounce.v - 按键消抖 + 单次触发
-//                 机械按键按下/松开时触点会抖动几毫秒，直接当信号用会一次按下被识别成十几次。
-//                 做法：把输入打两拍同步后，用一个计数器要求"连续 N 个时钟电平不变"
 // Dependencies:   无
 //
 // Revision:

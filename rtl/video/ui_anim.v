@@ -1,16 +1,14 @@
 //////////////////////////////////////////////////////////////////////////////////
-// Company:        个人项目 / SonicTwin-Engine
-// Engineer:       flyingyu
+// Company:
+// Engineer:       Binyu Fei
 //
 // Create Date:    2026-10-26
 // Design Name:    ui_anim
 // Module Name:    ui_anim
-// Project Name:   音速双擎（SonicTwin-Engine）
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    ui_anim.v - 属性插值器（UI 三件套之一）
-//                 【解决什么问题】
-//                 现在按 KEY1 切视图预设，屏幕上是【硬跳】：极坐标"啪"地出现 / 消失。
 // Dependencies:   无
 //
 // Revision:
