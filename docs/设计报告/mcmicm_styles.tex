@@ -1,0 +1,138 @@
+% mcmicm_styles.tex
+% 从美赛模板提取的代码/AI 报告样式
+% 使用时导言区加入: \input{mcmicm_styles.tex}
+
+\usepackage{tcolorbox} % 美丽盒子包
+\usepackage{matlab-prettifier} % MATLAB代码排版包
+\tcbuselibrary{listings,skins,breakable,xparse}
+
+% 颜色定义
+\definecolor{darkgray}{rgb}{0.4,0.4,0.4}
+\definecolor{darkblue}{rgb}{0.0,0.0,0.5}
+\definecolor{darkgreen}{rgb}{0,0.45,0.13}
+\definecolor{orange}{rgb}{0.87,0.49,0.0}
+
+% ========== tcolorbox 列表样式 ==========
+\tcbset{
+    mylist/.style = {
+        colframe = gray,
+        colback = white,
+        coltitle = red!50!yellow!3!white,
+        colbacktitle = white,
+        listing only,
+        attach boxed title to top center = {yshift = -\tcboxedtitleheight/2},
+        enhanced,
+        drop fuzzy shadow,
+        left = 6.5mm,
+        breakable,
+        fonttitle=\small\bfseries\color{black},
+        before skip=12pt plus 2pt,
+        after skip=12pt plus 2pt,
+    },
+    example/.style 2 args = {
+        mylist,
+        title = {Listing \thetcbcounter: #1},
+        label = {#2},
+    },
+}
+
+\newtcblisting[auto counter, number within = section, list inside = mcode]{matlab}[3][]{%
+    listing options = {
+        style = Matlab-editor,
+        numbers = left,
+        numberstyle = \footnotesize\color{darkgray}\ttfamily,
+        basicstyle = \footnotesize\ttfamily,
+        breaklines = true,
+        breakatwhitespace = true,
+        postbreak = \mbox{\textcolor{gray}{$\hookrightarrow$}\space}
+    },
+    overlay = {\begin{tcbclipinterior}\fill[blue!15!white] (frame.south west) rectangle ([xshift=5.3mm]frame.north west);\end{tcbclipinterior}},
+    example = {#2}{#3}, #1,
+}
+
+\newtcblisting[auto counter, number within = section, list inside = pcode]{python}[3][]{%
+    listing options = {
+        language = Python,
+        numbers = left,
+        numberstyle = \footnotesize\color{darkgray}\ttfamily,
+        basicstyle = \footnotesize\ttfamily,
+        keywordstyle = \color{darkblue}\bfseries,
+        commentstyle = \color{darkgreen},
+        stringstyle = \color{red!60},
+        showstringspaces = false,
+        emphstyle = \color{orange!60},
+        emph = {self, cls, True, False, None},
+        breaklines = true,
+        breakatwhitespace = true,
+        postbreak = \mbox{\textcolor{gray}{$\hookrightarrow$}\space}
+    },
+    overlay = {\begin{tcbclipinterior}\fill[blue!15!white] (frame.south west) rectangle ([xshift=5.3mm]frame.north west);\end{tcbclipinterior}},
+    example = {#2}{#3}, #1,
+}
+
+% ========== AI 报告专用无边框 listings 风格 ==========
+\lstdefinestyle{ai_python_style}{
+    language = Python,
+    numbers = none,
+    basicstyle = \footnotesize\ttfamily,
+    keywordstyle = \color{darkblue}\bfseries,
+    commentstyle = \color{darkgreen},
+    stringstyle = \color{red!60},
+    showstringspaces = false,
+    emphstyle = \color{orange!60},
+    emph = {self, cls, True, False, None},
+    breaklines = true,
+    breakatwhitespace = true,
+    postbreak = \mbox{\textcolor{gray}{$\hookrightarrow$}\space},
+    frame = none,
+    backgroundcolor = \color{white},
+    xleftmargin = 0pt,
+    xrightmargin = 0pt,
+}
+
+\lstdefinestyle{ai_matlab_style}{
+    style = Matlab-editor,
+    numbers = none,
+    basicstyle = \footnotesize\ttfamily,
+    breaklines = true,
+    breakatwhitespace = true,
+    postbreak = \mbox{\textcolor{gray}{$\hookrightarrow$}\space},
+    frame = none,
+    backgroundcolor = \color{white},
+    xleftmargin = 0pt,
+    xrightmargin = 0pt,
+}
+
+\lstnewenvironment{ai_python}[1][]
+    {\lstset{style=ai_python_style, #1}}
+    {}
+
+\lstnewenvironment{ai_matlab}[1][]
+    {\lstset{style=ai_matlab_style, #1}}
+    {}
+
+% ========== 为定理类环境添加底色框 ==========
+\mdfdefinestyle{thmshaded}{%
+    backgroundcolor=gray!8,% 浅灰底色
+    linecolor=black!30,% 边框颜色
+    leftline=true,% 左侧线条
+    topline=false,
+    rightline=false,
+    bottomline=false,
+    linewidth=3pt,% 左侧线宽
+    innerleftmargin=10pt,
+    innertopmargin=6pt,
+    innerbottommargin=6pt,
+    roundcorner=0pt,
+}
+
+\surroundwithmdframed[style=thmshaded]{definition}
+\surroundwithmdframed[style=thmshaded]{theorem}
+\surroundwithmdframed[style=thmshaded]{lemma}
+\surroundwithmdframed[style=thmshaded]{corollary}
+\surroundwithmdframed[style=thmshaded]{assumption}
+\surroundwithmdframed[style=thmshaded]{example}
+\surroundwithmdframed[style=thmshaded]{problem}
+\surroundwithmdframed[style=thmshaded]{solution}
+
+

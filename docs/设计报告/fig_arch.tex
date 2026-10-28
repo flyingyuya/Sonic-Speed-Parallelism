@@ -1,0 +1,219 @@
+%=============================================================================
+% fig_arch.tex —— 模块级系统框图（由 main.tex \input）
+%   风格参考：PL/PS 分区 + 功能分组灰底框 + 每模块一个小方块
+%=============================================================================
+
+\begin{landscape}
+\begin{figure}[H]
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[
+    font=\zihao{6},
+    mod/.style   = {draw=black!70, fill=white, minimum width=1.55cm,
+                    minimum height=0.50cm, align=center, inner sep=1pt,
+                    rounded corners=1pt},
+    modW/.style  = {mod, minimum width=2.35cm},
+    mem/.style   = {draw=black!55, fill=gray!12, minimum width=1.30cm,
+                    minimum height=1.10cm, align=center, inner sep=1pt},
+    io/.style    = {draw=black!75, fill=gray!22, minimum width=1.95cm,
+                    minimum height=1.90cm, align=center, inner sep=2pt,
+                    rounded corners=2pt},
+    ioSm/.style  = {draw=black!75, fill=gray!22, minimum width=1.95cm,
+                    minimum height=0.95cm, align=center, inner sep=2pt,
+                    rounded corners=2pt},
+    grp/.style   = {draw=black!60, fill=black!7, rounded corners=3pt,
+                    inner sep=5pt},
+    grpB/.style  = {grp, fill=blue!6},
+    grpO/.style  = {grp, fill=orange!10},
+    grpG/.style  = {grp, fill=green!8},
+    grpP/.style  = {grp, fill=violet!7},
+    ar/.style    = {-{Latex[length=1.3mm,width=1.0mm]}, draw=black!65,
+                    semithick},
+    arBus/.style = {-{Latex[length=1.3mm,width=1.0mm]}, draw=black!65,
+                    line width=1.6pt},
+    arD/.style   = {{Latex[length=1.3mm,width=1.0mm]}-{Latex[length=1.3mm,width=1.0mm]},
+                    draw=black!65, semithick},
+    lbl/.style   = {font=\zihao{6}, inner sep=1pt, fill=white,
+                    fill opacity=0.85, text opacity=1},
+    grplbl/.style= {font=\zihao{-6}\bfseries, inner sep=1pt, text=black!75},
+]
+
+
+%=============================================================================
+% 图 A：音频采集 → 均衡 → 频谱分析
+%=============================================================================
+\node[io]   (codec) at (0, -3.0)  {WM8960\\编解码器};
+\node[ioSm] (uart)  at (0, -7.4)  {PC 终端\\(CH340E)};
+
+% ---- 时钟与复位 ----
+\node[modW] (mmcm1) at (3.4, -0.9) {\texttt{clk\_gen} / MMCM1\\48 + 12.5\,MHz};
+\node[modW] (rsts)  at (3.4, -2.0) {\texttt{rst\_sync} $\times$3};
+
+% ---- Codec 配置 ----
+\node[modW] (i2cc)  at (3.4, -3.6) {\texttt{i2c\_control}};
+\node[modW] (wminit)at (3.4, -4.6) {\texttt{WM8960\_init}};
+\node[modW] (wmrom) at (3.4, -5.6) {\texttt{WM8960\_init\_table}};
+
+% ---- 音频链路 ----
+\node[modW] (i2sclk) at (7.0, -2.4) {\texttt{i2s\_slave\_clk}};
+\node[modW] (i2srx)  at (7.0, -3.4) {\texttt{i2s\_rx}};
+\node[modW] (dcblk)  at (7.0, -4.4) {\texttt{dc\_block} $\times$2};
+\node[modW] (eq)     at (7.0, -5.4) {\texttt{eq\_cascade} $\times$2\\5 段双二阶};
+\node[modW] (eqrom)  at (7.0, -6.6) {\texttt{eq\_coeff\_rom}};
+\node[modW] (i2stx)  at (7.0, -7.7) {\texttt{i2s\_tx}};
+\node[modW] (afifo)  at (7.0, -8.8) {\texttt{audio\_fifo} $\times$2};
+
+% ---- 频谱分析 ----
+\node[modW] (fftctrl)at (10.9, -2.4) {\texttt{fft\_core}\\控制状态机};
+\node[modW] (bfly)   at (10.9, -3.4) {\texttt{fft\_butterfly}\\单蝶形时分复用};
+\node[modW] (addrgen)at (10.9, -4.4) {\texttt{fft\_addr\_gen}};
+\node[modW] (twrom)  at (10.9, -5.4) {\texttt{fft\_twiddle\_rom}};
+\node[mem]   (wram)  at (10.9, -7.0) {工作\\RAM\\1024$\times$24};
+\node[modW] (mag)    at (10.9, -8.4) {幅度估计\\$\max+\frac{7}{16}\min$};
+\node[modW] (spect)  at (10.9, -9.4) {\texttt{spectrum}\\对数分箱+峰值保持};
+\node[modW] (smap)   at (10.9, -10.4){\texttt{spectrum\_map}\\\texttt{spectrum\_map80}};
+
+% ---- 跨时钟域 ----
+\node[modW] (async)  at (14.6, -2.4) {\texttt{async\_fifo}};
+\node[modW] (specsync)at(14.6, -3.4) {\texttt{spec\_sync}};
+\node[modW] (wave)   at (14.6, -4.6) {\texttt{wave\_buf}\\触发+双时钟};
+\node[modW] (fir)    at (14.6, -5.8) {\texttt{fir\_sym} (15 抽头)};
+\node[modW] (env)    at (14.6, -7.0) {\texttt{env\_track}};
+
+% ---- 控制 ----
+\node[modW] (kdb)    at (14.6, -8.6) {\texttt{key\_debounce}};
+\node[modW] (kgst)   at (14.6, -9.6) {\texttt{key\_gesture}};
+\node[modW] (uartrx) at (14.6, -10.6){\texttt{uart\_rx} / \texttt{uart\_tx}};
+\node[modW] (cmdpr)  at (14.6, -11.6){\texttt{cmd\_proc}};
+\node[modW] (uictrl) at (14.6, -12.6){\texttt{ui\_ctrl}};
+
+\begin{scope}[on background layer]
+\node[grpG, fit=(mmcm1)(rsts), label={[grplbl]above:时钟与复位}] (gClk) {};
+\node[grpB, fit=(i2cc)(wminit)(wmrom), label={[grplbl]above:Codec 配置}] (gCodec) {};
+\node[grpB, fit=(i2sclk)(i2srx)(dcblk)(eq)(eqrom)(i2stx)(afifo),
+      label={[grplbl]above:音频链路 (clk\_sys 48\,MHz)}] (gAudio) {};
+\node[grpB, fit=(fftctrl)(bfly)(addrgen)(twrom)(wram)(mag)(spect)(smap),
+      label={[grplbl]above:频谱分析 (clk\_sys)}] (gSpec) {};
+\node[grpG, fit=(async)(specsync)(wave)(fir)(env),
+      label={[grplbl]above:跨时钟域 + 波形}] (gCdc) {};
+\node[grpP, fit=(kdb)(kgst)(uartrx)(cmdpr)(uictrl),
+      label={[grplbl]above:交互控制}] (gCtrl) {};
+\node[draw=black!80, line width=1.0pt, rounded corners=6pt,
+      fit=(gClk)(gCodec)(gAudio)(gSpec)(gCdc)(gCtrl), inner sep=8pt,
+      label={[font=\zihao{-5}\bfseries]above:FPGA —— XC7A100T-2FGG484I}] (fpga) {};
+\end{scope}
+
+\draw[arD] (codec.east) ++(0,0.5) -- node[lbl,above]{I2S 从} ([yshift=0.6cm]gAudio.west);
+\draw[arD] (codec.east) ++(0,0.1) -- node[lbl,above]{I2C} ([yshift=-0.6cm]gCodec.west);
+\draw[ar]  (codec.north) -- node[lbl,right]{MCLK} ([yshift=0.2cm]gClk.south -| codec.north);
+\draw[arD] (uart.east) -- node[lbl,above]{115200} ([yshift=0.5cm]gCtrl.west);
+\draw[arBus] (gAudio.east) -- node[lbl,above]{rx\_l / rx\_r (Q1.23)} ([yshift=-1.6cm]gSpec.west);
+\draw[arBus] (gAudio.east) -- ++(0.35,0) |- node[lbl,pos=0.25,above]{波形抽头} ([yshift=-3.2cm]gCdc.west);
+\draw[ar, dashed, draw=blue!55] ([yshift=0.7cm]gClk.east) -- ++(0.4,0) |-
+     node[lbl,pos=0.3,above]{\texttt{clk\_sys} 48\,MHz} ([yshift=0.9cm]gAudio.west);
+\draw[arBus] (gSpec.east) -- ++(0.5,0) |- node[lbl,pos=0.2,above]{柱高/波形快照} ([yshift=-1.6cm]gCdc.west);
+
+\end{tikzpicture}%
+}
+\caption{模块级框图（一）：音频采集 $\rightarrow$ 均衡 $\rightarrow$ FFT 频谱分析，及跨时钟域与控制}
+\label{fig:arch-a}
+\end{figure}
+\end{landscape}
+
+\begin{landscape}
+\begin{figure}[H]
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[
+    font=\zihao{6},
+    mod/.style   = {draw=black!70, fill=white, minimum width=1.55cm,
+                    minimum height=0.50cm, align=center, inner sep=1pt,
+                    rounded corners=1pt},
+    modW/.style  = {mod, minimum width=2.35cm},
+    mem/.style   = {draw=black!55, fill=gray!12, minimum width=1.30cm,
+                    minimum height=1.10cm, align=center, inner sep=1pt},
+    io/.style    = {draw=black!75, fill=gray!22, minimum width=1.95cm,
+                    minimum height=1.90cm, align=center, inner sep=2pt,
+                    rounded corners=2pt},
+    ioSm/.style  = {draw=black!75, fill=gray!22, minimum width=1.95cm,
+                    minimum height=0.95cm, align=center, inner sep=2pt,
+                    rounded corners=2pt},
+    grp/.style   = {draw=black!60, fill=black!7, rounded corners=3pt, inner sep=5pt},
+    grpB/.style  = {grp, fill=blue!6},
+    grpO/.style  = {grp, fill=orange!10},
+    grpG/.style  = {grp, fill=green!8},
+    grpP/.style  = {grp, fill=violet!7},
+    ar/.style    = {-{Latex[length=1.3mm,width=1.0mm]}, draw=black!65, semithick},
+    arBus/.style = {-{Latex[length=1.3mm,width=1.0mm]}, draw=black!65, line width=1.6pt},
+    arD/.style   = {{Latex[length=1.3mm,width=1.0mm]}-{Latex[length=1.3mm,width=1.0mm]},
+                    draw=black!65, semithick},
+    lbl/.style   = {font=\zihao{6}, inner sep=1pt, fill=white, fill opacity=0.85, text opacity=1},
+    grplbl/.style= {font=\zihao{-6}\bfseries, inner sep=1pt, text=black!75},
+]
+
+%=============================================================================
+% 图 B：显示链 + SD 卡 + HDMI
+%=============================================================================
+\node[io]   (lcd)   at (0, -2.6)  {LCD\\480$\times$272};
+\node[io]   (hdmi)  at (0, -7.0)  {HDMI 显示器\\640$\times$360};
+\node[ioSm] (sdcard)at (0, -10.6) {microSD 卡};
+
+% ---- 显示核心（两份实例）----
+\node[modW] (timing) at (4.2, -0.9) {\texttt{lcd\_timing}\\12.5M / 25M 参数化};
+\node[modW] (bg)     at (4.2, -2.0) {\texttt{bg\_src} (渐变归一化)};
+\node[modW] (polar)  at (4.2, -3.1) {\texttt{polar\_map} 64 扇区};
+\node[modW] (polrom) at (4.2, -4.2) {\texttt{polar\_map\_rom}};
+\node[modW] (mix)    at (4.2, -5.3) {\texttt{disp\_mix}\\背景+柱+波形};
+\node[modW] (rbrom)  at (4.2, -6.5) {\texttt{rainbow\_rom}};
+\node[modW] (demo)   at (4.2, -7.6) {\texttt{demo\_src}};
+\node[modW] (wfilt)  at (4.2, -8.7) {\texttt{wave\_buf} + \texttt{fir\_sym}};
+
+% ---- UI 层 ----
+\node[modW] (anim)   at (8.2, -0.9) {\texttt{ui\_anim}\\属性插值};
+\node[modW] (uilyr)  at (8.2, -2.0) {\texttt{ui\_layer}\\8 按钮面板};
+\node[modW] (status) at (8.2, -3.1) {\texttt{status\_line}\\8 行状态栏};
+\node[modW] (txtbuf) at (8.2, -4.2) {\texttt{text\_buf}};
+\node[modW] (font)   at (8.2, -5.3) {\texttt{font\_rom}};
+
+% ---- HDMI ----
+\node[modW] (hdmitop)at (8.2, -7.0) {\texttt{hdmi\_top}};
+\node[modW] (enc)    at (8.2, -8.1) {\texttt{tmds\_enc} $\times$3};
+\node[modW] (oser)   at (8.2, -9.2) {\texttt{tmds\_out}\\OSERDESE2 5:1};
+
+% ---- SD 卡 ----
+\node[modW] (sdtop)  at (8.2, -10.8){\texttt{sd\_ctrl\_top}};
+\node[modW] (sdinit) at (8.2, -11.8){\texttt{sd\_init}\\CMD0/8/55/41};
+\node[modW] (sdread) at (8.2, -12.8){\texttt{sd\_read}\\CMD18 多块};
+\node[modW] (imgld)  at (4.2, -12.8){\texttt{sd\_img\_load}\\双写口};
+\node[mem]   (fblcd) at (1.9, -12.6){帧缓冲\\480$\times$272\\RGB565};
+\node[mem]   (fbhdmi)at (1.9, -14.4){帧缓冲\\320$\times$180\\RGB565};
+
+\begin{scope}[on background layer]
+\node[grpO, fit=(timing)(bg)(polar)(polrom)(mix)(rbrom)(demo)(wfilt),
+      label={[grplbl]above:\texttt{disp\_top} $\times$2（参数门控 WITH\_UI/WITH\_TEXT）}] (gDisp) {};
+\node[grpO, fit=(anim)(uilyr)(status)(txtbuf)(font),
+      label={[grplbl]above:UI 层}] (gUi) {};
+\node[grpG, fit=(hdmitop)(enc)(oser),
+      label={[grplbl]above:HDMI (clk\_hdmi / clk\_5x)}] (gHdmi) {};
+\node[grpP, fit=(sdtop)(sdinit)(sdread)(imgld)(fblcd)(fbhdmi),
+      label={[grplbl]above:SD 卡与帧缓冲}] (gSd) {};
+\node[draw=black!80, line width=1.0pt, rounded corners=6pt,
+      fit=(gDisp)(gUi)(gHdmi)(gSd), inner sep=8pt,
+      label={[font=\zihao{-5}\bfseries]above:FPGA —— XC7A100T-2FGG484I（显示与存储）}] (fpga) {};
+\end{scope}
+
+\draw[arBus] (gDisp.east) -- ++(0.4,0) |- node[lbl,pos=0.2,above]{RGB888+HS/VS/CLK} (lcd.east);
+\draw[arBus] (gHdmi.east) -- ++(0.4,0) |- node[lbl,pos=0.2,above]{TMDS 4 对差分} (hdmi.east);
+\draw[arD]   (sdcard.east) -- node[lbl,above]{SPI} ([yshift=0.4cm]gSd.west);
+\draw[arBus] (fblcd.east) -- node[lbl,above]{LCD 全图} ([yshift=-1.4cm]gDisp.west);
+\draw[arBus] (fbhdmi.east) -- ++(0.5,0) |- node[lbl,pos=0.3,above]{裁剪 2$\times$} ([yshift=-3.0cm]gDisp.west);
+\draw[arBus] (gUi.south) -- ++(0,-0.35) -| node[lbl,pos=0.25,above]{ui\_sel / 配置} ([yshift=-2.6cm]gDisp.north -| gUi.south);
+\draw[ar, dashed, draw=orange!70] ([yshift=0.9cm]fpga.north -| timing) -- node[lbl,above]{\texttt{clk\_pix} 12.5\,MHz} ([yshift=1.0cm]gDisp.north -| timing);
+\draw[ar, dashed, draw=green!55!black] ([yshift=0.9cm]fpga.north -| hdmitop) -- node[lbl,above]{\texttt{clk\_5x} 125\,MHz} ([yshift=1.0cm]gHdmi.north -| hdmitop);
+
+\end{tikzpicture}%
+}
+\caption{模块级框图（二）：双路显示（LCD 交互界面 / HDMI 展示大屏）与 SD 卡图片通道}
+\label{fig:arch-b}
+\end{figure}
+\end{landscape}

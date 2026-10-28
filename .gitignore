@@ -39,7 +39,15 @@ tight_setup_hold_pins.txt
 docs/璞致FPGA核心开发版/
 docs/WM8960模块/
 docs/Music-Spectrum/
-docs/设计报告/
+# 设计报告本体要跟踪，只忽略 LaTeX 中间产物
+docs/设计报告/*.aux
+docs/设计报告/*.log
+docs/设计报告/*.out
+docs/设计报告/*.toc
+docs/设计报告/*.synctex.gz
+docs/设计报告/main.bbl
+docs/设计报告/main.blg
+docs/设计报告/main.listing
 
 # ---------------------------------------------------------------------------
 # Vivado 工程模式产物
