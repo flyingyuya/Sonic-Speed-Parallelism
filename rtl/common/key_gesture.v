@@ -9,7 +9,7 @@
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    key_gesture.v —— 把按键的"按了一下"翻译成【单击】/【双击】
-// Dependencies:   无
+// Dependencies:
 //
 // Revision:
 // Revision 0.01 - File Created
@@ -27,7 +27,7 @@ module key_gesture #(
     output reg  dbl         // 双击（严格单拍）
 );
 
-    // 窗口长度（时钟拍数）。下限保护成 2，否则状态机没有"等待"的余地。
+    // 窗口长度（时钟拍数）,下限保护成 2
     localparam integer WIN_RAW = (CLK_HZ / 1000) * WIN_MS;
     localparam integer WIN_CYC = (WIN_RAW < 2) ? 2 : WIN_RAW;
     localparam integer CW      = $clog2(WIN_CYC + 1);
@@ -56,7 +56,7 @@ module key_gesture #(
                 S_IDLE: begin
                     cnt <= {CW{1'b0}};
                     if (press)
-                        st <= S_WAIT;       // ⚠️ 先别发 single，等窗口
+                        st <= S_WAIT;       // 先别发 single，等窗口
                 end
 
                 //---------------------------------------------------------
@@ -64,9 +64,7 @@ module key_gesture #(
                 //---------------------------------------------------------
                 S_WAIT: begin
                     if (press) begin
-                        // 窗口内又按了一下 ⟹ 双击。
-                        // ⚠️ 这里【绝不能】补发 single —— 双击不能带出单击。
-                        //    这是本模块最容易写错的一行。
+                        // 窗口内又按了一下（双击），不补发 single
                         dbl <= 1'b1;
                         st  <= S_IDLE;
                     end else if (cnt == WIN_CYC[CW-1:0] - 1'b1) begin

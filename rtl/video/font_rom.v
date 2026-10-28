@@ -8,8 +8,8 @@
 // Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
-// Description:    font_rom.v - 点阵字库 ROM（**由脚本生成，不要手改**）
-// Dependencies:   无
+// Description:    font_rom.v - 点阵字库 ROM
+// Dependencies:
 //
 // Revision:
 // Revision 0.01 - File Created
@@ -374,7 +374,7 @@ module font_rom #(
     end
 
     always @(ch or row) begin
-        // 越界（比如控制字符或超出收录范围）一律返回空格，不会读出 X
+        // 越界（比如控制字符或超出收录范围）一律返回空格，不会读出
         if (ch > NCH - 1)
             bits = 8'h00;
         else

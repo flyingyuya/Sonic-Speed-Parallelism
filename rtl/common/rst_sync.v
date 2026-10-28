@@ -9,7 +9,7 @@
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    rst_sync.v - 异步复位、同步释放
-// Dependencies:   无
+// Dependencies:
 //
 // Revision:
 // Revision 0.01 - File Created
@@ -27,8 +27,7 @@ module rst_sync (
     //=========================================================================
     // 两级同步链：异步置位 / 同步释放
     //=========================================================================
-    //   ASYNC_REG 告诉综合器把这两级放在同一片 SLICE
-    //   ⟹ 布线延迟最小 ⟹ 降低复位撤销时的亚稳态概率
+    // ASYNC_REG 告诉综合器把这两级放在同一片 SLICE，降低布线延迟
     (* ASYNC_REG = "TRUE" *) reg [1:0] sync_q;
 
     always @(posedge clk or negedge rst_async_n) begin

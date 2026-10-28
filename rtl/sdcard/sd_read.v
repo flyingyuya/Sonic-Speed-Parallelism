@@ -9,7 +9,7 @@
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    sd_read.v  ——  SD 卡 SPI 模式单块读（CMD17）
-// Dependencies:   无
+// Dependencies:
 //
 // Revision:
 // Revision 0.01 - File Created
@@ -22,7 +22,6 @@ module sd_read #(
     // 一次读多少块（512 字节/块）
     //   480x272x2 = 261120 字节 = 正好 510 块
     //   用 CMD18（多块读）：卡自己递增地址，主机只要一直收
-    //   ⟹ 不需要"发 510 次 CMD17"，正好绕开"第 2 次命令卡不响应"的问题
     parameter integer BLOCKS = 510
 ) (
     input  wire        sd_clk,        // SPI 时钟（高速档）
@@ -48,11 +47,7 @@ module sd_read #(
     localparam integer CMD_BITS   = 48;
     localparam integer BLOCK_BYTES = 512;
     // CMD17 = 0x40 | 17 = 0x51；CRC 在 SPI 模式下不检查，填 0xFF
-    // 参数紧跟其后（大端 32 位）
     localparam [5:0] CMD18_IDX = 6'd18;   // CMD18 = 多块读（CMD17 是单块）
-    // 数据起始令牌是 0xFE（= 8'b1111_1110）⟹ 它的 bit0 = 0，
-    // 而之前的 NOP 全是 1 ⟹ "第一个 0" 就是令牌起点，不需要比较整个字节。
-    // 这里保留常量是为了让上面这段说明有出处（综合时不产生逻辑）。
 
     //-------------------------------------------------------------------------
     // 状态
@@ -82,7 +77,7 @@ module sd_read #(
     reg [7:0]  byte_shift;
     reg [4:0]  crc_bit;         // CRC16 的 16 位计数
     reg [9:0]  blk_cnt;         // 已收完的块数（0..BLOCKS-1）
-    reg [5:0]  mosi_bit;        // MOSI 输出位序号（【negedge 域自己的计数】）
+    reg [5:0]  mosi_bit;        // MOSI 输出位序号（negedge 域自己的计数）
 
     //-------------------------------------------------------------------------
     // 命令字组装
@@ -109,7 +104,6 @@ module sd_read #(
             byte_shift  <= 8'd0;
             crc_bit     <= 5'd0;
             blk_cnt     <= 10'd0;
-            // mosi_bit 归 negedge 块管，这里不要重复驱动（会 MULTIDRIVEN）
             dout_valid  <= 1'b0;
             dout_data   <= 8'd0;
         end else begin
@@ -124,10 +118,6 @@ module sd_read #(
                         cmd_bit <= 6'd0;
                         busy    <= 1'b1;
                         blk_cnt <= 10'd0;
-                        // ⚠️ 不要直接跳 ST_SEND：CS 拉低必须比第一位数据【早一拍】，
-                        //    否则卡（以及 TB 里的模型）会在 CS 刚变低的那一拍
-                        //    采到"数据之前的空闲高电平"，导致整帧左移一位。
-                        //    这里加一个建立态专门处理 CS。
                         state   <= ST_SETUP;
                     end
                 end
@@ -142,8 +132,6 @@ module sd_read #(
 
                 //-------------------------------------------------------------
                 // 发 48 位：MSB 先出，每次 posedge 更新一位
-                // （sd_mosi 在 negedge 更新才是安全的，但这里用寄存器输出、
-                //   由 negedge 块统一驱动，见下面第二个 always）
                 //-------------------------------------------------------------
                 ST_SEND: begin
                     sd_cs   <= 1'b0;
@@ -165,7 +153,7 @@ module sd_read #(
                     end else begin
                         r1_bit <= r1_bit + 3'd1;
                         if (r1_bit == 3'd7) begin
-                            // R1 收完（内容不检查，出错也会被后面的令牌超时兜住）
+                            // R1 收完
                             tok_bit <= 3'd0;
                             state   <= ST_WAIT_TOKEN;
                         end
@@ -174,9 +162,6 @@ module sd_read #(
 
                 //-------------------------------------------------------------
                 // 等数据起始令牌
-                //   令牌 0xFE = 8'b1111_1110 ⟹ 那个 0 是【最后一位】，
-                //   前面的 NOP 全是 1 ⟹ "第一个 0" 就是令牌结束、数据开始。
-                //   ⟹ 检测到它就可以【直接开始收字节】，不需要再丢任何位。
                 //-------------------------------------------------------------
                 ST_WAIT_TOKEN: begin
                     if (sd_miso == 1'b0) begin
@@ -189,8 +174,6 @@ module sd_read #(
 
                 //-------------------------------------------------------------
                 // 收 512 字节：纯粹的比特流打包，每 8 位出一个字节
-                //   这里【没有任何额外状态】—— 不丢位、不判特殊图案，
-                //   只靠 bit_in_byte / byte_cnt 两个计数器。
                 //-------------------------------------------------------------
                 ST_DATA: begin
                     byte_shift <= {byte_shift[6:0], sd_miso};
@@ -216,8 +199,7 @@ module sd_read #(
                 ST_CRC: begin
                     crc_bit <= crc_bit + 5'd1;
                     if (crc_bit == 5'd15) begin
-                        // 一块收完。CMD18 模式下卡会【紧接着】发下一块的令牌，
-                        // 所以直接回到 ST_WAIT_TOKEN 继续收，不用再发命令。
+                        // 一块收完
                         if (blk_cnt == (BLOCKS - 1)) begin
                             state <= ST_DONE;          // 收满预定块数，结束
                         end else begin
@@ -242,12 +224,6 @@ module sd_read #(
     //-------------------------------------------------------------------------
     // MOSI 输出：在 negedge sd_clk 更新（避开卡在 posedge 的采样）
     //-------------------------------------------------------------------------
-    //   ⚠️ 这里必须用 mosi_bit 而不是 cmd_bit！
-    //      cmd_bit 是在 posedge 域里递增的，进入 ST_SEND 的那一拍就已经变成 1，
-    //      于是第一个 negedge 读到的是 1 ⟹ 输出 bit46 而不是 bit47，
-    //      之后每个 negedge 又都是"+2"的效果 ⟹ 隔一位取一位，
-    //      表现为命令字和数据全部"整体左移一位"。
-    //   正解：MOSI 的位序由 negedge 域自己的计数器决定。
     always @(negedge sd_clk or negedge rst_n) begin
         if (!rst_n) begin
             sd_mosi  <= 1'b1;

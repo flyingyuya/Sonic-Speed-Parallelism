@@ -9,7 +9,7 @@
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    fft_addr_gen.v - FFT 蝶形地址与旋转因子索引生成（纯组合逻辑）
-// Dependencies:   无
+// Dependencies:
 //
 // Revision:
 // Revision 0.01 - File Created
@@ -33,7 +33,7 @@ module fft_addr_gen #(
     //=========================================================================
     localparam [LOG2N-1:0] ONE = {{(LOG2N-1){1'b0}}, 1'b1};
 
-    // 移位量用 5 位宽 —— stage = 15 时 stage+1 会溢出成 0
+    // 移位量用 5 位宽：防止 stage+1 会溢出成 0
     wire [4:0] stage_w = {1'b0, stage};
     wire [4:0] sh_p    = stage_w + 5'd1;                // stage + 1
     wire [4:0] sh_tw   = LOG2N[4:0] - 5'd1 - stage_w;   // LOG2N - 1 - stage

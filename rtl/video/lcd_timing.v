@@ -9,7 +9,7 @@
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    lcd_timing.v - 480x272 液晶屏时序发生器
-// Dependencies:   无
+// Dependencies:
 //
 // Revision:
 // Revision 0.01 - File Created
@@ -27,9 +27,7 @@ module lcd_timing #(
     parameter integer V_BACK  = 2,
     parameter integer V_DISP  = 272,
     parameter integer V_FRONT = 2,
-    // 计数器位宽。必须写在参数表里（而不是模块体内的 localparam）：
-    // 端口声明的位宽要在解析模块头时就确定，而 localparam 在它后面。
-    // Verilog-2001 允许后面的 parameter 引用前面的 parameter，所以可以这样算。
+    // 计数器位宽
     parameter integer HW = $clog2(H_SYNC + H_BACK + H_DISP + H_FRONT),
     parameter integer VW = $clog2(V_SYNC + V_BACK + V_DISP + V_FRONT)
 ) (

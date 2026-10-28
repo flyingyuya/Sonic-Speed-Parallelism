@@ -9,7 +9,7 @@
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    async_fifo.v - 异步 FIFO（双时钟，格雷码指针，show-ahead 输出）
-// Dependencies:   无
+// Dependencies:
 //
 // Revision:
 // Revision 0.01 - File Created
@@ -43,12 +43,7 @@ module async_fifo #(
     localparam integer AW = $clog2(DEPTH);      // 地址位宽
     localparam integer PW = AW + 1;             // 指针位宽（多一位用来判满）
 
-    //-------------------------------------------------------------------------
     // 存储体：分布式 RAM，组合读端口
-    //   不加复位 —— 复位存储体会综合出 DEPTH x DW 个带复位端的触发器，
-    //   白白增加扇出、恶化时序，而且 FIFO 只要能保证"写过的位置才可能被读"
-    //   就够了（由指针同步保证），不需要清零。
-    //-------------------------------------------------------------------------
     (* ram_style = "distributed" *) reg [DW-1:0] mem [0:DEPTH-1];
 
     //-------------------------------------------------------------------------
@@ -56,8 +51,6 @@ module async_fifo #(
     //   bin2gray:  g = b ^ (b >> 1)
     //   gray2bin: 从最高位往下逐位异或（组合逻辑，PW 级）
     //-------------------------------------------------------------------------
-    // 非 ANSI 风格参数声明 —— Verible 的 explicit-function-task-parameter-type
-    // 规则只对 ANSI 风格 (input [N:0] x) 报错，本工程统一用这种写法
     function [PW-1:0] bin2gray;
         input [PW-1:0] b;
         begin
@@ -77,12 +70,6 @@ module async_fifo #(
 
     //-------------------------------------------------------------------------
     // 指针与同步器声明（写域和读域各一套）
-    //
-    // ASYNC_REG = "TRUE" 是给工具看的标记，作用有三个：
-    //   ① 把这两级触发器紧挨着放（缩短第一级的布线延迟，提高 MTBF）
-    //   ② 禁止工具对它们做 retiming / 复制 / 优化掉
-    //   ③ Vivado 的 report_cdc 会因为打了这个标记才判定为"安全同步器"
-    // 养成习惯：所有跨时钟域的同步器触发器都要打这个属性。
     //-------------------------------------------------------------------------
     reg  [PW-1:0] wbin,  wgray;         // 写指针（写域）
     reg  [PW-1:0] rbin,  rgray;         // 读指针（读域）
@@ -118,15 +105,13 @@ module async_fifo #(
         end
     end
 
-    // 写存储体（同一 always 块内同时更新指针和数据，避免多驱动）
+    // 写存储体
     always @(posedge wclk) begin
         if (wr_en && !full)
             mem[wbin[AW-1:0]] <= din;
     end
 
-    // 满：占用数正好等于 DEPTH。
-    //   用【当前】的 wbin 算，不用 wbin_nxt —— 避免 wbin -> wbin_nxt -> full
-    //   -> 写使能 这条路径被综合工具当成组合环（之前 audio_fifo 踩过）。
+    // 满：占用数正好等于 DEPTH
     assign wr_level = wbin - rbin_w;
     assign full     = (wr_level == DEPTH);
 

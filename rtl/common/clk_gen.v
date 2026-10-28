@@ -9,7 +9,7 @@
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    clk_gen.v - 板载 200 MHz 差分时钟 → 系统所需全部时钟
-// Dependencies:   无
+// Dependencies:
 //
 // Revision:
 // Revision 0.01 - File Created
@@ -83,18 +83,6 @@ module clk_gen (
 
     //=========================================================================
     // 第二个 MMCM：给 HDMI 出 40 MHz 和 200 MHz
-    //-----------------------------------------------------------------------------
-    // 【为什么不能用上面那个 MMCM】
-    //   上面 VCO = 900 MHz，900/40 = 22.5 —— 不是整数。
-    //   CLKOUT2_DIVIDE 只收整数（小数分频只有 CLKOUT0 支持，已被 48 MHz 占用），
-    //   所以 40 MHz 出不来。
-    // 【为什么也不能把 VCO 改成 1200】
-    //   1200 能同时整除 48 / 40 / 12.5，看起来完美；但 1200 MHz 正好是
-    //   MMCME2_BASE 的【上边界】，卡边界不稳。所以另开一个 MMCM。
-    // 【为什么 clk_5x 也要从这个 MMCM 出，而不是直接用输入的 200 MHz】
-    //   clk_5x 和像素时钟是 5 倍关系，串行化要求两者【相位严格对齐】。
-    //   只有同源同 VCO 才能保证 —— 用输入的 200 MHz 会和 MMCM 出的 40 MHz 相位漂。
-    //   两者都是 1000 MHz 的整数分频，所以同源同 VCO ✓
     //=========================================================================
     wire clk_hdmi_raw;
     wire clk_5x_raw;
@@ -106,10 +94,6 @@ module clk_gen (
         .DIVCLK_DIVIDE      (4),            // PFD = 50 MHz
         .CLKFBOUT_MULT_F    (20.000),       // VCO = 50 x 20 = 1000 MHz
         .CLKFBOUT_PHASE     (0.000),
-        // ★ 640x480@60 的像素时钟是 25.175 MHz（VESA DMT）。
-        //   用 25.000 MHz 替代：刷新率 480/525 x 31.5kHz ≈ 59.6 Hz，显示器完全能锁。
-        //   为什么不用 40 MHz（800x600@60）：disp_top 的关键路径 26.9 ns，
-        //   40 MHz 只有 25 ns 预算 ⟹ 时序违例 -1.9 ns。25 MHz 有 40 ns，余量充足。
         .CLKOUT0_DIVIDE_F   (40.000),       // 1000 / 40 = 25 MHz
         .CLKOUT0_DUTY_CYCLE (0.500),
         .CLKOUT0_PHASE      (0.000),

@@ -9,7 +9,7 @@
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    env_track.v - 包络跟踪 + 自适应触发门限
-// Dependencies:   无
+// Dependencies:
 //
 // Revision:
 // Revision 0.01 - File Created
@@ -28,14 +28,13 @@ module env_track #(
     parameter integer TH_MIN = 4096
 ) (
     input  wire                 clk,
-    input  wire                 rst_n,      // 同步复位（本项目惯例）
+    input  wire                 rst_n,      // 同步复位
     input  wire                 en,         // 采样有效
     input  wire signed [DW-1:0] din,
 
-    // 建议的触发门限（**正数**，表示幅度）。
-    //   调用方拿它去跟 -th 比较。始终 >= TH_MIN。
+    // 建议的触发门限，始终 >= TH_MIN
     output reg  signed [DW-1:0] th,
-    // 当前包络（调试/观察用，也可以在屏幕上显示出来）
+    // 当前包络（调试/观察用）
     output reg         [DW-1:0] env
 );
 
@@ -75,11 +74,9 @@ module env_track #(
             env   <= {DW{1'b0}};
         end else if (en) begin
             env_r <= env_nxt;
-            // 门限只取 DW 位。因为 th_raw <= env <= 2^(DW-1)，不会溢出。
+            // th_raw <= env <= 2^(DW-1)，不会溢出
             th    <= th_nxt[DW-1:0];
-            // ⚠️ 这里是 env_nxt 不是 env_r —— 要和 th 用【同一个】包络值，
-            //    否则 env 比 th 晚一拍，调试时看着永远对不上（账本里
-            //    "和被测信号差一拍"这一族已经栽过好几次）。
+            // 和 th 用【同一个】包络值，否则 env 比 th 晚一拍
             env   <= env_nxt[DW-1:0];
         end
     end

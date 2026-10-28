@@ -1,20 +1,19 @@
-//////////////////////////////////////////////////////////////////////////////////
-// Company:
-// Engineer:       Binyu Fei
-//
-// Create Date:    2026-10-26
-// Design Name:    uart_byte_rx
-// Module Name:    uart_byte_rx
-// Project Name:   音速并行（Sonic-Speed-Parallelism）
-// Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
-// Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
-// Description:    http://xiaomeige.taobao.com
-// Dependencies:   无
-//
-// Revision:
-// Revision 0.01 - File Created
-//
-//////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////
+//// Company       : 武汉芯路恒科技有限公司
+////                 http://xiaomeige.taobao.com
+//// Web           : http://www.corecourse.cn
+////
+//// Create Date   : 2019/05/01 00:00:00
+//// Module Name   : uart_byte_rx
+//// Description   : 串口接收模块
+////
+//// Dependencies  :
+////
+//// Revision:
+//// Revision 0.01 - File Created
+//// Additional Comments:
+////
+///////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns/1ns
 
 

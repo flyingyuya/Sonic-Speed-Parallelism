@@ -9,7 +9,7 @@
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    sd_ctrl_top.v  ——  SD 卡子系统顶层
-// Dependencies:   无
+// Dependencies:   sd_init.v   sd_read.v
 //
 // Revision:
 // Revision 0.01 - File Created
@@ -24,9 +24,8 @@ module sd_ctrl_top #(
     parameter integer INIT_HZ       = 200_000,  // 初始化阶段 SPI 时钟
     parameter integer POWER_ON_NUM  = 5000,     // 上电等待拍数（200kHz 下约 25 ms）
     parameter integer OVER_TIME_NUM = 25000,    // 命令超时拍数
-    // 一次读多少块（512 字节/块）
-    //   480x272x2 = 261120 字节 = 510 块
-    //   TB 里设成 1 让仿真跑得快
+    // 一次读多少块（512 字节/块），480x272x2 = 261120 字节 = 510 块
+    //   TB 里设成 1 可以让仿真跑得快
     parameter integer BLOCKS        = 510
 ) (
     input  wire        clk,             // clk_sys
@@ -49,7 +48,7 @@ module sd_ctrl_top #(
 );
 
     //-------------------------------------------------------------------------
-    // ① 高速 SPI 时钟：clk 的 FAST_DIV 分频（寄存输出，无毛刺）
+    // 高速 SPI 时钟：clk 的 FAST_DIV 分频（寄存输出，无毛刺）
     //-------------------------------------------------------------------------
     reg [15:0] fast_cnt;
     reg        sd_clk_fast;
@@ -67,7 +66,7 @@ module sd_ctrl_top #(
     end
 
     //-------------------------------------------------------------------------
-    // ② 初始化模块（内部自己产生 200 kHz 的 sd_clk）
+    // 初始化模块（内部自己产生 200 kHz 的 sd_clk）
     //-------------------------------------------------------------------------
     wire sd_clk_init;
     wire init_cs;
@@ -92,7 +91,7 @@ module sd_ctrl_top #(
     assign init_done = init_done_i;
 
     //-------------------------------------------------------------------------
-    // ③ 读模块（工作在高速 SPI 时钟域 sd_clk_fast）
+    // 读模块（工作在高速 SPI 时钟域 sd_clk_fast）
     //-------------------------------------------------------------------------
     wire rd_cs;
     wire rd_mosi;
@@ -101,9 +100,7 @@ module sd_ctrl_top #(
     wire [7:0] rd_data_i;
     wire rd_start_sd;      // 同步到 sd_clk_fast 域后的 start 脉冲
 
-    // start 的跨域：clk_sys ⟶ sd_clk_fast
-    //   用"电平翻转 + 双打 + 边沿检测"，比单拍脉冲 + 双打可靠
-    //   （单拍脉冲如果窄于目标时钟周期，会被完全漏掉）
+    // start 的跨域：clk_sys ⟶ sd_clk_fast（电平翻转 + 双打 + 边沿检测）
     reg start_tog;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
@@ -136,8 +133,6 @@ module sd_ctrl_top #(
     );
 
     // rd_valid / rd_data 从 sd_clk_fast 域送回 clk 域
-    //   读数据是"每次 valid 伴随一个字节"，用 valid 做使能、数据直接取即可
-    //   （sd_clk_fast 是 clk 的 1/4，数据在 valid 期间至少稳定 2 个 clk 周期）
     reg [2:0] vld_sync;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
@@ -151,7 +146,7 @@ module sd_ctrl_top #(
     assign rd_busy  = rd_busy_i;
 
     //-------------------------------------------------------------------------
-    // ④ SPI 引脚归属
+    // SPI 引脚归属
     //   初始化阶段：用 sd_init 的引脚和慢时钟
     //   初始化完成后：用 sd_read 的引脚和快时钟
     //-------------------------------------------------------------------------

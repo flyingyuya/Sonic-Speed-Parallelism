@@ -9,7 +9,7 @@
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    frame_buf.v  ——  一帧图片的帧缓冲（双口 BRAM）
-// Dependencies:   无
+// Dependencies:
 //
 // Revision:
 // Revision 0.01 - File Created
@@ -37,10 +37,8 @@ module frame_buf #(
     localparam integer DEPTH = W * H;
 
     //=========================================================================
-    // 存储体：简单双口（1 写 + 1 读）⟹ 综合器可靠推断成 BRAM
+    // 存储体：简单双口（1 写 + 1 读）-> 综合器可靠推断成 BRAM
     //=========================================================================
-    //   ⚠️ 同一个 mem 被【两个不同时钟】读会被退化成 LUTRAM
-    //      ⟹ 需要多路同时读时，复制实例，不要加读口
     reg [15:0] mem [0:DEPTH-1];
 
     //=========================================================================

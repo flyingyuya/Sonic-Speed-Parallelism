@@ -9,7 +9,7 @@
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    dc_block.v - 直流阻断器（一阶高通 / DC blocker）
-// Dependencies:   无
+// Dependencies:
 //
 // Revision:
 // Revision 0.01 - File Created
@@ -24,8 +24,8 @@ module dc_block #(
     parameter integer GW = 2        // 内部保护位
 ) (
     input  wire                 clk,
-    input  wire                 rst_n,      // 同步复位（本项目惯例）
-    input  wire                 en,         // 采样有效（每个采样一个 strobe）
+    input  wire                 rst_n,      // 同步复位
+    input  wire                 en,         // 采样有效
     input  wire signed [DW-1:0] din,
     output reg  signed [DW-1:0] dout
 );
@@ -45,11 +45,10 @@ module dc_block #(
     // y[n-1] * R = y - (y >>> SH)
     wire signed [IW-1:0] ysh   = y >>> SH;
 
-    // ⚠️ 反馈路径是 y -> (xin - x1 + y) -> (- ysh) -> y，两级加法器。
-    //    xin - x1 不在反馈环上，可以和它并行算，所以关键路径只有 2 个加法器。
+    // 反馈路径是 y -> (xin - x1 + y) -> (- ysh) -> y，两级加法器
     wire signed [IW-1:0] ynext = xin - x1 + y - ysh;
 
-    // 输出要不要饱和：内部值能否用 DW 位有符号表示
+    // 输出要不要饱和
     wire y_ovf = (y[IW-1:DW] != {(IW-DW){y[DW-1]}});
 
     always @(posedge clk) begin
@@ -61,9 +60,7 @@ module dc_block #(
             x1 <= xin;
             y  <= ynext;
 
-            // ⚠️ 饱和方向看的是【内部最高位】y[IW-1]，不是 y[DW-1]。
-            //    负溢出时 y[DW-1] 可能是 0（比如 -2^24 的 24 位截断是 0），
-            //    用它判方向会 saturate 到 +V_MAX，反了。
+            // 饱和方向看的是【内部最高位】y[IW-1]，不是 y[DW-1]
             if (y_ovf) dout <= y[IW-1] ? V_MIN : V_MAX;
             else       dout <= y[DW-1:0];
         end

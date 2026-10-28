@@ -9,7 +9,7 @@
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    WM8960_init_table.v - WM8960 初始化寄存器表
-// Dependencies:   无
+// Dependencies:
 //
 // Revision:
 // Revision 0.01 - File Created
@@ -28,10 +28,7 @@ module WM8960_init_table #(
 );
 
     localparam LUT_SIZE = 33;
-    // ⚠️ 强制分布式 RAM（LUTRAM），不要 BRAM。
-    //   表只有 33 条 x 16bit，用 BRAM 是浪费；而且一旦推断成 BRAM，
-    //   ADDRARDADDR/ENARDEN 就会被带异步复位的寄存器驱动 -> [DRC REQP-1840]。
-    //   （条目 31->33 时地址位 5->6，Vivado 突然改推 BRAM，警告就是这么冒出来的。）
+    // 强制分布式 RAM（LUTRAM），不要 BRAM
     (* rom_style = "distributed" *) reg [DATA_WIDTH-1:0] rom [0:(2**ADDR_WIDTH)-1];
 
     initial begin
@@ -62,16 +59,6 @@ module WM8960_init_table #(
         rom[24] = {7'h0b, 9'b1_1111_1111};  // R DAC digital vol 0dB (update)
         rom[25] = {7'h02, 9'b1_1111_1001};  // LOUT1 vol +0dB
         rom[26] = {7'h03, 9'b1_1111_1001};  // ROUT1 vol +0dB
-        // ⚠️⚠️ 这两条必须【关掉】（0 = -78.75dB ≈ 静音）
-        //   原来它们把【模拟旁路】打开了 0 dB：
-        //       LINPUT1 ──(模拟直通)──► LOUT1 / 喇叭
-        //       RINPUT1 ──(模拟直通)──► ROUT1
-        //   ⟹ 音频完全【绕过了 DAC、EQ、音量控制】，直接送到喇叭
-        //   上板实测到的三个怪现象全都由此而来：
-        //     ① 按 SPK 静音无效（我们清零的是 DAC 数据 ✗ 旁路不经过 DAC）
-        //     ② 话筒只有【左】喇叭响（LINPUT1 只通 LOUT1）
-        //     ③ 线路只有【右】喇叭响（RINPUT1 只通 ROUT1）
-        //   ⟹ 关掉旁路，让信号走 ADC → FPGA(EQ/FFT) → DAC → 喇叭 ✓
         rom[27] = {7'h2d, 9'b0_0000_0000};  // L mixer bypass: OFF
         rom[28] = {7'h2e, 9'b0_0000_0000};  // R mixer bypass: OFF
         rom[29] = {7'h31, 9'b0_1111_0111};  // ClassD ctl: enable speakers

@@ -8,8 +8,8 @@
 // Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
-// Description:    bg_src.v - 背景像素源（扩展点 ①）
-// Dependencies:   无
+// Description:    bg_src.v - 背景像素源
+// Dependencies:
 //
 // Revision:
 // Revision 0.01 - File Created
@@ -22,7 +22,7 @@ module bg_src #(
     parameter integer HDISP = 480,
     parameter integer VDISP = 272,
     parameter integer GRID  = 32,        // 网格间距（像素）
-    // 坐标位宽（P1-3a）：默认 10/9 对应 480x272，与原写死的 [9:0]/[8:0] 一致
+    // 坐标位宽：默认 10/9 对应 480x272
     parameter integer XW    = 10,
     parameter integer YW    = 9
 ) (
@@ -42,8 +42,6 @@ module bg_src #(
     //=========================================================================
     // 竖直渐变：顶部更暗，底部略亮（频谱柱从底部升起来更自然）
     //=========================================================================
-    //   偏移量必须按屏幕高度归一化 —— 固定的 y[8:3] 在 360 行时会回绕
-    //   ⟹ 下半屏渐变从头开始 ⟹ 与 LCD 背景观感不一致
     localparam integer YSH = (VDISP >= 512) ? 4 : 3;    // 272 行取 3，360 行取 4
     wire [5:0] t  = y[YSH +: 6];                        // 0..33 / 0..22
     wire [7:0] gr = 8'd6  + {2'b00, t};

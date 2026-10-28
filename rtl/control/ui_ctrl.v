@@ -8,8 +8,8 @@
 // Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
-// Description:    ui_ctrl.v - 统一配置寄存器组（扩展点 ②）
-// Dependencies:   见文件内 `include
+// Description:    ui_ctrl.v - 统一配置寄存器组
+// Dependencies:   disp_cfg.vh
 //
 // Revision:
 // Revision 0.01 - File Created
@@ -24,8 +24,6 @@ module ui_ctrl #(
     parameter integer NREG        = 8,
     parameter integer AUTO_PERIOD = 48_000_000 * 4,     // 自动切换间隔（4 秒）
     // SD 卡里实际写了多少张图（由 scripts/sdcard/mkimage.py 决定）
-    //   图序号按这个数循环：0..IMG_COUNT-1 来回转，
-    //   避免序号一直加大、读到卡里没写过的区域（表现为"随机花屏"）。
     parameter integer IMG_COUNT   = 3
 ) (
     input  wire        clk,
@@ -37,45 +35,28 @@ module ui_ctrl #(
     input  wire [7:0]  wr_data,
 
     //--------------------- 便捷操作 ---------------------
-    input  wire        next_view,       // 1 拍脉冲：切到下一个视图预设 (VIEW 按钮)
+    input  wire        next_view,    // 1 拍脉冲：切到下一个视图预设 (VIEW 按钮)
 
-    //-------------------------------------------------------------------------
-    // 步进（P1-1 工控屏的旋钮式调节）
-    //-----------------------------------------------------------------------------
-    //   按钮/UART 想"把某个寄存器 +1"时用这个。放在这里而不是放上层，是因为
-    //   "当前值是多少"只有本模块知道 —— 上层如果自己读出来再写回去，
-    //   就得把 6 个寄存器的输出全接上去，还要处理回写冲突。
-    //   这里只给一个地址，本模块自己查表递增，代价是一个 case。
-    //
-    //   每个字段的有效范围不同（比如色相速度是 0..7、背景只有 0..1），
-    //   所以"回绕点"按字段分别定，不能统一用 8 位回绕。
-    //   为 0 的字段：该字段不可步进（避免出现非法值）。
-    //-------------------------------------------------------------------------
+    // 步进
     input  wire        step_en,         // 1 拍脉冲：对 step_addr 指向的字段 +1
     input  wire [3:0]  step_addr,
 
     //--------------------- 配置输出 ---------------------
     output reg  [7:0]  cfg_view,
-    // ⚠️ 原来的 cfg_style 保留（UART 仍可写），但面板上的 STYLE 按钮
-    //    已经换成 SPK（喇叭静音）—— 实测 STYLE 的两种柱体风格肉眼几乎看不出差别。
+    // 面板弃用，UART 保留
     output reg  [7:0]  cfg_style,
-    // 喇叭静音：1 = 静音。面板 SPK 键切换。
+    // 喇叭静音：1 = 静音（面板 SPK 键切换）
     output reg         cfg_spk_mute,
     output reg  [7:0]  cfg_hue_spd,
     output reg  [7:0]  cfg_wave_gain,
     output reg  [7:0]  cfg_bg_mode,
     output reg  [7:0]  cfg_auto,
     output reg  [7:0]  cfg_demo,        // 演示/自检图案选择
-    // 音频输入源（P1-6）：0=话筒 1=线路输入
-    //   只取 1 位 —— 写进来的高 7 位一律丢掉，避免垃圾值让下游产生奇怪状态。
+    // 音频输入源：0=话筒 1=线路输入
     output reg  [7:0]  cfg_src,
-    // SD 卡切图：每次按下面板的 SD 按钮，这个计数器加 1。
-    //   top.v 用它的变化去触发一次新的扇区读（"第几张图" = cfg_img_idx）。
+    // SD 卡切图：每次按下面板的 SD 按钮，这个计数器加 1
     output reg  [7:0]  cfg_img_idx,
-    // 背景来源：0 = 程序化背景（BG 按钮选的那几种）  1 = SD 卡图片
-    //   面板上 BG 和 SD 是两个【并列的背景模式】：
-    //     按 BG ⟹ 切回程序化背景（并按原有规则 0/1 循环）
-    //     按 SD ⟹ 切到 SD 图片，同时图序号 +1
+    // 背景来源：0 = BG 程序化背景 1 = SD 卡图片（BG 与 SD 并列触发）
     output reg         cfg_bg_src,
     output reg  [3:0]  view_idx         // 当前预设编号（观测用）
 );
@@ -88,8 +69,6 @@ module ui_ctrl #(
     reg [7:0] preset [0:NPRESET-1];
 
     initial begin
-        // 【2026-10】用户反馈极坐标图平时用不上，默认藏起来。
-        //   preset[0] 就是"柱状 + 波形"，把它设成上电默认。
         preset[0] = 8'b0000_0101;       // 柱状 + 波形  <- 上电默认
         preset[1] = 8'b0000_0110;       // 极坐标 + 波形
         preset[2] = 8'b0000_0111;       // 三个全开
@@ -123,38 +102,18 @@ module ui_ctrl #(
     //=========================================================================
     always @(posedge clk) begin
         if (!rst_n) begin
-            // ⚠️ 必须和 preset[0] 一致！这里原来写死 3'b111（三个全开），
-            //    改了 preset / view_idx 却忘了改这一行 -> 极坐标关不掉。
-            //    这是"同一个默认值写在多个地方"第 3 次踩坑（前两次见账本 109）。
             cfg_view      <= 8'b0000_0101;      // 柱状 + 波形（= preset[0]）
             cfg_style     <= 8'd0;
             cfg_hue_spd   <= 8'd6;              // 每 2^(8-6) = 4 帧滚一级
-                                                // （等价于旧映射的 H=2，见 disp_top.v）
-            // G 是【指数】：增益 = 2^G。
-            //   默认 2 = x4 —— 配合 +25dB 的模拟增益，实测最舒服。
-            //   ⚠️ 改这个默认值【必须同时改 rtl/video/disp_top.v 里那个
-            //      cdc_sync u_sync_wg 的 RESET_VAL】！两处不一致的话，
-            //      上电头几帧会用另一个值（而且如果 ui_ctrl 的值一直不变，
-            //      它就不会重发，画面会永久停在复位值上）。
-            //      这个坑已经踩过 3 次（账本 109/123）。
-            // 【观感旋钮】波形增益默认值。
-            //   增益 = 2^cfg_wave_gain。
-            //   原来是 2（×4）—— 但话筒/线路信号本身只有满幅的几十分之一，
-            //   ×4 之后波形还是几乎贴着中线（用户反馈"波形没啥反应"）。
-            //   改成 6（×64）⟹ 正常说话/放音乐时波形能明显铺开。
-            //   ⚠️ 6（×64）实测太激进 ✗ 话筒声音大时会削顶（用户反馈）
-            //   ⟹ 降到 4（×16），正常说话能看清波形，大音量也不会顶满。
-            //   仍可用面板 GAIN 键在 0..8（×1 ~ ×256）之间调。
-            //   ⚠️ 改这里的同时要检查 disp_top 里有没有同名的复位值（以前踩过）。
-            cfg_wave_gain <= 8'd4;
+            cfg_wave_gain <= 8'd4;              // G 是【指数】：波形增益 = 2^G
             cfg_bg_mode   <= 8'd0;
             cfg_auto      <= 8'd0;
             cfg_demo      <= 8'd0;              // 上电关（走真实音频）
-            cfg_src       <= 8'd0;              // 输入源：默认话筒（与改造前一致）
+            cfg_src       <= 8'd0;              // 输入源：默认话筒
             cfg_img_idx   <= 8'd0;              // SD 背景图序号
-            cfg_bg_src    <= 1'b0;              // 默认程序化背景（与改造前一致）
+            cfg_bg_src    <= 1'b0;              // 默认程序化背景
             cfg_spk_mute  <= 1'b0;              // 默认不静音
-            view_idx      <= 4'd0;              // 对应 preset[0]（柱状+波形，极坐标隐藏）
+            view_idx      <= 4'd0;              // 对应 preset[0]
         end else if (wr_en) begin
             case (wr_addr)
                 4'h0: cfg_view      <= wr_data;
@@ -186,7 +145,7 @@ module ui_ctrl #(
             case (step_addr)
                 // VIEW 用预设轮转（和 KEY1 同一个动作），不走这里
 
-                // SPK 喇叭静音开关（原 STYLE：两种柱体风格肉眼几乎没差别 ✗ 已弃用）
+                // SPK 喇叭静音开关
                 4'h1: cfg_spk_mute  <= ~cfg_spk_mute;
                 // HUESPD 0..7，0 = 停住
                 4'h2: cfg_hue_spd   <= (cfg_hue_spd[3:0] >= 4'd7) ? 8'd0

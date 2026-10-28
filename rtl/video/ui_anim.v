@@ -9,7 +9,7 @@
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    ui_anim.v - 属性插值器（UI 三件套之一）
-// Dependencies:   无
+// Dependencies:
 //
 // Revision:
 // Revision 0.01 - File Created
@@ -19,7 +19,7 @@
 
 
 module ui_anim #(
-    parameter integer NCH  = 3,     // 通道数（本项目 = 三个视图）
+    parameter integer NCH  = 3,     // 通道数（三个视图）
     parameter integer FULL = 128,   // 满值（必须是 2 的幂，显示侧才好用移位除）
     parameter integer STEP = 4      // 每帧步进（FULL/STEP = 过渡帧数）
 ) (
@@ -37,7 +37,7 @@ module ui_anim #(
         if (!rst_n) begin
             level <= {(NCH*8){1'b0}};
         end else if (frame) begin
-            // 只在帧起始更新 —— 见文件头"为什么必须有 frame 门控"
+            // 只在帧起始更新
             for (i = 0; i < NCH; i = i + 1) begin
                 if (target[i]) begin
                     // 向上：钳到 FULL 就停（不能回绕，否则会突然掉回 0）

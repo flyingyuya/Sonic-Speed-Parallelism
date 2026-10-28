@@ -8,8 +8,8 @@
 // Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
-// Description:    eq_coeff_rom.v - 均衡器系数表（**本文件由 scripts/golden/gen_all.py 自动生成**）
-// Dependencies:   无
+// Description:    eq_coeff_rom.v - 均衡器系数表（由 scripts/golden/gen_all.py 自动生成）
+// Dependencies:
 //
 // Revision:
 // Revision 0.01 - File Created

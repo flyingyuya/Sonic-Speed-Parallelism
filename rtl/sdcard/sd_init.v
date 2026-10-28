@@ -9,7 +9,7 @@
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    sd_init.v  ——  SD 卡 SPI 模式初始化
-// Dependencies:   无
+// Dependencies:
 //
 // Revision:
 // Revision 0.01 - File Created
@@ -41,9 +41,6 @@ module sd_init #(
     //   第 1 字节 = 0x40 | 命令号
     //   第 2~5 字节 = 32 位参数（大端）
     //   第 6 字节 = CRC7 + 结束位
-    //     · 只有 CMD0 / CMD8 的 CRC 是规范写死的（0x95 / 0x87）
-    //       因为 SPI 模式下卡只在"还没切进 SPI 模式"时才校验 CRC
-    //     · 其余命令的 CRC 填 0xFF 即可（卡不检查）
     //-------------------------------------------------------------------------
     localparam [47:0] CMD0   = {8'h40, 8'h00, 8'h00, 8'h00, 8'h00, 8'h95};
     localparam [47:0] CMD8   = {8'h48, 8'h00, 8'h00, 8'h01, 8'hAA, 8'h87};
@@ -95,7 +92,6 @@ module sd_init #(
 
     //-------------------------------------------------------------------------
     // 分频：clk -> div_clk
-    //   每 DIV_FREQ/2 个 clk 周期翻转一次 ⟹ div_clk 频率 = CLK_HZ / DIV_FREQ
     //-------------------------------------------------------------------------
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -111,7 +107,6 @@ module sd_init #(
 
     //-------------------------------------------------------------------------
     // 上电等待：在 IDLE 里数满 POWER_ON_NUM 个 div_clk 周期
-    //   规范要求上电后至少 74 个时钟；这里给到约 25 ms，非常宽松
     //-------------------------------------------------------------------------
     always @(posedge div_clk or negedge rst_n) begin
         if (!rst_n)
@@ -126,13 +121,6 @@ module sd_init #(
 
     //-------------------------------------------------------------------------
     // 响应接收
-    //   在 div_clk 的下降沿（= sd_clk 的上升沿）采样 sd_miso
-    //   ⟹ 直接写 negedge div_clk —— 不要再"造一个反相时钟再当 posedge 用"：
-    //      那样等于是把派生时钟又派生了一次，相位关系容易错，也没必要。
-    //
-    //   起始判决：响应一定以 0 开头（起始位），看到 0 就开始收
-    //   固定收 48 位：R1 只有 1 字节，多出的部分由 NOP 填满，
-    //                这样不必为 R1/R3/R7 各写一套逻辑
     //-------------------------------------------------------------------------
     always @(negedge div_clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -190,7 +178,7 @@ module sd_init #(
 
             ST_WAIT_CMD0: begin
                 if (res_en) begin
-                    // R1 的 bit0..我们只看最高字节：0x01 = IDLE 状态 ⟹ 复位成功
+                    // R1 的 bit0..只看最高字节：0x01 = IDLE 状态->复位成功
                     if (resp_data[47:40] == 8'h01)
                         next_state = ST_SEND_CMD8;
                     else
@@ -216,7 +204,7 @@ module sd_init #(
 
             ST_SEND_CMD55: begin
                 if (res_en) begin
-                    if (resp_data[47:40] == 8'h01) // 仍在 IDLE ⟹ 可以发 ACMD
+                    if (resp_data[47:40] == 8'h01) // 仍在 IDLE，可以发 ACMD
                         next_state = ST_SEND_ACMD41;
                     else
                         next_state = ST_SEND_CMD55;  // 重发
@@ -227,10 +215,10 @@ module sd_init #(
 
             ST_SEND_ACMD41: begin
                 if (res_en) begin
-                    if (resp_data[47:40] == 8'h00) // 0x00 ⟹ 初始化完成
+                    if (resp_data[47:40] == 8'h00) // 0x00 初始化完成
                         next_state = ST_INIT_DONE;
                     else
-                        next_state = ST_SEND_CMD55;  // 还在忙 ⟹ 再问一遍
+                        next_state = ST_SEND_CMD55;  // 还在忙，再问一遍
                 end else begin
                     next_state = ST_SEND_ACMD41;
                 end
@@ -246,8 +234,6 @@ module sd_init #(
 
     //-------------------------------------------------------------------------
     // 输出逻辑：发送 MOSI / 驱动 CS / 超时计数
-    //   注意 MOSI 在 div_clk 上升沿更新，卡在 sd_clk 上升沿采样
-    //   （sd_clk = ~div_clk，两者相差半个周期，采样点落在数据中点）
     //-------------------------------------------------------------------------
     always @(posedge div_clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -261,7 +247,7 @@ module sd_init #(
             over_time_en <= 1'b0;
             case (cur_state)
                 ST_IDLE: begin
-                    sd_cs   <= 1'b1;      // 上电等待期间 CS=1, MOSI=1（全 1 的空闲时钟）
+                    sd_cs   <= 1'b1;      // 上电等待期间 CS=1, MOSI=1
                     sd_mosi <= 1'b1;
                 end
 
@@ -277,7 +263,7 @@ module sd_init #(
                     // 等响应期间 CS 保持低、MOSI 保持高（发 NOP 时钟）
                     sd_mosi <= 1'b1;
                     if (res_en)
-                        sd_cs <= 1'b1;     // 收到响应后再放开 CS ⟹ 已进入 SPI 模式
+                        sd_cs <= 1'b1;     // 收到响应后再放开 CS
 
                     over_time_cnt <= over_time_cnt + 16'd1;
                     if (over_time_cnt == (OVER_TIME_NUM - 1))

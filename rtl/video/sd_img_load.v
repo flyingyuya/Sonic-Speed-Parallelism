@@ -9,7 +9,7 @@
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    sd_img_load.v  ——  把 SD 卡的字节流搬成像素，写进帧缓冲
-// Dependencies:   无
+// Dependencies:
 //
 // Revision:
 // Revision 0.01 - File Created
@@ -23,10 +23,6 @@ module sd_img_load #(
     parameter integer H = 272,
     //-------------------------------------------------------------------------
     // 第二个写口：只写"中心裁剪区"（给 HDMI 用）
-    //   LCD  缓冲 480x272（完整图）⟹ 每像素都写
-    //   HDMI 缓冲 320x180（中心裁剪）⟹ 只有落在 [CX,CX+CW) x [CY,CY+CH) 才写
-    //   为什么：两个显示器时钟不同 ⟹ 同一份缓冲要"1 写 2 读"⟹ Vivado 推断失败
-    //           退化成 LUTRAM ⟹ LUT 爆掉。两份不同尺寸的缓冲更省（26 vs 58 块）。
     parameter integer EN_CROP = 1,
     parameter integer CX = 80,
     parameter integer CY = 46,
@@ -36,7 +32,7 @@ module sd_img_load #(
     input  wire        clk,
     input  wire        rst_n,
 
-    // 开始新一帧加载（清计数器）。单拍脉冲。
+    // 开始新一帧加载（清计数器），单拍脉冲
     input  wire        start,
 
     // 来自 sd_read 的字节流
@@ -60,7 +56,7 @@ module sd_img_load #(
 
     localparam integer DEPTH = W * H;
 
-    // 用行列计数器代替除法/取模（整除会吃掉 DSP 和时序）
+    // 用行列计数器代替除法/取模
     reg [15:0] x_cnt;      // 列 0..W-1
     reg [15:0] y_cnt;      // 行 0..H-1
 
@@ -69,7 +65,7 @@ module sd_img_load #(
     wire crop_y_ok = (y_cnt >= CY) && (y_cnt < (CY + CH));
     wire crop_ok   = EN_CROP && crop_x_ok && crop_y_ok;
 
-    // 裁剪区内的相对坐标 + 线性地址（乘 320 = 256+64 ⟹ 两次移位相加，零 DSP）
+    // 裁剪区内的相对坐标 + 线性地址
     wire [15:0] crop_dx = x_cnt - CX[15:0];
     wire [15:0] crop_dy = y_cnt - CY[15:0];
     wire [18:0] crop_addr = ({3'd0, crop_dy} << 8) + ({3'd0, crop_dy} << 6) + {3'd0, crop_dx};
@@ -79,21 +75,12 @@ module sd_img_load #(
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            // ⚠️ wr_addr / wr_data 故意【不加异步复位】：
-            //    它们直接驱动 BRAM 的地址/数据引脚，而 Vivado 的
-            //    DRC REQP-1839 明确警告"带异步复位的寄存器驱动 RAMB 控制脚
-            //    可能破坏存储内容"。这两个寄存器本来就由 start 清零、
-            //    由数据流赋值，不需要复位。
-            // wr_en 同理：它驱动 RAMB 的 ENARDEN，也不能带异步复位
             hi_lo    <= 1'b0;
             lo_byte  <= 8'd0;
             done     <= 1'b0;
             pix_cnt  <= 19'd0;
             x_cnt    <= 16'd0;
             y_cnt    <= 16'd0;
-            // ⚠️ wr2_en / wr2_addr 同样【不能带异步复位】：
-            //    它们驱动 BRAM 的 ENARDEN / ADDRARDADDR ⟹ DRC REQP-1839
-            //    （漏了这条 ⟹ 合成报 40 条 REQP-1839 警告）
         end else begin
             wr_en  <= 1'b0;         // 默认单拍
             wr2_en <= 1'b0;         // 同理：使能必须每拍给值，不能"保持"
@@ -109,17 +96,12 @@ module sd_img_load #(
                 wr2_en   <= 1'b0;
                 wr2_addr <= 19'd0;
             end else if (byte_valid && !done) begin
-                // ⚠️ 必须加 !done：写满之后 pix_cnt 停住了，但 byte_valid 还会来
-                //    （SD 卡一次读的是整块 512 扇区 = 262144 字节，比一帧的
-                //     261120 字节多 1024 字节），如果不挡，就会反复写最后一个
-                //     地址，把画面右下角那一片像素踩坏。
-                //    TB 的判据④ 就是专门抓这个的（我第一次漏了）。
                 if (!hi_lo) begin
                     // 收到低字节
                     lo_byte <= byte_data;
                     hi_lo   <= 1'b1;
                 end else begin
-                    // 收到高字节 ⟹ 凑成一个像素，写帧缓冲
+                    // 收到高字节，凑成一个像素，写帧缓冲
                     hi_lo <= 1'b0;
                     // 小端：先来的字节是低位
                     wr_data <= {byte_data, lo_byte};

@@ -1,20 +1,19 @@
-//////////////////////////////////////////////////////////////////////////////////
-// Company:
-// Engineer:       Binyu Fei
+/////////////////////////////////////////////////////////////////////////////////
+// Company       : 武汉芯路恒科技有限公司
+//                 http://xiaomeige.taobao.com
+// Web           : http://www.corecourse.cn
 //
-// Create Date:    2026-10-26
-// Design Name:    i2c_bit_shift
-// Module Name:    i2c_bit_shift
-// Project Name:   音速并行（Sonic-Speed-Parallelism）
-// Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
-// Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
-// Description:    见模块内注释
-// Dependencies:   无
+// Create Date   : 2019/05/01 00:00:00
+// Module Name   : i2c_control
+// Description   : I2C 单字节传输
+//
+// Dependencies  :
 //
 // Revision:
 // Revision 0.01 - File Created
+// Additional Comments:
 //
-//////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns / 1ps
 
 

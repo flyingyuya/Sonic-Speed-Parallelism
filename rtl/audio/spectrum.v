@@ -8,8 +8,8 @@
 // Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
-// Description:    spectrum.v - 频谱柱高生成（clk_sys 域，FFT 的直接下游）
-// Dependencies:   无
+// Description:    spectrum.v - 频谱柱高生成
+// Dependencies:
 //
 // Revision:
 // Revision 0.01 - File Created
@@ -23,35 +23,10 @@ module spectrum #(
     parameter integer DW      = 25,     // fft_core 的 y_mag 位宽
     parameter integer HW      = 9,      // 柱高位宽
     parameter integer DECAY   = 6,      // 每帧衰减量（0 = 不衰减，只保持峰值）
-    // DB_OFFS：多小的信号算"没有信号"（显示成 0）。
-    //   单位是 log2 的 Q5.3，所以 64 = 2^8、80 = 2^10、96 = 2^12。
-    //
-    //   【2026-10 从 64 调到 80】用户反馈"安静时全频段都有柱子 ✗ 高频也是"。
-    //   根因是【话筒的 SNR 天生比线路输入差 30~40 dB】（Music-Spectrum 那个
-    //   项目用的是 Line In ✗ 信噪比 90~100dB ✗ 我们是 MEMS 话筒 ✗ 只有 50~60dB）。
-    //   把门槛抬高 4 倍（2^8 -> 2^10）等于把底噪那一层直接判成 0，
-    //   画面立刻干净很多；代价是**比 2^10 还弱的真实信号也不显示了**。
-    //   想再干净就往 96 调，想更灵敏就回到 64 —— 这个数是【观感旋钮】。
+    // DB_OFFS：64 = 2^8、80 = 2^10、96 = 2^12
     parameter integer DB_OFFS = 80,     // log2 偏移（Q5.3）；mag < 2^(OFFS/8) 显示为 0
     parameter integer SCALE_SH= 2,
-
-    //-------------------------------------------------------------------------
     // 【sqrt 显示】把 dB 刻度拉长一倍
-    //-----------------------------------------------------------------------------
-    //   用户要的"频谱幅度开根号"，其实【不是新算法】：
-    //
-    //       20*log10(sqrt(x)) = 10*log10(x)
-    //               ↑
-    //       sqrt 在对数域里就是【减半】
-    //
-    //   而这里本来就在 log2 域里算高度（hsc = lv << SCALE_SH）。
-    //   所以"开根号"= 把斜率减半 = SCALE_SH 减 1 = 设成 1。
-    //   观感：现在约 60 dB 铺满全高；sqrt 模式下相当于 120 dB 铺满全高，
-    //   低声压的柱子会明显变高（更热闹，但动态范围被压缩）。
-    //
-    //   ⚠️ 做成【参数】而不是写死：参数默认值就是原来的 2，
-    //      逐位不变、零风险；想试 sqrt 就在实例化时改成 1。
-    //      要"运行时可切"的话，再把它做成 ui_ctrl 的一个寄存器位即可。
     parameter integer SQRT_SCALE_SH = 2       // 高度缩放（左移位数）
 ) (
     input  wire                    clk,          // clk_sys
@@ -67,18 +42,16 @@ module spectrum #(
     output reg                     frame_done    // 最后一根柱完成，1 拍脉冲
 );
 
-    localparam integer AW   = $clog2(NBARS);            // 柱编号位宽
-    localparam integer MAXH = (1 << HW) - 1;            // 高度上限
+    localparam integer AW   = $clog2(NBARS);     // 柱编号位宽
+    localparam integer MAXH = (1 << HW) - 1;     // 高度上限
 
-    // 状态寄存器（声明必须在使用之前 —— Verilog 不允许先用后声明）
-    reg  [AW-1:0]       bar_cur;                        // 当前正在累积的柱编号
-    reg  [HW-1:0]       cur_max;                        // 本柱已见到的最大高度
-    reg  [NBARS*HW-1:0] peak;                           // 峰值保持值（拉平存储，方便变址）
+    // 状态寄存器
+    reg  [AW-1:0]       bar_cur;                 // 当前正在累积的柱编号
+    reg  [HW-1:0]       cur_max;                 // 本柱已见到的最大高度
+    reg  [NBARS*HW-1:0] peak;                    // 峰值保持值（拉平存储，方便变址）
 
     //=========================================================================
     // 分组表：当前柱的最后一个 bin 编号
-    //   bcur 在帧首强制为 0，所以 last_bin 也要跟着用 bcur 去查 ——
-    //   否则帧首那一拍会拿上一帧残留的 bar_cur 去查表。
     //=========================================================================
     wire              fstart = in_valid && (in_index == 9'd0);
     wire [AW-1:0]     bcur   = fstart ? {AW{1'b0}} : bar_cur;
@@ -86,12 +59,8 @@ module spectrum #(
 
     //-------------------------------------------------------------------------
     // bin 分组表：按 NBARS 选表
-    //   NBARS=60 ⟹ spectrum_map   （LCD ✗ 480/60 = 8 px/柱）
-    //   NBARS=80 ⟹ spectrum_map80 （HDMI ✗ 640/80 = 8 px/柱）
-    //   ⚠️ 两张表都由 scripts/golden/gen_spectrum_map.py 生成
-    //      参数（--nbars / --out / --module）见脚本注释
-    //      default 分支会给 last_bin=0 ⟹ frame_done 永不触发 ⟹ 柱谱全没
-    //      （这个坑踩过了：用 NBARS=80 却用 60 的表 ⟹ 画面全空）
+    //   NBARS=60 -> spectrum_map   （LCD ✗ 480/60 = 8 px/柱）
+    //   NBARS=80 -> spectrum_map80 （HDMI ✗ 640/80 = 8 px/柱）
     //-------------------------------------------------------------------------
     generate
         if (NBARS == 80) begin : g_map80
@@ -140,8 +109,6 @@ module spectrum #(
     wire [HW-1:0]     old      = peak[bcur*HW +: HW];
 
     // 峰值保持 + 线性衰减
-    //   注意这里是 >= 而不是 > —— 用 > 的话柱子在降到刚好等于 DECAY 时会永远停住，
-    //   再也回不到 0（6/511 虽然看不见，但语义是错的）。
     wire [HW-1:0]     upd      = (raw >= old)                             ? raw
                                : ((old >= DECAY) && ((old - raw) >= DECAY)) ? (old - DECAY)
                                :                                               old;

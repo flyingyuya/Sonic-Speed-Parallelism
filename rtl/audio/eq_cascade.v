@@ -9,7 +9,7 @@
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    eq_cascade.v - 多段双二阶（Biquad）均衡器，时分复用 MAC
-// Dependencies:   无
+// Dependencies:
 //
 // Revision:
 // Revision 0.01 - File Created
@@ -44,9 +44,9 @@ module eq_cascade #(
     output reg                     y_valid
 );
 
-    localparam integer SH = CF;                     // 乘积 -> 样本 的右移位数 = 16
+    localparam integer SH = CF;                 // 乘积 -> 样本 的右移位数 = 16
 
-    localparam [AW-1:0] RND  = {{(AW-1){1'b0}}, 1'b1} << (SH-1);        // 四舍五入偏置
+    localparam [AW-1:0] RND  = {{(AW-1){1'b0}}, 1'b1} << (SH-1);  // 四舍五入偏置
     localparam signed [DW-1:0] MAXV = {1'b0, {(DW-1){1'b1}}};
     localparam signed [DW-1:0] MINV = {1'b1, {(DW-1){1'b0}}};
 
@@ -138,8 +138,7 @@ module eq_cascade #(
                     end
                 end
 
-                // 1bit 状态已用满，default 不可达；
-                // 写上是为了 ① 满足 lint ② 非法值自恢复 ③ 明确"不会推断 latch"
+                // 1bit 状态已用满，default 不可达
                 default: state <= IDLE;
             endcase
         end

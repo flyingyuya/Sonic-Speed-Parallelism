@@ -1,20 +1,19 @@
-//////////////////////////////////////////////////////////////////////////////////
-// Company:
-// Engineer:       Binyu Fei
+/////////////////////////////////////////////////////////////////////////////////
+// Company       : 武汉芯路恒科技有限公司
+//                 http://xiaomeige.taobao.com
+// Web           : http://www.corecourse.cn
 //
-// Create Date:    2026-10-26
-// Design Name:    bit8_trans_bit16
-// Module Name:    bit8_trans_bit16
-// Project Name:   音速并行（Sonic-Speed-Parallelism）
-// Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
-// Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
-// Description:    http://xiaomeige.taobao.com
-// Dependencies:   无
+// Create Date   : 2019/05/01 00:00:00
+// Module Name   : bit8_trans_bit16
+// Description   : 数据位宽转换，8bit输入转16bit输出
+//
+// Dependencies  :
 //
 // Revision:
 // Revision 0.01 - File Created
+// Additional Comments:
 //
-//////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns / 1ps
 
 

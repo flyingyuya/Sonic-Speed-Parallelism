@@ -9,7 +9,7 @@
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    spec_sync.v - 频谱柱高的跨时钟域快照
-// Dependencies:   无
+// Dependencies:   async_fifo.v
 //
 // Revision:
 // Revision 0.01 - File Created

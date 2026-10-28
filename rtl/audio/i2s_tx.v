@@ -9,7 +9,7 @@
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    i2s_tx.v - I2S 发送（主模式，单时钟域）
-// Dependencies:   无
+// Dependencies:
 //
 // Revision:
 // Revision 0.01 - File Created
@@ -33,7 +33,7 @@ module i2s_tx #(
     // 待发送数据（在每个 frame_start 之前必须稳定）
     input  wire signed [DW-1:0] l_data,
     input  wire signed [DW-1:0] r_data,
-    input  wire                 data_en,   // 0 时保持上一帧（欠载保护）
+    input  wire                 data_en,   // 0 时保持上一帧
 
     output reg  sdout
 );
@@ -47,7 +47,7 @@ module i2s_tx #(
 
     reg [NFRAME-1:0] sr;
 
-    // 下一次下降沿要输出的位下标：帧起始为 0，否则 +1（帧起始承担回绕）
+    // 下一次下降沿要输出的位下标：帧起始为 0，否则 +1
     wire [5:0]        idx_nxt = frame_start ? 6'd0 : (bit_idx + 6'd1);
     wire [NFRAME-1:0] sr_nxt  = (frame_start && data_en) ? tx_frame : sr;
 

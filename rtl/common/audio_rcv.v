@@ -8,8 +8,8 @@
 // Project Name:   音速并行（Sonic-Speed-Parallelism）
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
-// Description:    见模块内注释
-// Dependencies:   无
+// Description:
+// Dependencies:
 //
 // Revision:
 // Revision 0.01 - File Created

@@ -9,7 +9,7 @@
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    hdmi_top.v —— HDMI 输出（DVI 兼容）：把一路像素流变成 TMDS 差分对
-// Dependencies:   无
+// Dependencies:   tmds_out.v
 //
 // Revision:
 // Revision 0.01 - File Created
@@ -22,8 +22,8 @@
 module hdmi_top (
     input  wire        rst_n,
 
-    input  wire        clk_hdmi,    // 像素时钟（来自 disp_top 的那一路，800x600@60 是 40MHz）
-    input  wire        clk_5x,      // 串行化时钟（5 x 像素时钟 = 200MHz）
+    input  wire        clk_hdmi,    // 像素时钟
+    input  wire        clk_5x,      // 串行化时钟（5 x 像素时钟）
 
     //--------------------- 像素流（时序已由上游产生）---------------------
     input  wire [23:0] pix_rgb,
@@ -42,7 +42,7 @@ module hdmi_top (
     output wire        tmds_d2_n,
 
     //--------------------- 板级控制 ---------------------
-    output wire        hdmi_out_en  // 低有效（接 NC7SZ125 的 OE，原理图确认过）
+    output wire        hdmi_out_en  // 低有效
 );
 
     tmds_out u_tmds (

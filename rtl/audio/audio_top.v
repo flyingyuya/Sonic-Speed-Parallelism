@@ -9,7 +9,8 @@
 // Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
 // Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
 // Description:    audio_top.v - 音频链路顶层（I2S → 低延迟均衡 → I2S）
-// Dependencies:   无
+// Dependencies:   i2s_slave_clk.v   i2s_bclk_if.v   eq_coeff_rom.v
+//                 eq_cascade.v   audio_fifo.v i2s_tx.v
 //
 // Revision:
 // Revision 0.01 - File Created
@@ -31,12 +32,8 @@ module audio_top #(
     input  wire clk,            // clk_sys = 48 MHz
     input  wire rst_n,
 
-    // 喇叭静音（1 = 静音）。
-    //   实现方式：把送进 i2s_tx 的数据清零 ⟹ WM8960 收到全 0 采样 ⟹ 无声。
-    //   为什么不在 WM8960 里静音（写 R28/R29）：
-    //     那需要在运行时再发 I2C 写 ✗ 而 WM8960_init 是一次性播 ROM 的结构,
-    //     为这个功能加一条 I2C 命令通道代价太大。
-    //     在 FPGA 侧清零数据是零风险的做法 ✓ 而且不会爆音（I2S 时序完全不变）。
+    // 喇叭静音（1 = 静音）
+    //   实现方式：把送进 i2s_tx 的数据清零 -> WM8960 收到全 0 采样 -> 无声
     input  wire        mute,
 
     // ---- I2S 物理接口（从模式：bclk/lrclk 由 WM8960 提供）----
@@ -69,7 +66,7 @@ module audio_top #(
     localparam integer NCOE = NSECT * 5;
 
     //-------------------------------------------------------------------------
-    // 声明区（全部前置，避免"先用后声明"）
+    // 信号声明
     //-------------------------------------------------------------------------
     wire        bclk_rise, bclk_fall, frame_start, half_start, sample_stb;
     wire [5:0]  bit_idx;
@@ -109,24 +106,7 @@ module audio_top #(
     );
 
     //-------------------------------------------------------------------------
-    // I2S 接收（**换成直接拿 BCLK 当采样时钟**）—— 2026-10
-    //-------------------------------------------------------------------------
-    //   【为什么只换 RX】
-    //     原来 RX 用 i2s_slave_clk 在 clk_sys 域过采样 BCLK、自己纠正帧对齐。
-    //     上板实测：把输入 PGA 静音（ADC 必然输出 0）时读到的却是一串快速
-    //     跳动的数字 -> 接收器读到的根本不是 ADCDAT 上的电平。
-    //     换成教科书写法（posedge bclk 直接当采样沿）后，
-    //     sim/tb/tb_i2s_bclk_if.v 里 RX 四项全部通过。
-    //
-    //   【为什么 TX 暂时不动】
-    //     新模块的 TX 还差一个 BCLK（见那个 TB 的注释）。为了把迁移量降到最小：
-    //       · i2s_slave_clk 和 i2s_tx【原样保留】-> 它们继续产生/使用
-    //         bclk_rise / bclk_fall / frame_start / bit_idx
-    //       · codec_model 和 tb_audio_top 的 DAC 侧一个字都不用改
-    //     新模块的 dacdat 输出【空接】不驱动（旧 i2s_tx 仍然是 sdout 的驱动源）。
-    //
-    //   注意：这里不要给 bclk/lrclk 加 create_clock —— 它们仍被 i2s_slave_clk
-    //   当普通信号过采样，加了反而会引入一场假违例。
+    // I2S 接收（以 BCLK 为采样时钟）
     //-------------------------------------------------------------------------
     i2s_bclk_if #(.SLOT(SLOT), .DATA_BITS(DW), .DW(DW)) u_i2s_rxnew (
         .bclk       (bclk),
@@ -177,10 +157,7 @@ module audio_top #(
         end else begin
             coe_we <= 1'b0;
 
-            // 配置请求：只置 dirty，不直接改 gain_reg。
-            // 若在装载过程中又收到请求，dirty 置位，当前装载结束后自动重载。
-            // （早期版本在这里直接写 gain_reg，导致装载中途换档，
-            //   前几个系数用旧档位、后几个用新档位 —— band0 系数错的根源）
+            // 配置请求：只置 dirty，不直接改 gain_reg
             if (cfg_load && (band_gain != gain_reg) && !dirty)
                 dirty <= 1'b1;
 
@@ -215,8 +192,7 @@ module audio_top #(
                     end
                 end
 
-                // 4 个状态已用满 2bit，default 不可达；
-                // 写上是为了：① 满足 lint ② 万一 st 被翻转成非法值能自恢复
+                // 4 个状态已用满 2bit，default 不可达
                 default: st <= ST_IDLE;
             endcase
         end
