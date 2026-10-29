@@ -109,12 +109,12 @@ TBEXTRA="sim/tb/codec_model.v sim/tb/xpt2046_model.v sim/tb/sd_card_model.v"
 RTL="rtl/fft/fft_addr_gen.v rtl/fft/fft_twiddle_rom.v rtl/fft/fft_butterfly.v rtl/fft/fft_core.v \
      rtl/common/cdc_sync.v rtl/common/rst_sync.v rtl/common/audio_fifo.v \
      rtl/common/async_fifo.v rtl/common/key_debounce.v rtl/common/key_gesture.v \
-     rtl/control/ui_ctrl.v \
+     rtl/control/ui_ctrl.v rtl/control/key_ui.v \
      rtl/control/uart_rx.v rtl/control/uart_tx.v rtl/control/cmd_proc.v \
-     rtl/audio/i2s_clkgen.v rtl/audio/i2s_rx.v rtl/audio/i2s_tx.v \
+     rtl/audio/i2s_rx.v rtl/audio/i2s_tx.v \
      rtl/audio/i2s_slave_clk.v rtl/audio/i2s_bclk_if.v \
      rtl/audio/eq_cascade.v rtl/audio/eq_coeff_rom.v rtl/audio/audio_top.v \
-     rtl/audio/spectrum.v rtl/audio/spectrum_map.v \
+     rtl/audio/spectrum.v rtl/audio/spectrum_map.v rtl/audio/spectrum_map80.v \
      rtl/common/dc_block.v rtl/common/fir_sym.v rtl/common/env_track.v \
      rtl/wm8960/WM8960_init.v rtl/wm8960/WM8960_init_table.v \
      rtl/wm8960/i2c_control.v rtl/wm8960/i2c_bit_shift.v \
@@ -126,7 +126,7 @@ RTL="rtl/fft/fft_addr_gen.v rtl/fft/fft_twiddle_rom.v rtl/fft/fft_butterfly.v rt
      rtl/sdcard/sd_init.v rtl/sdcard/sd_read.v rtl/sdcard/sd_ctrl_top.v \
      rtl/video/frame_buf.v rtl/video/sd_img_load.v"
 
-ALL_TB="wave_buf sd_img_load frame_buf sd_init sd_read sd_ctrl_top hdmi_top tmds_out tmds_enc key_gesture ui_layer xpt2046 i2s_bclk_if dc_block fir_sym env_track eq_cascade i2s_loopback audio_top fft_addr_gen fft_butterfly fft_core wm8960_init lcd_timing spectrum disp_top i2s_slave polar_map wave_buf ui_ctrl uart_cmd demo_src ui_anim font_rom text_buf status_line"
+ALL_TB="wave_buf sd_img_load frame_buf sd_init sd_read sd_ctrl_top hdmi_top tmds_out tmds_enc key_gesture ui_layer xpt2046 i2s_bclk_if dc_block fir_sym env_track eq_cascade audio_top fft_addr_gen fft_butterfly fft_core wm8960_init lcd_timing spectrum disp_top i2s_slave polar_map ui_ctrl uart_cmd demo_src ui_anim font_rom text_buf status_line"
 WANT="${1:-all}"
 
 pass=0

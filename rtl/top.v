@@ -287,87 +287,43 @@ module top #(
     //=========================================================================
     // UI 控制（按键 / 触摸 / UART 都写同一组寄存器）
     //=========================================================================
-    // 按键消抖
-    wire k1_press, k2_press;
-    wire k1_state, k2_state;
-
-        key_debounce #(.CLK_HZ(48_000_000), .MS(KEY_DB_MS)) u_key1 (
-        .clk(clk_sys), .rst_n(rst_sys_n), .key_n(key1_n),
-        .key_pressed(k1_state), .press(k1_press)
-    );
-
-    key_debounce #(.CLK_HZ(48_000_000), .MS(KEY_DB_MS)) u_key2 (
-        .clk(clk_sys), .rst_n(rst_sys_n), .key_n(key2_n),
-        .key_pressed(k2_state), .press(k2_press)
-    );
-
-    //-------------------------------------------------------------------------
-    // 按键手势
-    //   映射：
-    //     KEY1 单击 = 光标左移      KEY1 双击 = 面板 开/关
-    //     KEY2 单击 = 光标右移      KEY2 双击 = 确认
-    //-------------------------------------------------------------------------
-    wire k1_single, k1_dbl, k2_single, k2_dbl;
-
-    key_gesture #(.CLK_HZ(48_000_000), .WIN_MS(KEY_WIN_MS)) u_gest1 (
-        .clk(clk_sys), .rst_n(rst_sys_n), .press(k1_press),
-        .single(k1_single), .dbl(k1_dbl)
-    );
-
-    key_gesture #(.CLK_HZ(48_000_000), .WIN_MS(KEY_WIN_MS)) u_gest2 (
-        .clk(clk_sys), .rst_n(rst_sys_n), .press(k2_press),
-        .single(k2_single), .dbl(k2_dbl)
-    );
-
-    // 光标：0=VIEW 1=STYLE 2=HUE 3=GAIN 4=BG 5=DEMO 6=IN 7=SD
-    localparam [3:0] SEL_N   = 4'd8;    // 光标项数（3 位装不下 8）
-    localparam [2:0] SEL_MAX = 3'd7;    // 最后一项（SD）
-
-    // 面板是否展开（从 clk_pix 域同步）
+    // 面板是否展开（从 clk_pix 域同步过来，供 key_ui 判断"单击是否有效"）
     wire panel_open_pix;
     wire panel_open_sys;
     cdc_sync u_panel_sync (
         .clk(clk_sys), .rst_n(rst_sys_n),
         .din(panel_open_pix), .dout(panel_open_sys)
     );
-    wire keys_en = panel_open_sys;
 
-    reg [2:0] sel_idx;
-    always @(posedge clk_sys) begin
-        if (!rst_sys_n)
-            sel_idx <= 3'd0;
-        else if (keys_en && k1_single)               // 左移（面板不在时无效）
-            sel_idx <= (sel_idx == 3'd0) ? SEL_MAX : sel_idx - 1'b1;
-        else if (keys_en && k2_single)               // 右移（面板不在时无效）
-            sel_idx <= (sel_idx == SEL_MAX) ? 3'd0 : sel_idx + 1'b1;
-    end
+    //-------------------------------------------------------------------------
+    // 按键子系统：消抖 + 手势 + 光标 + 动作码，全部封装在 key_ui 里
+    //   映射：KEY1 单击=左移  KEY1 双击=面板开/关
+    //         KEY2 单击=右移  KEY2 双击=确认（执行光标所在项）
+    //-------------------------------------------------------------------------
+    wire [2:0] sel_idx;
+    wire [3:0] ui_sel_act;
+    wire       panel_tog;
+    wire       key_act_tog;
+    wire       key_view, key_step;
 
-    // KEY1 双击 -> 面板开/关
-    reg panel_tog;
-    always @(posedge clk_sys) begin
-        if (!rst_sys_n) panel_tog <= 1'b0;
-        else if (k1_dbl) panel_tog <= ~panel_tog;
-    end
-
-    // 按键活动标志
-    wire key_act = k1_single | k1_dbl | k2_single | k2_dbl;
-    reg  key_act_tog;
-    always @(posedge clk_sys) begin
-        if (!rst_sys_n) key_act_tog <= 1'b0;
-        else if (key_act) key_act_tog <= ~key_act_tog;
-    end
-
-    // 光标 -> 按钮动作码
-    //   映射：光标 0..4 -> 动作码 0..4（VIEW..BG）
-    //         光标 5   -> 4'h6（DEMO 按钮）
-    //         光标 6   -> 4'h7（IN 按钮）
-    wire [3:0] ui_sel_act = (sel_idx == 3'd7) ? 4'h8 :
-                            (sel_idx == 3'd6) ? 4'h7 :
-                            (sel_idx == 3'd5) ? 4'h6 : {1'b0, sel_idx};
-
-    // KEY2 双击 -> 确认：执行光标所在项
-    wire key_view = k2_dbl & keys_en & (sel_idx == 3'd0);
-    wire key_step = k2_dbl & keys_en & (sel_idx != 3'd0);
+    key_ui #(
+        .CLK_HZ    (48_000_000),
+        .KEY_DB_MS (KEY_DB_MS),
+        .KEY_WIN_MS(KEY_WIN_MS)
+    ) u_key_ui (
+        .clk        (clk_sys),
+        .rst_n      (rst_sys_n),
+        .key1_n     (key1_n),
+        .key2_n     (key2_n),
+        .panel_open (panel_open_sys),
+        .sel_idx    (sel_idx),
+        .sel_act    (ui_sel_act),
+        .panel_tog  (panel_tog),
+        .key_act_tog(key_act_tog),
+        .key_view   (key_view),
+        .key_step   (key_step),
+        .sel_is_last()
+    );
 
     //-------------------------------------------------------------------------
     // XPT2046 触摸屏（预留未使用）
