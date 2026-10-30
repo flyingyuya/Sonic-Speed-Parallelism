@@ -24,6 +24,10 @@
 \usepackage{longtable}
 \usepackage{pifont}
 \usepackage{pdflscape}
+\usepackage{graphicx}
+\usepackage{caption}
+
+\graphicspath{{../../docs/images/}}
 
 \newcommand{\xiaosan}{\fontsize{15pt}{18pt}\selectfont}
 
@@ -32,27 +36,36 @@
 %=============================================================================
 % 自定义样式
 %=============================================================================
-\definecolor{clkSys}{RGB}{214,234,248}
-\definecolor{clkPix}{RGB}{255,235,205}
-\definecolor{clkHdmi}{RGB}{212,240,218}
-\definecolor{boxFill}{RGB}{245,247,250}
 \definecolor{boxFrame}{RGB}{70,100,140}
+\definecolor{phFill}{RGB}{252,246,232}
+\definecolor{phFrame}{RGB}{196,150,60}
 
 \tikzset{
-    blk/.style   = {draw=boxFrame, fill=boxFill, rounded corners=2pt,
-                    minimum width=2.6cm, minimum height=0.72cm,
+    blk/.style   = {draw=boxFrame, fill=white, rounded corners=2pt,
+                    minimum width=2.4cm, minimum height=0.66cm,
                     align=center, font=\zihao{-5}},
-    blkS/.style  = {blk, minimum width=1.9cm},
-    blkWide/.style = {blk, minimum width=4.2cm},
-    io/.style    = {draw=boxFrame!70, fill=white, rounded corners=6pt,
-                    minimum width=2.2cm, minimum height=0.9cm,
-                    align=center, font=\zihao{-5}},
-    ar/.style    = {-{Latex[length=1.6mm]}, draw=boxFrame, semithick},
-    arD/.style   = {{Latex[length=1.6mm]}-{Latex[length=1.6mm]},
-                    draw=boxFrame, semithick},
+    ar/.style    = {-{Latex[length=1.5mm]}, draw=boxFrame, semithick},
+    arD/.style   = {{Latex[length=1.5mm]}-{Latex[length=1.5mm]}, draw=boxFrame, semithick},
+    dec/.style   = {draw=boxFrame, fill=blue!6, diamond, aspect=2.2,
+                    align=center, font=\zihao{-6}, inner sep=1pt},
+    lbl/.style   = {font=\zihao{-6}, inner sep=1pt, fill=white, fill opacity=0.9},
 }
 
-\title{音速并行：基于 Artix-7 的纯 RTL 音频一体化系统\\设计报告}
+% 占位图框（用户后续替换为实物照片/原理图）
+\newcommand{\phfig}[3][0.62]{%
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\node[draw=phFrame, fill=phFill, dashed, line width=0.8pt, rounded corners=3pt,
+      minimum width=#1\textwidth, minimum height=#1\textwidth*0.62,
+      align=center, font=\zihao{-5}, text=black!65]
+     {【占位】#2\\[2pt]\zihao{-6}(此处插入 #3)};
+\end{tikzpicture}
+\caption{#2}
+\label{fig:#3}
+\end{figure}}
+
+\title{音速并行：基于 Artix-7 的纯 RTL 音频一体化系统\\技术设计报告}
 \author{Binyu Fei}
 \date{2026 年 10 月}
 
@@ -61,131 +74,478 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \maketitle
 
-\begin{abstract}
-本作品在 Xilinx Artix-7 XC7A100T 上以\textbf{纯 RTL}（不使用 HLS、软核或任何现成 IP）
-实现了一套音频一体化系统，覆盖“采集—均衡—频谱分析—可视化—交互”完整闭环。
-系统以 WM8960 为音频前端（48\,kHz/24\,bit），采样数据同时进入两条并行流水线：
-5 段定点 IIR 参量均衡器，以及 1024 点基 2 FFT 频谱分析引擎。FFT 仅用\textbf{一个}
-蝶形单元配合双口 BRAM 时分复用，硬件开销不到全并行方案的 1/512，整帧处理仅占
-帧周期的 1.3\%。频谱结果经对数分箱、峰值保持与线性衰减后驱动\textbf{双路独立显示}：
-LCD 480$\times$272 作交互界面（8 按钮面板 + 8 行状态栏），HDMI 640$\times$360 作展示大屏
-（80 根独立柱 + 波形），并从 SD 卡读取图片作为动态背景。
+%=============================================================================
+%  作品名称
+%=============================================================================
+\begin{center}
+\zihao{3}\bfseries 音速并行（Sonic-Speed-Parallelism）\\
+\zihao{5}\mdseries ——纯 RTL 音频采集·均衡·频谱分析·双路可视化一体化系统
+\end{center}
+
+\vspace{1em}
+
+%=============================================================================
+%  摘要（800 字内）
+%=============================================================================
+\section*{摘\quad 要}
+\addcontentsline{toc}{section}{摘要}
+
+本作品在 Xilinx Artix-7 XC7A100T 上以\textbf{纯 RTL}（不使用 HLS、软核或任何现成 IP，
+连 TMDS 编码与 5:1 串行化也由原语手写）实现了一套音频一体化系统，覆盖
+“采集 $\rightarrow$ 均衡 $\rightarrow$ 频谱分析 $\rightarrow$ 可视化 $\rightarrow$ 交互”
+的完整闭环。
+
+系统以 WM8960 编解码器为音频前端（48\,kHz / 24\,bit），采样数据同时进入两条并行流水线：
+一是\textbf{5 段定点 IIR 参量均衡器}，逐段做 Q 格式与位宽预算，各段增益可在线独立调节并
+实时回放；二是\textbf{1024 点基 2 FFT 频谱分析引擎}，仅用\textbf{一个}蝶形单元配合双口
+BRAM 时分复用，硬件开销不到全并行方案的 1/512，整帧处理仅占帧周期的 1.3\%。
+频谱结果经对数频率分箱、峰值保持与线性衰减后驱动\textbf{双路独立显示}：
+LCD 480$\times$272 作交互界面（8 按钮面板 + 8 行状态栏），
+HDMI 640$\times$360 作展示大屏（80 根独立柱 + 波形），
+并从 SD 卡读取图片作为动态背景（LCD 1:1 满屏、HDMI 裁中心 320$\times$180 后 2 倍整数放大）。
+
 系统横跨四个时钟域，以格雷码异步 FIFO 与电平翻转握手完成跨域传递。
-整机占用 11\,716 LUT（18.48\%）、100.5 BRAM、26 DSP48，时序全部收敛，
-\textbf{综合与实现 0 错误 0 警告}，41 个测试平台全部与 Python 定点黄金模型逐位对拍通过。
+所有参数可经板载按键或 UART ASCII 命令在一个时钟周期内生效。
 
-\keywords{FPGA \quad 纯 RTL \quad 定点 DSP \quad 频谱可视化 \quad HDMI \quad 跨时钟域}
-\end{abstract}
+整机占用 11\,716 LUT（18.48\%）、100.5 BRAM、26 DSP48，时序全部收敛
+（\texttt{clk\_sys} +1.779\,ns / \texttt{clk\_hdmi} +4.028\,ns），
+\textbf{综合与实现 0 错误 0 警告}，39 个测试平台全部与 Python 定点黄金模型逐位对拍通过，
+并已通过 QSPI Flash 固化实现掉电自启动。
 
+\textbf{关键词}：FPGA；纯 RTL；定点 DSP；频谱可视化；HDMI；跨时钟域
+
+\newpage
 \tableofcontents
 \newpage
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\section{选题背景与创新点}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%=============================================================================
+%  第一部分  作品概述
+%=============================================================================
+\section{第一部分\quad 作品概述}
 
-\subsection{为什么选这个题目}
+%-----------------------------------------------------------------------------
+\subsection{选题背景与实际问题}
+%-----------------------------------------------------------------------------
 
-音频可视化设备在消费市场与工业检测中需求广泛，但现有方案存在结构性矛盾，
-如表~\ref{tab:bg-compare} 所示。
+音频可视化设备在消费市场（车载音响、直播间、演出控制台）与工业检测
+（机械振动频谱监测、电机异响诊断）中需求广泛，但现有方案存在结构性矛盾：
 
 \begin{table}[H]
 \centering
-\caption{现有方案的结构性矛盾}\label{tab:bg-compare}
-\begin{tabular}{p{4.2cm}p{9.5cm}}
+\caption{现有方案的结构性矛盾}
+\label{tab:bg}
+\begin{tabular}{p{3.4cm}p{1.4cm}p{8.0cm}}
 \toprule[1.5pt]
-\rowcolor{gray!25} 方案 & 问题 \\
+\rowcolor{gray!25} 方案 & 成本 & 主要问题 \\
 \midrule[1pt]
-PC + 声卡 + 上位机 & 延迟高（10\textasciitilde 100\,ms），功耗大，不适合嵌入式部署 \\
-MCU + CMSIS-DSP   & 算力不足，FFT + EQ + 双屏驱动无法同时满足 \\
-Zynq + PYNQ       & 依赖 HLS/Python 框架，底层时序不可控，启动秒级 \\
-商用 ASIC         & 功能固定，无法在线调参，不便于教学研究 \\
+PC + 声卡 + 上位机 & 低 & 延迟高（10\textasciitilde 100\,ms），功耗大，不适合嵌入式部署 \\
+MCU + CMSIS-DSP   & 低 & 算力不足，1024 点 FFT + 5 段 EQ + 双屏驱动无法同时满足 \\
+Zynq + PYNQ       & 中 & 依赖 HLS/Python 框架，底层时序不可控，启动秒级 \\
+商用 ASIC         & 高 & 功能固定，无法在线调参，不便于教学与研究 \\
 \bottomrule[1.5pt]
 \end{tabular}
 \end{table}
 
-\textbf{核心矛盾}是“实时性”与“可调性”难以兼得：专用 ASIC 实时但不灵活，
-软件方案灵活但延迟大。本作品用纯 RTL 在低端 FPGA 上实现一条
-\textbf{端到端延迟可预测}的音频处理链路，做到确定性延迟、在线可调、零 IP 依赖。
+\textbf{核心矛盾}：\textbf{“实时性”与“可调性”难以兼得}。专用 ASIC 实时但不灵活，
+软件方案灵活但延迟大。本作品要解决的问题是：
 
-\subsection{创新点}
+\begin{tcolorbox}[colback=gray!4, colframe=boxFrame, breakable,
+                  title=\textbf{本作品要解决的三个实际问题}]
+\begin{enumerate}
+\item \textbf{确定性延迟}：从 ADC 采样到屏幕像素，延迟以\textbf{时钟周期}计
+      （可精确算出 82\,ms，其中 80\,ms 是不可省的 LCD 一帧扫描），
+      不受操作系统调度、缓存命中率影响；
+\item \textbf{在线可调}：所有参数（EQ 各段增益、配色、刷新率、视图）可经按键或 UART
+      在\textbf{一个时钟周期内}生效；
+\item \textbf{零 IP 依赖}：从 I2C 主机、I2S 从机、FFT 蝶形、存储器控制器、
+      TMDS 编码器到 5:1 串行化，\textbf{全部手写}，可逐行审计。
+\end{enumerate}
+\end{tcolorbox}
 
-\subsubsection{创新点一：扫描式双路渲染，无帧缓冲}
+\textbf{前人工作与本作品的差异}：
 
-传统做法先渲染到 framebuffer 再扫描读出，一帧 640$\times$360$\times$16\,bit
-需 103 块 BRAM，而本器件只有 135 块。本作品把渲染核心抽象为纯组合函数
-$(x,y,\text{mode})\rightarrow$\,RGB，\textbf{扫描到哪个像素就算哪个像素}，
-一份参数化的渲染核心实例化两次即可驱动两种分辨率。
+\begin{table}[H]
+\centering
+\caption{与已有工作的对比}
+\label{tab:prior}
+\begin{tabular}{p{2.6cm}p{4.6cm}p{6.6cm}}
+\toprule[1.5pt]
+\rowcolor{gray!25} 方向 & 代表做法 & 本作品的差异 \\
+\midrule[1pt]
+FPGA 音频 EQ & 多用 Xilinx FIR/IIR Compiler IP & \textbf{手写二阶节级联}，逐段做 Q 格式与位宽预算，可解释每一位的精度来源 \\
+FPGA FFT & Xilinx FFT IP（AXI4-Stream） & \textbf{手写基 2 DIT + 单蝶形时分复用}，资源为全并行方案的 1/512 \\
+频谱可视化 & 固定柱数、PC 侧渲染 & \textbf{扫描式“算到哪显示到哪”}，无 framebuffer，柱数与分辨率全参数化 \\
+FPGA HDMI & 现成 IP 或 VHDL 开源核 & \textbf{手写 TMDS 编码器 + OSERDESE2 原语}，与 3 份独立实现逐行比对验证 \\
+开发方法 & 传统“写码—仿真—上板” & \textbf{引入大模型协作 + 825 条问题账本 + 4 个技能包}（见第四部分）\\
+\bottomrule[1.5pt]
+\end{tabular}
+\end{table}
 
-\subsubsection{创新点二：单蝶形 FFT 的极低资源占用}
+%-----------------------------------------------------------------------------
+\subsection{功能与特性}
+%-----------------------------------------------------------------------------
 
-1024 点 FFT 若全并行需 512 个蝶形 $\times$ 4 乘法器 $=$ 2048 个 DSP48，
+\begin{table}[H]
+\centering
+\caption{系统功能清单}
+\label{tab:func}
+\begin{tabular}{p{2.6cm}p{1.2cm}p{9.8cm}}
+\toprule[1.5pt]
+\rowcolor{gray!25} 功能 & 状态 & 说明 \\
+\midrule[1pt]
+话筒拾音 + 5 段 EQ & \checkmark & 板载 MEMS 麦克风，采样率 48\,kHz / 24\,bit，均衡后实时回放 \\
+双声道输出       & \checkmark & WM8960 DAC 双声道，数字音量可调 \\
+SPK 静音         & \checkmark & 送全 0 采样，I2S 时序不受影响（避免爆音）\\
+1024 点 FFT      & \checkmark & 基 2 DIT，日志分箱为 60（LCD）/ 80（HDMI）根柱 \\
+三种可视化视图   & \checkmark & 柱状频谱 / 极坐标频谱 / 动态波形，可叠加显示 \\
+彩虹配色 + 色相漂移 & \checkmark & 128 级彩虹表，速度可调（H 键）\\
+波形触发与显示   & \checkmark & 迟滞触发 + 自适应门限 + 峰值保持，刷新率可降 \\
+DEMO 演示模式    & \checkmark & 内置柱高源，无需音频输入即可演示 \\
+双背景           & \checkmark & 程序化网格渐变 / SD 卡图片 \\
+SD 卡图片背景    & \checkmark & 3 张图循环，LCD 满屏 1:1 / HDMI 裁剪 2$\times$ 放大 \\
+8 按钮面板       & \checkmark & VIEW / SPK / HUE / GAIN / BG / DEMO / IN / SD \\
+8 行状态栏       & \checkmark & 每行 10 字符，实时显示全部配置状态 \\
+UART 命令通道    & \checkmark & 115200 8N1，ASCII 命令改任意配置并回执 \\
+QSPI Flash 固化  & \checkmark & 掉电自启动，启动时间微秒级 \\
+\bottomrule[1.5pt]
+\end{tabular}
+\end{table}
+
+\textbf{特性亮点}：
+
+\begin{itemize}
+\item \textbf{扫描式双路渲染}：一份参数化渲染核心 \texttt{disp\_top} 实例化两次，
+      分别驱动 480$\times$272@12.5\,MHz 与 640$\times$360@25\,MHz，
+      设置自动同步；LCD 侧\textbf{零 framebuffer}。
+\item \textbf{零帧缓冲的可视化}：柱谱/波形/极坐标全部是
+      $(x,y,\text{mode}) \rightarrow$\,RGB 的纯组合函数，扫描到哪个像素就算哪个像素。
+\item \textbf{数据柱数与显示柱数解耦}：60 组数据可映射到 60 根或 80 根显示柱，
+      后者每柱恰好 8 像素（640/80，整除，零乘法器）。
+\end{itemize}
+
+%-----------------------------------------------------------------------------
+\subsection{应用领域}
+%-----------------------------------------------------------------------------
+
+\begin{table}[H]
+\centering
+\caption{典型应用场景}
+\label{tab:app}
+\begin{tabular}{p{2.8cm}p{10.6cm}}
+\toprule[1.5pt]
+\rowcolor{gray!25} 领域 & 具体用途 \\
+\midrule[1pt]
+消费电子 & 车载音响频谱显示、直播/演出调音台可视化、Hi-Fi 播放器界面 \\
+工业检测 & 机械振动频谱监测、电机异响诊断、齿轮箱故障早期预警 \\
+教学科研 & 定点 DSP / 跨时钟域 / 视频时序的完整教学案例，每一行代码可审计 \\
+仪器仪表 & 便携式频谱分析仪前端（48\,kHz 带宽 + 双路实时显示）\\
+\bottomrule[1.5pt]
+\end{tabular}
+\end{table}
+
+\textbf{为什么选 FPGA 而不是 MCU 或 SoC}：
+
+\begin{itemize}
+\item \textbf{MCU}：1024 点 FFT（$\sim$30k 拍）+ 5 段双二阶（每样本 5 段 $\times$ 2 声道）
+      + 双屏扫描（每秒 130k + 230k 像素）无法在 48\,kHz 采样周期（20.8\,$\mu$s）内完成；
+\item \textbf{SoC + HLS}：可以完成，但 HLS 生成的流水线对时序不可控，
+      且启动需要秒级（加载 Linux/裸机）；
+\item \textbf{FPGA + 纯 RTL}：三段流水线真正并行，延迟可精确到拍，
+      启动即工作（微秒级），且每一步都能在综合报告里核对。
+\end{itemize}
+
+%-----------------------------------------------------------------------------
+\subsection{主要技术特点}
+%-----------------------------------------------------------------------------
+
+\subsubsection*{① 单蝶形 FFT 的极低资源占用}
+
+1024 点 FFT 若全并行需 512 个蝶形 $\times$ 4 乘法器 $=$ \textbf{2048 个 DSP48}，
 超出器件总量（240 个）8 倍。本作品用\textbf{一个}蝶形单元加双口 BRAM
-in-place 时分复用，DSP 占用降到 4 个，整帧耗时仅占帧周期 1.3\%，余量 75 倍。
+in-place 时分复用：
 
-\subsubsection{创新点三：数据柱数与显示柱数解耦}
+\begin{table}[H]
+\centering
+\caption{FFT 架构方案对比（1024 点，48\,kHz 采样）}
+\label{tab:fft}
+\begin{tabular}{lccccc}
+\toprule[1.5pt]
+\rowcolor{gray!25} 方案 & 蝶形单元 & DSP48 & BRAM & 整帧耗时 & 占帧周期 \\
+\midrule[1pt]
+全并行 & 512 & 2048 & 0 & 1 拍 & 0.04\% \\
+4 路并行 & 128 & 512 & 0 & 7\,680 拍 & 0.3\% \\
+\textbf{单蝶形（采用）} & \textbf{1} & \textbf{4} & \textbf{2} & \textbf{30\,720 拍} & \textbf{1.3\%} \\
+\bottomrule[1.5pt]
+\end{tabular}
+\end{table}
 
-LCD 480 像素宽、60 根柱（每柱 8 像素，整除）；HDMI 640 像素宽，若 60 根柱
-则每柱 10.67 像素（不整除，需乘法）。本作品把“有多少数据”与“显示多少根柱”
-拆成两个参数（\texttt{NBARS} / \texttt{NBARS\_DISP}），并用 \texttt{generate}
-的\textbf{恒等分支}保证老路径在综合后结构完全不变。
+帧周期 46.9\,ms，整帧耗时 $30\,720 \times 20.83\,\text{ns} = 0.64$\,ms，
+仅占 1.3\%，\textbf{余量 75 倍}。
 
-\subsubsection{创新点四：不同尺寸的双帧缓冲替代“双读口”}
+\subsubsection*{② 扫描式渲染，无帧缓冲}
 
-两个显示器的时钟不同（12.5\,MHz / 25\,MHz）。实测表明 Vivado 的 BRAM 推断
-\textbf{不支持“1 写 2 读跨时钟”}，会静默退化成分步式 RAM（LUTRAM），
+把渲染核心抽象为纯组合函数 $(x,y,\text{mode}) \rightarrow$\,RGB，
+\textbf{扫描到哪个像素就算哪个像素}。LCD 侧无需任何 framebuffer，
+一帧 130\,560 个像素全部实时算出。
+
+\subsubsection*{③ 不同尺寸双帧缓冲替代“双读口”}
+
+两个显示器时钟不同（12.5\,MHz / 25\,MHz）。实测表明 Vivado 的 BRAM 推断
+\textbf{不支持“1 写 2 读跨时钟”}，会静默退化成分布式 RAM（LUTRAM），
 触发 \texttt{DRC UTLZ-1}（需 86\,452 个 \texttt{RAMD64E}，仅 19\,000 个可用），
 加 \texttt{(* ram\_style = "block" *)} 亦无效。本作品改为\textbf{两份不同尺寸的缓冲}：
 LCD 直读 480$\times$272 全图，HDMI 读 320$\times$180 裁剪区后 2 倍整数放大，
 BRAM 从 116 块降到 84 块。
 
-\subsubsection{创新点五：三级知识沉淀的开发方法}
+\subsubsection*{④ 零成本的裁剪与放大}
 
-问题账本（825 条）$\rightarrow$ 技能包（4 个）$\rightarrow$ 状态快照，
-把每次失败转化为可复用的方法论，详见第~\ref{sec:skill} 章。
+```
+裁剪偏移：dy*320 = dy*256 + dy*64   ⟹ 两次移位相加，零 DSP
+2 倍放大：lx >> 1                    ⟹ 一个右移，零算术
+```
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\section{设计原理与功能框图}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-\subsection{系统功能框图}
-
-\input{fig_arch.tex}
-
-\subsection{时钟架构}
+%-----------------------------------------------------------------------------
+\subsection{主要性能指标}
+%-----------------------------------------------------------------------------
 
 \begin{table}[H]
 \centering
-\caption{时钟域划分}\label{tab:clk}
-\begin{tabular}{llll}
+\caption{主要性能指标}
+\label{tab:spec}
+\begin{tabular}{lll}
 \toprule[1.5pt]
-\rowcolor{gray!25} 时钟 & 频率 & 来源 & 承载逻辑 \\
+\rowcolor{gray!25} 类别 & 指标 & 值 \\
 \midrule[1pt]
-\texttt{clk\_sys}  & 48 MHz   & MMCM1（VCO 900\,\,÷\,18.75） & 音频、EQ、FFT、频谱、控制 \\
-\texttt{clk\_pix}  & 12.5 MHz & MMCM1（900\,÷\,72）          & LCD 扫描 \\
-\texttt{clk\_hdmi} & 25 MHz   & MMCM2（VCO 1000\,÷\,40）     & HDMI 像素 \\
-\texttt{clk\_5x}   & 125 MHz  & MMCM2（1000\,÷\,8）          & TMDS 5:1 串行化 \\
-BCLK               & 3.072 MHz& \textbf{外部}（WM8960）      & 不当时钟用，只过采样 \\
+\multirow{3}{*}{资源} & Slice LUTs & 11\,716（18.48\%）\\
+                      & Block RAM  & 100.5 / 135（74.44\%）\\
+                      & DSP48      & 26 / 240（10.83\%）\\
+\midrule[0.5pt]
+\multirow{3}{*}{时序} & \texttt{clk\_sys}（48\,MHz）   & WNS \textbf{+1.779\,ns} \\
+                      & \texttt{clk\_hdmi}（25\,MHz）  & WNS \textbf{+4.028\,ns} \\
+                      & \texttt{clk\_pix}（12.5\,MHz） & WNS 远大于 0 \\
+\midrule[0.5pt]
+\multirow{2}{*}{实时性} & FFT 整帧耗时 & 0.64\,ms（占帧周期 1.3\%）\\
+                        & 端到端延迟   & $\approx$82\,ms（80\,ms 为 LCD 一帧扫描）\\
+\midrule[0.5pt]
+\multirow{3}{*}{质量} & 综合/实现警告 & \textbf{0 CRITICAL / 0 WARNING} \\
+                      & 静态检查     & Verible 0 / Verilator 0 \\
+                      & 仿真回归     & \textbf{39 / 39 PASS} \\
+\midrule[0.5pt]
+显示 & LCD / HDMI & 480$\times$272@12.5\,MHz / 640$\times$360@25\,MHz \\
+音频 & 采样 / 均衡 & 48\,kHz / 24\,bit / 5 段双二阶 \\
 \bottomrule[1.5pt]
 \end{tabular}
 \end{table}
 
-\textbf{关键决策}：BCLK/LRCLK 不接全局时钟网络，而是当作数据信号在
-\texttt{clk\_sys} 域过采样出边沿选通。这样少一个时钟域、避开时钟脚抖动，
-代价仅是 4 倍过采样（实际 15.6 倍，余量充足）。
+%-----------------------------------------------------------------------------
+\subsection{主要创新点}
+%-----------------------------------------------------------------------------
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\section{软硬件划分依据与接口设计}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{enumerate}
+\item \textbf{扫描式双路渲染}：一份参数化渲染核心实例化两次驱动两种分辨率，
+      LCD 侧零 framebuffer；
+\item \textbf{单蝶形 FFT}：硬件开销为全并行方案的 1/512，
+      整帧仅占帧周期 1.3\%（余量 75 倍）；
+\item \textbf{数据/显示柱数解耦}：60 组数据可映射到任意显示柱数，
+      用 \texttt{generate} 恒等分支保证老路径零变化；
+\item \textbf{不同尺寸双帧缓冲}：绕开 Vivado “1 写 2 读跨时钟”推断失败的限制，
+      BRAM 省 32 块；
+\item \textbf{三级知识沉淀}：825 条问题账本 $\rightarrow$ 4 个技能包 $\rightarrow$
+      状态快照，把每次失败转化为可复用方法论。
+\end{enumerate}
 
-\subsection{划分原则}
+%-----------------------------------------------------------------------------
+\subsection{设计流程}
+%-----------------------------------------------------------------------------
 
-划分依据是“\textbf{什么是确定的、什么是易变的}”。
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.55cm and 0.9cm, font=\zihao{-6}]
+\node[blk] (spec) {需求与判据};
+\node[blk, right=of spec] (gm) {Python 黄金模型};
+\node[blk, right=of gm] (rtl) {RTL 编写};
+\node[blk, right=of rtl] (tb) {Testbench};
+\node[blk, below=0.9cm of tb] (sim) {iverilog + Verilator\\+ Verible};
+\node[blk, left=of sim] (syn) {Vivado 综合/实现};
+\node[blk, left=of syn] (board) {上板验证};
+\node[blk, left=of board] (ledger) {问题账本 + 技能包};
+
+\draw[ar] (spec) -- (gm);
+\draw[ar] (gm) -- (rtl);
+\draw[ar] (rtl) -- (tb);
+\draw[ar] (tb) -- (sim);
+\draw[ar] (sim) -- node[lbl, above]{全绿} (syn);
+\draw[ar] (syn) -- node[lbl, above]{0 警告} (board);
+\draw[ar] (board) -- (ledger);
+\draw[ar, dashed] (ledger.north) |- node[lbl, pos=0.25, above]{反哺} (spec.north);
+\draw[ar, dashed, draw=red!60] (sim.north) -- ++(0,0.5) -| node[lbl, pos=0.25, above]{红 ⟹ 立刻回退} (rtl.north);
+\end{tikzpicture}
+\caption{设计流程：模型先行、逐位对拍、每轮全量回归}
+\label{fig:flow}
+\end{figure}
+
+%=============================================================================
+%  第二部分  系统组成及功能说明
+%=============================================================================
+\newpage
+\section{第二部分\quad 系统组成及功能说明}
+
+%-----------------------------------------------------------------------------
+\subsection{整体介绍}
+%-----------------------------------------------------------------------------
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{系统架构整体框图.png}
+\caption{系统整体架构框图}
+\label{fig:arch}
+\end{figure}
+
+如上图所示，系统可分为\textbf{四大功能区}，以不同底色区分：
 
 \begin{table}[H]
 \centering
-\caption{软硬件划分判据}\label{tab:split}
-\begin{tabular}{p{6.2cm}p{3.6cm}p{3.6cm}}
+\caption{四大功能区的职责与关系}
+\label{tab:zone}
+\begin{tabular}{p{2.6cm}p{4.4cm}p{6.4cm}}
+\toprule[1.5pt]
+\rowcolor{gray!25} 功能区 & 时钟域 & 职责 \\
+\midrule[1pt]
+\textbf{音频处理区} & \texttt{clk\_sys} 48\,MHz & I2S 从模式收发、5 段均衡、FFT、频谱分箱；产出“柱高 / 波形”两类可视化数据 \\
+\textbf{显示渲染区} & \texttt{clk\_pix} 12.5\,MHz & LCD 扫描与像素合成；吃“坐标 + 柱高 + 波形 + 图片”，吐出 RGB888 \\
+\textbf{HDMI 输出区} & \texttt{clk\_hdmi} 25\,MHz & 同上渲染核心的第二份实例 + TMDS 编码 + 5:1 串行化 \\
+\textbf{存储与交互区} & \texttt{clk\_sys} 48\,MHz & SD 卡协议、图片搬帧、UART 命令、按键手势、配置寄存器组 \\
+\bottomrule[1.5pt]
+\end{tabular}
+\end{table}
+
+\textbf{模块间关系}：
+
+\begin{itemize}
+\item \textbf{单向数据流}：音频 $\rightarrow$ 分析 $\rightarrow$ 可视化 $\rightarrow$ 显示。
+      显示层只读分析结果，不反向影响音频处理；
+\item \textbf{统一配置}：所有交互（按键 / 触摸 / UART）都写同一组配置寄存器，
+      再经 \texttt{cdc\_sync} 分发到各时钟域，保证任一时刻两屏设置一致；
+\item \textbf{跨域汇聚点只有三处}：
+      ① 柱高/波形（\texttt{spec\_sync} + 格雷码 FIFO）；
+      ② 配置位（\texttt{cdc\_sync} 双打）；
+      ③ SD 读启动（电平翻转 + 双打 + 边沿检测）。
+\end{itemize}
+
+%-----------------------------------------------------------------------------
+\subsection{硬件系统介绍}
+%-----------------------------------------------------------------------------
+
+\subsubsection{硬件整体介绍}
+
+\begin{table}[H]
+\centering
+\caption{硬件组成}
+\label{tab:hw}
+\begin{tabular}{p{2.6cm}p{4.4cm}p{6.4cm}}
+\toprule[1.5pt]
+\rowcolor{gray!25} 部件 & 型号 & 说明 \\
+\midrule[1pt]
+主控板 & 璞致 PA-Starlite & XC7A100T-2FGG484I，200\,MHz 差分晶振 \\
+音频模块 & WM8960 & 编解码器，I2S 主模式，接 JM2 \\
+显示屏 & TIANMA TM043NDH02 & 480$\times$272，40 pin，RGB888，接 JM1 \\
+视频输出 & HDMI（J5） & \textbf{板上无发送芯片}，FPGA 4 对差分经 51\,$\Omega$ 串阻直连 \\
+存储 & W25Q128JVSQ & 128\,Mb QSPI Flash，4 线 \\
+存储 & microSD & SPI 模式，存图片素材 \\
+调试 & CH340E & UART $\rightarrow$ USB，115200 8N1 \\
+下载 & 板载 Digilent JTAG & TypeC \\
+\bottomrule[1.5pt]
+\end{tabular}
+\end{table}
+
+\phfig[0.55]{系统实物全局图（正面）}{实物正面}
+\phfig[0.55]{系统实物全局图（斜 45°）}{实物斜45}
+
+\subsubsection{机械设计介绍}
+
+\phfig[0.5]{机械结构总装图（CAD 截图或手绘）}{机械总装}
+
+本作品以开发板为核心，无独立机械结构。若后续加装外壳，
+需要预留的位置为：LCD 排线出口（JM1 侧）、HDMI 接口（J5 侧）、
+SD 卡插槽、音频模块（JM2）与按键区。
+
+\subsubsection{电路各模块介绍}
+
+\phfig[0.5]{整体电路原理图（SCH）}{原理图整体}
+\phfig[0.45]{PCB 版图}{pcb}
+
+\textbf{关键电路模块}：
+
+\begin{table}[H]
+\centering
+\caption{关键电路模块与信号线}
+\label{tab:circuit}
+\begin{tabular}{p{2.8cm}p{4.0cm}p{6.6cm}}
+\toprule[1.5pt]
+\rowcolor{gray!25} 模块 & 关键输入 & 关键输出 / 说明 \\
+\midrule[1pt]
+时钟电路 & \texttt{clk\_200m\_p/n}（R4/T4，LVDS） & \texttt{clk\_sys} 48\,MHz / \texttt{clk\_pix} 12.5\,MHz / \texttt{clk\_hdmi} 25\,MHz / \texttt{clk\_5x} 125\,MHz \\
+音频接口 & \texttt{aud\_bclk}（3.072\,MHz）、\texttt{aud\_lrclk}（48\,kHz）、\texttt{aud\_adcdat} & \texttt{aud\_dacdat}；\texttt{aud\_scl}/\texttt{aud\_sda}（I2C 配置）\\
+LCD 接口 & —— & \texttt{lcd\_rgb[23:0]}、\texttt{lcd\_hs}、\texttt{lcd\_vs}、\texttt{lcd\_clk}（12.5\,MHz）\\
+HDMI 接口 & \texttt{hdmi\_hpd}（只进不参与逻辑） & \texttt{hdmi\_clk\_p/n}、\texttt{hdmi\_d0\_p/n}（蓝）、\texttt{hdmi\_d1\_p/n}（绿）、\texttt{hdmi\_d2\_p/n}（红）、\texttt{hdmi\_out\_en}（低有效）\\
+SD 卡接口 & \texttt{sd\_miso} & \texttt{sd\_clk}、\texttt{sd\_cs}、\texttt{sd\_mosi}；LVCMOS33，Bank 14 \\
+按键 & \texttt{key1\_n}(W21)、\texttt{key2\_n}(Y21)、\texttt{rst\_btn\_n}(R14) & 均低有效，20\,ms 消抖 \\
+触摸屏 & \texttt{tp\_dout} & \texttt{tp\_dclk}、\texttt{tp\_cs\_n}、\texttt{tp\_din}（XPT2046，SPI）\\
+LED & —— & \texttt{led[0]} = WM8960 配置完成；\texttt{led[1]} = 心跳 \\
+\bottomrule[1.5pt]
+\end{tabular}
+\end{table}
+
+\phfig[0.45]{音频模块（WM8960）电路原理图}{原理图音频}
+\phfig[0.45]{HDMI 输出电路原理图（含 51\,$\Omega$ 串阻）}{原理图hdmi}
+
+%-----------------------------------------------------------------------------
+\subsection{软件系统介绍}
+%-----------------------------------------------------------------------------
+
+\subsubsection{软件整体介绍}
+
+本作品的“软件”分两类：\textbf{PC 端离线工具}（生成 RTL 需要的表与素材）
+和\textbf{片上手写 RTL}（真正的运行时逻辑）。\textbf{全部运行时代码都是 Verilog-2001，
+无软核、无 HLS、无 C 代码}。
+
+\begin{figure}[H]
+\centering
+\includegraphics[height=0.62\textheight]{系统文件结构.png}
+\caption{工程文件结构}
+\label{fig:tree}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{PC 端离线工具（Python）}
+\label{tab:tools}
+\begin{tabular}{p{4.4cm}p{8.8cm}}
+\toprule[1.5pt]
+\rowcolor{gray!25} 脚本 & 职责 / 产物 \\
+\midrule[1pt]
+\texttt{golden/dsp.py} & 滤波器系数定点量化与误差评估 $\rightarrow$ \texttt{eq\_coeff\_rom.v} \\
+\texttt{golden/fft\_dsp.py} & FFT 旋转因子生成 + 定点误差分析 $\rightarrow$ \texttt{fft\_twiddle\_rom.v} \\
+\texttt{golden/gen\_spectrum\_map.py} & 对数频率分箱表（参数化 \texttt{--nbars}）$\rightarrow$ \texttt{spectrum\_map.v} / \texttt{spectrum\_map80.v} \\
+\texttt{golden/gen\_font.py} & 字模提取 $\rightarrow$ \texttt{font\_rom.v} \\
+\texttt{golden/gen\_wm8960\_table.py} & WM8960 寄存器表 $\rightarrow$ \texttt{WM8960\_init\_table.v} + \texttt{wm8960\_nreg.vh} \\
+\texttt{sdcard/mkimage.py} & BMP/PNG/JPG $\rightarrow$ RGB565 裸扇区（含系统盘保护）\\
+\texttt{sim/run\_iv.sh} & 39 个 TB 的并行回归（\texttt{JOBS=nproc}）\\
+\texttt{vivado/build.tcl} & 综合/实现/比特流（支持 \texttt{SYNTH\_ONLY} / \texttt{IMPL\_ONLY}）\\
+\texttt{vivado/program.tcl} & SRAM 下载 / QSPI Flash 固化 \\
+\bottomrule[1.5pt]
+\end{tabular}
+\end{table}
+
+\subsubsection{软硬件划分依据}
+
+\textbf{划分依据是“什么是确定的、什么是易变的”}：
+
+\begin{table}[H]
+\centering
+\caption{软硬件划分判据}
+\label{tab:split}
+\begin{tabular}{p{6.4cm}p{2.4cm}p{4.4cm}}
 \toprule[1.5pt]
 \rowcolor{gray!25} 判据 & 硬件（RTL） & 软件（PC 脚本） \\
 \midrule[1pt]
@@ -199,122 +559,220 @@ BCLK               & 3.072 MHz& \textbf{外部}（WM8960）      & 不当时钟�
 \end{tabular}
 \end{table}
 
-\subsection{接口设计}
+\subsubsection{软件各模块介绍}
+
+\textbf{① 音频链路（\texttt{audio\_top}）}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.45cm and 0.55cm, font=\zihao{-6}]
+\node[blk, minimum width=2.0cm] (clk) {\texttt{i2s\_slave\_clk}};
+\node[blk, right=1.1cm of clk] (rx) {\texttt{i2s\_bclk\_if}\\(收)};
+\node[blk, right=of rx] (fi) {\texttt{audio\_fifo}\\(in)};
+\node[blk, right=of fi] (eql) {\texttt{eq\_cascade}\\L};
+\node[blk, below=0.32cm of eql] (eqr) {\texttt{eq\_cascade}\\R};
+\node[blk, right=of eql] (fo) {\texttt{audio\_fifo}\\(out)};
+\node[blk, right=of fo] (tx) {\texttt{i2s\_tx}};
+\node[blk, below=0.6cm of fi] (rom) {\texttt{eq\_coeff\_rom}};
+
+\draw[arD] (clk) -- (rx);
+\draw[ar] (rx) -- (fi);
+\draw[ar] (fi.east) -- ++(0.25,0) |- (eql.west);
+\draw[ar] (fi.east) -- ++(0.25,0) |- (eqr.west);
+\draw[ar] (eql) -- (fo);
+\draw[ar] (eqr.east) -- ++(0.25,0) |- (fo.west);
+\draw[ar] (fo) -- (tx);
+\draw[ar] (rom.north) -- (fi.south);
+\draw[ar, dashed] (clk.south) -- ++(0,-0.8) -| node[lbl, pos=0.25, below]{\tiny bclk\_fall / frame\_start / bit\_idx} (tx.south);
+\node[lbl, below=0.05cm of rx, font=\zihao{-6}]{$\rightarrow$ \texttt{dbg\_rx\_l/r} $\rightarrow$ FFT};
+\end{tikzpicture}
+\caption{音频链路数据流（两个声道共享一组系数；FFT 抽头在 EQ 之前）}
+\label{fig:audio}
+\end{figure}
+
+\textbf{关键设计}：两个 FIFO 分别解耦“BCLK 域 $\rightarrow$ clk\_sys 域”和
+“EQ 输出速率不固定 $\rightarrow$ I2S 发送定速”两处速率不匹配。
+
+\textbf{② FFT 引擎（\texttt{fft\_core}）}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.5cm and 0.85cm, font=\zihao{-6}]
+\node[blk, minimum width=2.0cm] (ag) {\texttt{fft\_addr\_gen}};
+\node[blk, right=of ag] (tw) {\texttt{fft\_twiddle\_rom}};
+\node[blk, right=of tw] (wb) {工作 BRAM\\$1024\times24\times2$};
+\node[blk, right=of wb] (bf) {\texttt{fft\_butterfly}};
+\node[blk, below=0.55cm of ag] (fifo) {\texttt{audio\_fifo}};
+
+\draw[ar] (ag) -- node[lbl, above]{tw\_idx} (tw);
+\draw[ar] (tw) -- node[lbl, above]{W (打一拍)} (bf);
+\draw[ar] (ag.south) -- ++(0,-0.25) -| node[lbl, pos=0.25, below]{p, q} (wb.south);
+\draw[arD] (wb) -- node[lbl, above]{A / B 读} (bf);
+\draw[ar, draw=red!60] (bf.north) -- ++(0,0.45) -| node[lbl, pos=0.25, above]{\textbf{写回同一对地址（反馈环）}} (wb.north);
+\draw[ar] (fifo) -- node[lbl, below]{IDLE 时写整帧} (wb.south -| fifo.east);
+\draw[ar] (bf.south) -- ++(0,-0.85) node[lbl, below]{$\rightarrow$ 输出（S\_OUT 位反转读出）};
+\end{tikzpicture}
+\caption{FFT 数据流：地址发生器同时驱动 BRAM 地址与旋转因子 ROM；蝶形结果写回同一对地址（反馈环）}
+\label{fig:fft}
+\end{figure}
+
+\textbf{③ 显示渲染（\texttt{disp\_top}，两份实例）}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.42cm and 0.75cm, font=\zihao{-6}]
+\node[blk, minimum width=2.0cm] (tm) {\texttt{lcd\_timing}};
+\node[blk, below=0.45cm of tm] (bg) {\texttt{bg\_src}};
+\node[blk, below=0.32cm of bg] (wb) {\texttt{wave\_buf}};
+\node[blk, below=0.32cm of wb] (st) {\texttt{status\_line} $\rightarrow$ \texttt{text\_buf}};
+\node[blk, below=0.32cm of st] (ui) {\texttt{ui\_layer}};
+\node[blk, right=1.5cm of wb] (mx) {\texttt{disp\_mix}\\(+ \texttt{polar\_map} + \texttt{rainbow\_rom}×2)};
+\node[blk, right=of mx] (out) {RGB $\rightarrow$ LCD / TMDS};
+
+\draw[ar] (tm.east) -- ++(0.3,0) node[lbl, above]{x,y} |- (bg.west);
+\draw[ar] (tm.east) -- ++(0.3,0) |- (wb.west);
+\draw[ar] (tm.east) -- ++(0.3,0) |- (st.west);
+\draw[ar] (tm.east) -- ++(0.3,0) |- (ui.west);
+\draw[ar] (bg.east) -- ++(0.9,0) |- (mx.west);
+\draw[ar] (wb.east) -- (mx.west);
+\draw[ar] (st.east) -- ++(0.6,0) |- (mx.west);
+\draw[ar] (ui.east) -- ++(0.45,0) |- (mx.west);
+\draw[ar, draw=red!60] (mx.south) -- ++(0,-0.5) node[lbl, below]{\textbf{bars}（来自 \texttt{spec\_sync}）} -- ++(0,0);
+\draw[ar] (mx) -- (out);
+\end{tikzpicture}
+\caption{显示渲染：所有模块吃同一个 $(x,y)$，各自产出一份颜色/命中信号，最后在 \texttt{disp\_mix} 里按优先级叠加}
+\label{fig:disp}
+\end{figure}
+
+\textbf{④ SD 卡图片通道}
+
+\phfig[0.5]{SD 卡图片加载流程图}{sdflow}
+
+\textbf{流程}：\texttt{sd\_ctrl\_top} 切换时钟到 400\,kHz $\rightarrow$
+\texttt{sd\_init} 走完 CMD0/8/55/41 $\rightarrow$ 切回 25\,MHz $\rightarrow$
+\texttt{sd\_read} 发 CMD18 连续读 510 块 $\rightarrow$
+\texttt{sd\_img\_load} 把字节流拼成 RGB565 并\textbf{同时写两份帧缓冲}
+（全图 480$\times$272 + 中心裁剪 320$\times$180）$\rightarrow$ \texttt{load\_done} 门控切图。
+
+%=============================================================================
+%  第三部分  完成情况及性能参数
+%=============================================================================
+\newpage
+\section{第三部分\quad 完成情况及性能参数}
+
+%-----------------------------------------------------------------------------
+\subsection{整体介绍}
+%-----------------------------------------------------------------------------
+
+\phfig[0.7]{系统实物照片（正面）}{实物正面2}
+\phfig[0.7]{系统实物照片（斜 45°）}{实物斜452}
 
 \begin{table}[H]
 \centering
-\caption{板级接口}\label{tab:if}
-\begin{tabular}{p{2.4cm}p{1.2cm}p{4.6cm}p{5.0cm}}
+\caption{上板验收清单（全部实测通过）}
+\label{tab:accept}
+\begin{tabular}{cp{6.0cm}p{6.4cm}}
 \toprule[1.5pt]
-\rowcolor{gray!25} 接口 & 方向 & 协议 / 电平 & 关键约束 \\
+\rowcolor{gray!25} \# & 检查项 & 实测结果 \\
 \midrule[1pt]
-WM8960  & 双向 & I2C + I2S & WM8960 为 I2S 主，FPGA 为从 \\
-LCD     & 输出 & RGB888 + HS/VS/CLK & 七项守恒检查 \\
-HDMI    & 输出 & TMDS 4 对差分 & \textbf{板上无发送芯片}，FPGA 直连 \\
-SD 卡   & 双向 & SPI & LVCMOS33，Bank 14 \\
-UART    & 双向 & 115200 8N1 & ASCII 命令通道 \\
-按键    & 输入 & 板载 + XPT2046 & 20 ms 消抖 + 300 ms 双击窗 \\
-QSPI    & 双向 & W25Q128，4 线 & 掉电自启动 \\
+1  & 仿真回归 \texttt{run\_iv.sh} & \textbf{39/39 PASS} \\
+2  & Verible / Verilator & 0 违规 / 0 意外警告 \\
+3  & Vivado 综合 + 实现 & \textbf{0 CRITICAL / 0 WARNING} \\
+4  & \texttt{led[1]} 心跳 & 约 2.9\,Hz 闪烁 \\
+5  & \texttt{led[0]} & 常亮（WM8960 配置完成）\\
+6  & LCD 程序化背景 & 网格 + 渐变正常显示 \\
+7  & 按 \texttt{BG} 键 & 程序化背景 / SD 图片 切换 \\
+8  & 按 \texttt{SD} 键 & 3 张图片循环切换 \\
+9  & 对麦克风说话 & 频谱柱跳动、波形变化 \\
+10 & 按 \texttt{SPK} 键 & 喇叭静音/取消 \\
+11 & HDMI 显示器 & 640$\times$360 有画面（80 柱 + 波形 + 图片）\\
+12 & UART 115200 & 上电打横幅；发 \texttt{V} 切视图 \\
+13 & QSPI Flash 固化 & 掉电后拔 JTAG 可自启动 \\
 \bottomrule[1.5pt]
 \end{tabular}
 \end{table}
 
-\textbf{接口契约示例（帧缓冲写口）}：
-\begin{lstlisting}[language=Verilog, basicstyle=\ttfamily\zihao{6},
-                   frame=single, rulecolor=\color{boxFrame}]
-output wire [18:0] wr_addr;   // 第 1 份：线性地址 = y*480 + x
-output wire [15:0] wr_data;   //         RGB565
-output wire        wr2_en;    // 第 2 份：只在裁剪区内有效
-output wire [18:0] wr2_addr;  //         = (y-46)*320 + (x-80)
-\end{lstlisting}
+%-----------------------------------------------------------------------------
+\subsection{工程成果}
+%-----------------------------------------------------------------------------
 
-\textbf{设计约束}：\texttt{wr\_en} / \texttt{wr\_addr} / \texttt{wr2\_en} /
-\texttt{wr2\_addr} 驱动 BRAM 的 \texttt{ENARDEN} / \texttt{ADDRARDADDR}，
-\textbf{绝不能带异步复位}（否则触发 \texttt{DRC REQP-1839}）。
+\subsubsection{机械成果}
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\section{优化过程与性能资源对比}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\phfig[0.5]{机械结构实物照片}{机械实物}
 
-\subsection{优化总览}
+\textbf{说明}：本作品以开发板为核心，未做独立外壳。实物包含：
+主控板、LCD 模组（JM1）、WM8960 音频模块（JM2）、HDMI 线、microSD 卡、
+TypeC 供电与 JTAG 线。
+
+\subsubsection{电路成果}
+
+\phfig[0.5]{PCB 实物照片}{pcb实物}
+\phfig[0.5]{关键电路测试点波形（示波器截图）}{示波器}
+
+\subsubsection{软件成果}
+
+\phfig[0.65]{LCD 界面照片（含 8 按钮面板 + 8 行状态栏）}{lcd照片}
+\phfig[0.65]{HDMI 大屏照片（80 根柱 + 波形 + SD 图片背景）}{hdmi照片}
+\phfig[0.6]{UART 命令通道交互截图}{uart截图}
+
+%-----------------------------------------------------------------------------
+\subsection{特性成果（量化指标）}
+%-----------------------------------------------------------------------------
+
+\subsubsection*{① 优化过程与前后对比}
+
+本作品经历 5 个主要优化阶段：
 
 \begin{table}[H]
 \centering
-\caption{五个主要优化阶段的量化收益}\label{tab:opt}
-\begin{tabular}{cp{6.0cm}p{7.2cm}}
+\caption{五个优化阶段的量化收益}
+\label{tab:opt}
+\begin{tabular}{cp{5.4cm}p{8.0cm}}
 \toprule[1.5pt]
 \rowcolor{gray!25} 阶段 & 优化内容 & 关键指标变化 \\
 \midrule[1pt]
-① & 同步复位替代异步复位 & \texttt{DPOR-1}: 11$\rightarrow$0；WNS: +1.117$\rightarrow$+2.156\,ns；LUT: 6802$\rightarrow$5648 \\
-② & FFT 全并行 $\rightarrow$ 单蝶形时分复用 & DSP: 2048$\rightarrow$4（1/512）；BRAM: 0$\rightarrow$2 \\
+① & 同步复位替代异步复位 & \texttt{DPOR-1}: 11$\rightarrow$\textbf{0}；WNS: +1.117$\rightarrow$\textbf{+2.156\,ns}；LUT: 6802$\rightarrow$\textbf{5648} \\
+② & FFT 全并行 $\rightarrow$ 单蝶形时分复用 & DSP: 2048$\rightarrow$\textbf{4}（1/512）；BRAM: 0$\rightarrow$2 \\
 ③ & 新增 HDMI 大屏（80 柱 + 波形） & 新增功能，WNS 仍为正 \\
-④ & SD 图片背景（双帧缓冲方案） & BRAM: 68.5$\rightarrow$100.5（+32 而非 +84） \\
-⑤ & 综合警告清零 & 警告: 51$\rightarrow$0 \\
+④ & SD 图片背景（双帧缓冲方案） & BRAM: 68.5$\rightarrow$100.5（\textbf{+32 而非 +84}）\\
+⑤ & 综合警告清零 & 警告: 51$\rightarrow$\textbf{0} \\
 \bottomrule[1.5pt]
 \end{tabular}
 \end{table}
 
-\subsection{优化 1：同步复位替代异步复位}
-
-\textbf{现象}：\texttt{DPOR-1}$\times$11、\texttt{REQP-1839}$\times$180，
-WNS 仅 +1.117\,ns（勉强收敛）。
-
-\textbf{根因}：6 个文件用了 \texttt{always @(posedge clk or negedge rst\_n)}。
-而本工程的 \texttt{rst\_n} 来自 \texttt{rst\_sync}（已是域内同步释放），
-异步复位\textbf{纯代价}：DSP48 内部寄存器只支持同步复位，带异步复位就无法被吸收，
-额外消耗约 1154 个 LUT 做置位/复位逻辑。
-
-\textbf{量化收益}：
+\textbf{优化 ① 详细对比}：
 
 \begin{table}[H]
 \centering
-\caption{优化 1 前后对比}\label{tab:opt1}
+\caption{同步复位优化的前后对比}
+\label{tab:opt1}
 \begin{tabular}{lccc}
 \toprule[1.5pt]
 \rowcolor{gray!25} 指标 & 优化前 & 优化后 & 变化 \\
 \midrule[1pt]
-\texttt{DPOR-1} & 11 & \textbf{0} & \checkmark \\
-WNS            & +1.117 ns & \textbf{+2.156 ns} & +1.04 ns \\
-Slice LUTs     & 6\,802 & \textbf{5\,648} & $-1\,154$ \\
+\texttt{DPOR-1}（DSP 异步复位） & 11 & \textbf{0} & \checkmark \\
+WNS & +1.117\,ns & \textbf{+2.156\,ns} & +1.04\,ns \\
+Slice LUTs & 6\,802 & \textbf{5\,648} & $-1\,154$ \\
 \bottomrule[1.5pt]
 \end{tabular}
 \end{table}
 
-\textbf{教训}：“已修复”必须按根因\textbf{全量重扫}——该根因第 4 次复发，
-前 3 次都只改了报出来的那一处。
+\textbf{根因}：6 个文件用了 \texttt{negedge rst\_n}。而 \texttt{rst\_n} 来自
+\texttt{rst\_sync}（已是域内同步释放），异步复位纯代价——DSP48 内部寄存器只支持
+同步复位，带异步复位就无法被吸收，额外消耗约 1154 个 LUT 做置位/复位逻辑。
+\textbf{⚠️ 教训}：“已修复”必须按根因\textbf{全量重扫}（该根因第 4 次复发）。
 
-\subsection{优化 2：FFT 架构选型}
-
-\begin{table}[H]
-\centering
-\caption{FFT 架构方案对比（1024 点，48 kHz 采样）}\label{tab:fft}
-\begin{tabular}{lccccc}
-\toprule[1.5pt]
-\rowcolor{gray!25} 方案 & 蝶形单元 & DSP48 & BRAM & 整帧耗时 & 占帧周期 \\
-\midrule[1pt]
-全并行 & 512 & 2048 & 0 & 1 拍 & 0.04\% \\
-4 路并行 & 128 & 512 & 0 & 7\,680 拍 & 0.3\% \\
-\textbf{单蝶形（采用）} & \textbf{1} & \textbf{4} & \textbf{2} & \textbf{30\,720 拍} & \textbf{1.3\%} \\
-\bottomrule[1.5pt]
-\end{tabular}
-\end{table}
-
-\textbf{为什么够用}：帧周期 46.9\,ms，整帧耗时 $30\,720\times20.83\,\text{ns}=0.64$\,ms，
-仅占 1.3\%，余量 75 倍。地址发生器用位操作而非除法：
-$p=((c\gg s)\ll(s+1))\,|\,(c\wedge\text{mask})$，$q=p\,|\,(1\ll s)$。
-
-实测：\textbf{1004 LUT / 126 FF / 2 BRAM36 / 4 DSP48}，WNS +2.54\,ns @ 48\,MHz。
-
-\subsection{优化 3：SD 图片背景——四个方案的取舍}
+\subsubsection*{② SD 图片背景的四个方案取舍}
 
 \begin{table}[H]
 \centering
-\caption{SD 图片背景的四种候选方案}\label{tab:fb}
+\caption{SD 图片背景候选方案对比}
+\label{tab:fb}
 \begin{tabular}{cp{3.0cm}ccccc}
 \toprule[1.5pt]
 \rowcolor{gray!25} 方案 & 存储 & 每份 & 份数 & 总 BRAM & WNS & 结论 \\
 \midrule[1pt]
-A & 640$\times$360$\times$16 & 103 & 2 & 206 & — & 超器件 \\
+A & 640$\times$360$\times$16 & 103 & 2 & 206 & —— & 超器件 \\
 B & 640$\times$360$\times$8  & 52  & 2 & 134 & +0.011 & 色带过重，实测否定 \\
 C & 320$\times$180$\times$16 & 26  & 1 & 36.5 & +1.84 & 省资源但 LCD 有黑边 \\
 \textbf{D} & \textbf{480$\times$272$\times$16 + 320$\times$180$\times$16} & \textbf{58+26} & \textbf{2} & \textbf{100.5} & \textbf{+1.78} & \textbf{采用} \\
@@ -322,71 +780,50 @@ C & 320$\times$180$\times$16 & 26  & 1 & 36.5 & +1.84 & 省资源但 LCD 有黑�
 \end{tabular}
 \end{table}
 
-\textbf{裁剪地址零 DSP 实现}：
-\begin{lstlisting}[language=Verilog, basicstyle=\ttfamily\zihao{6},
-                   frame=single, rulecolor=\color{boxFrame}]
-crop_addr = (dy << 8) + (dy << 6) + dx;   // dy*256 + dy*64 = dy*320
-\end{lstlisting}
+\textbf{为什么不用“一个缓冲两个读口”}：Vivado 的 BRAM 推断不支持
+“1 写 2 读跨时钟”，会退化成 LUTRAM 并触发 \texttt{DRC UTLZ-1}。
 
-\textbf{2 倍放大零成本}：
-\begin{lstlisting}[language=Verilog, basicstyle=\ttfamily\zihao{6},
-                   frame=single, rulecolor=\color{boxFrame}]
-fb_addr = ((fb_ly >> 1) * FB_SW_U) + (fb_lx >> 1) + 1;   // 右移 1 位 = 除 2
-\end{lstlisting}
-
-\subsection{优化 4：综合警告清零（三类判据）}
+\subsubsection*{③ 综合警告清零（三类判据）}
 
 \begin{table}[H]
 \centering
-\caption{51 条警告的分类处理}\label{tab:warn}
-\begin{tabular}{p{2.2cm}c p{3.2cm} p{6.0cm}}
+\caption{51 条警告的分类处理}
+\label{tab:warn}
+\begin{tabular}{p{2.2cm}c p{3.0cm} p{6.6cm}}
 \toprule[1.5pt]
 \rowcolor{gray!25} 类型 & 数量 & 处理 & 判据 \\
 \midrule[1pt]
-\textbf{真缺陷}   & \textbf{40} & \textbf{改设计} & \texttt{REQP-1839}：\texttt{wr2\_en}/\texttt{wr2\_addr} 驱动 BRAM 控制脚却带异步复位\\
-前提不成立 & 50 & 豁免（写明判据） & \texttt{8-7129}：参数化模块高位地址超出实际使用范围 \\
-假报警     & 1  & 豁免（附证据）   & \texttt{Route 35-328}：路由估计未命中，实测 WNS 全为正 \\
+\textbf{真缺陷} & \textbf{40} & \textbf{改设计} & \texttt{REQP-1839}：\texttt{wr2\_en}/\texttt{wr2\_addr} 驱动 BRAM 控制脚却带异步复位 \\
+前提不成立 & 50 & 豁免（写明判据）& \texttt{8-7129}：参数化模块高位地址超出实际使用范围 \\
+假报警 & 1 & 豁免（附证据） & \texttt{Route 35-328}：路由估计未命中，实测 WNS 全为正 \\
 \bottomrule[1.5pt]
 \end{tabular}
 \end{table}
 
-\subsection{最终资源与端到端延迟}
+\subsubsection*{④ 功能演示}
+
+\phfig[0.6]{柱状频谱视图照片}{柱谱照片}
+\phfig[0.6]{极坐标频谱视图照片}{极坐标照片}
+\phfig[0.6]{动态波形视图照片}{波形照片}
+\phfig[0.6]{DEMO 演示模式照片}{demo照片}
+
+%=============================================================================
+%  第四部分  总结
+%=============================================================================
+\newpage
+\section{第四部分\quad 总结}
+
+%-----------------------------------------------------------------------------
+\subsection{大模型协作记录}
+%-----------------------------------------------------------------------------
+
+\subsubsection{所用 AI 工具与使用环节}
 
 \begin{table}[H]
 \centering
-\caption{最终资源与性能}\label{tab:final}
-\begin{tabular}{lcc}
-\toprule[1.5pt]
-\rowcolor{gray!25} 指标 & 值 & 说明 \\
-\midrule[1pt]
-Slice LUTs & 11\,716 & 18.48\% \\
-Block RAM  & 100.5   & 74.44\% \\
-DSP48      & 26      & 10.83\% \\
-\texttt{clk\_sys} WNS  & \textbf{+1.779 ns} & 48 MHz，满足 \\
-\texttt{clk\_hdmi} WNS & \textbf{+4.028 ns} & 25 MHz，满足 \\
-\texttt{clk\_pix} WNS  & 远大于 0 & 12.5 MHz，满足 \\
-构建警告   & \textbf{0 CRITICAL / 0 WARNING} & \\
-仿真回归   & \textbf{41 / 41 PASS} & 全部逐位对拍 \\
-\bottomrule[1.5pt]
-\end{tabular}
-\end{table}
-
-\textbf{端到端延迟预算}：ADC$\rightarrow$I2S（20.83\,$\mu$s）$\rightarrow$
-EQ（0.63\,$\mu$s）$\rightarrow$ FFT（0.64\,ms，占帧周期 1.3\%）$\rightarrow$
-跨域（2\textasciitilde 3 拍）$\rightarrow$ LCD 扫描一帧（80\,ms）
-$\Rightarrow$ \textbf{合计约 82\,ms，其中 80\,ms 是不可省的一帧扫描时间，
-处理链路本身贡献不到 2\,ms}。
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\section{大模型协作记录}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-\subsection{所用工具}
-
-\begin{table}[H]
-\centering
-\caption{AI 工具与用途}\label{tab:ai-tool}
-\begin{tabular}{cp{3.6cm}p{3.2cm}p{5.6cm}}
+\caption{AI 工具与用途}
+\label{tab:ai-tool}
+\begin{tabular}{cp{3.2cm}p{3.0cm}p{6.0cm}}
 \toprule[1.5pt]
 \rowcolor{gray!25} 序号 & 工具 & 类别 & 主要用途 \\
 \midrule[1pt]
@@ -399,16 +836,11 @@ $\Rightarrow$ \textbf{合计约 82\,ms，其中 80\,ms 是不可省的一帧扫�
 \end{tabular}
 \end{table}
 
-大模型通过 \texttt{bash} 工具直接执行 \texttt{iverilog} / \texttt{verilator} /
-\texttt{verible} / \texttt{vivado -mode batch}，形成
-“改代码 $\rightarrow$ 跑仿真 $\rightarrow$ 看报告 $\rightarrow$ 再改”的闭环。
-
-\subsection{使用环节}
-
 \begin{table}[H]
 \centering
-\caption{使用环节与具体目的}\label{tab:ai-step}
-\begin{tabular}{cp{3.0cm}p{8.8cm}}
+\caption{使用环节与具体目的}
+\label{tab:ai-step}
+\begin{tabular}{cp{2.8cm}p{9.0cm}}
 \toprule[1.5pt]
 \rowcolor{gray!25} 编号 & 环节 & 具体用途 \\
 \midrule[1pt]
@@ -418,7 +850,7 @@ A-03 & FFT 架构权衡 & 存储式 vs 流式、单蝶形 vs 并行 \\
 A-04 & 跨时钟域方案 & 格雷码 FIFO vs 双打 vs 电平翻转握手 \\
 A-05 & 显示架构 & 扫描式渲染 vs framebuffer，参数化边界 \\
 \midrule[0.5pt]
-B-01 & RTL 编写 & 60 个 Verilog 模块 + 41 个 testbench \\
+B-01 & RTL 编写 & 60 个 Verilog 模块 + 39 个 testbench \\
 B-02 & 黄金模型 & Python 定点模型，逐位对拍 \\
 B-03 & 生成器脚本 & 旋转因子、频谱分组表、字模、WM8960 寄存器表 \\
 B-04 & 构建流程 & \texttt{build.tcl} / \texttt{program.tcl} / \texttt{run\_iv.sh} \\
@@ -428,14 +860,11 @@ B-06 & 文档 & 16 个设计文档 + 825 条问题账本 \\
 \end{tabular}
 \end{table}
 
-\subsection{主要提示方式}
+\subsubsection{主要提示方式}
 
-\subsubsection{方式一：给“判据”而不是“要求”}
+\textbf{方式一：给“判据”而不是“要求”}
 
-\textbf{低效提示}：“帮我写一个 SD 卡初始化模块。”
-
-\textbf{高效提示}：
-\begin{tcolorbox}[title=\textbf{用户}, colback=blue!2!white,
+\begin{tcolorbox}[title=\textbf{用户（原始提示词）}, colback=blue!2!white,
                   colframe=blue!30!black, fonttitle=\bfseries, breakable]
 实现 SPI 模式的 SD 卡初始化：CMD0 $\rightarrow$ CMD8 $\rightarrow$
 循环 (CMD55 + ACMD41) 直到 R1 的 bit0=0。\\
@@ -445,135 +874,147 @@ B-06 & 文档 & 16 个设计文档 + 825 条问题账本 \\
 \textbf{不要}：不要用状态机隐式等待，每步都要有超时计数。
 \end{tcolorbox}
 
-\textbf{结果}：一次生成即通过 5/5 判据，其中“第二次 \texttt{Go}”
-这个判据后来救了大命（见下文例 3 的前身）。
+\begin{tcolorbox}[title=\textbf{AI 回答（要点）}, colback=green!2!white,
+                  colframe=green!30!black, fonttitle=\bfseries, breakable]
+生成了 5 个状态的状态机（\texttt{IDLE/CMD/WAIT/RESP/DONE}），
+每条命令带 24 位超时计数。首次提交即通过 5/5 判据。
+\textbf{“第二次 Go”这个判据后来救了大命}——后续调试中发现
+若 \texttt{Go} 只清 \texttt{cnt} 不清 \texttt{state}，重配时会永久卡死
+（\texttt{Init\_Done} 恒 0 ⟹ 音频被按住复位 ⟹ 切输入源静音 + 频谱冻住）。
+\end{tcolorbox}
 
-\subsubsection{方式二：要求“交叉验证”而不是“相信”}
+\textbf{方式二：要求“交叉验证”而不是“相信”}
 
-\textbf{提示}：TMDS 编码器我担心记错。请找 2\textasciitilde 3 份独立实现
-（Xilinx 官方示例、开源核、论文附录），\textbf{逐行比对}，列出差异点再写；
-若三者不一致就停下来告诉我。
+\begin{tcolorbox}[title=\textbf{用户（原始提示词）}, colback=blue!2!white,
+                  colframe=blue!30!black, fonttitle=\bfseries, breakable]
+TMDS 编码器我担心记错。请你找 \textbf{2\textasciitilde 3 份独立实现}
+（Xilinx 官方示例、开源核、论文附录），\textbf{逐行比对}，
+把差异点列出来，再写。如果三者不一致，停下来告诉我。
+\end{tcolorbox}
 
-\textbf{结果}：找到 3 份实现，其中 2 份在“DC 平衡”分支的 \texttt{cnt}
-更新条件上写法不同但等价；确认后写入 \texttt{tmds\_enc.v}，一次通过。
+\textbf{结果}：找到 3 份实现，其中 2 份在“DC 平衡”分支的 \texttt{cnt} 更新条件上
+写法不同但等价；确认后写入 \texttt{tmds\_enc.v}，一次通过。
 
-\subsubsection{方式三：要求“量化”而不是“看起来对”}
+\textbf{方式三：要求“量化”而不是“看起来对”}
 
-\textbf{提示}：不要给“看起来合理”的结论。要求 ① 实际占用/总量/百分比；
-② 与优化前对比；③ 变差了要指出是哪一项；
+\begin{tcolorbox}[title=\textbf{用户（原始提示词）}, colback=blue!2!white,
+                  colframe=blue!30!black, fonttitle=\bfseries, breakable]
+不要给“看起来合理”的结论。要求：① 实际占用/总量/百分比；
+② 与优化前对比；③ 如果变差了，指出是哪一项变差；
 ④ 时序报告里 WNS 是正是负、最差路径在哪。
+\end{tcolorbox}
 
-\textbf{结果}：每次构建后都有一张可核对的指标表（见表~\ref{tab:final}）。
-
-\subsection{自我纠错轨迹（五个典型案例）}
-
-\subsubsection{例 1：\texttt{str.replace()} 静默成功}
-
-\textbf{现象}：改完 \texttt{top.v} 的 \texttt{disp\_top} 实例参数，
-脚本输出 OK，但上板实测 LCD 仍居中显示、颜色不对、画面错位重叠。
-
-\textbf{定位}：
-\begin{lstlisting}[language=bash, basicstyle=\ttfamily\zihao{6},
-                   frame=single, rulecolor=\color{boxFrame}]
-$ grep -n "FB_SW(" rtl/top.v
-876:  .FB_SW(320), .FB_SH(180), .FB_W(320), .FB_H(180),   # 根本没改到
-\end{lstlisting}
-
-\textbf{根因}：\texttt{str.replace(old,new)} 在 \texttt{old} 不匹配时
-\textbf{静默返回原串}，不报错不警告。
-
-\textbf{修复}：\texttt{assert old in s, "搜索串没找到！"}——不匹配就崩，绝不静默。
-
-\subsubsection{例 2：BRAM 被推断成 LUTRAM}
-
-\textbf{现象}：合成报 \texttt{DRC UTLZ-1}：需 86\,452 个 \texttt{RAMD64E}，
-只有 19\,000 个。
-
-\textbf{定位链}：
-① 直觉是“640$\times$360$\times$16 太大”，但算下来只要 103 块（器件有 135 块）；
-② 看报告：\textbf{“LUT as Distributed RAM”} 超限，说明根本没映射到 BRAM；
-③ 检查：\texttt{mem} 被两个不同时钟读；
-④ 加 \texttt{(* ram\_style = "block" *)}，重合成\textbf{仍然 LUTRAM}；
-⑤ 查 UG473：BRAM 推断模板只支持 1 写 1 读或真双口（需原语）。
-
-\textbf{修复}：改成两份不同尺寸的缓冲实例。
-
-\subsubsection{例 3：\texttt{wr\_en} 类信号误放进异步复位块}
-
-\textbf{现象}：综合报 40 条 \texttt{REQP-1839}。
-
-\textbf{定位}：检查 \texttt{sd\_img\_load.v}——我给第二个写口加
-\texttt{wr2\_en}/\texttt{wr2\_addr} 时，把它们放进了 \texttt{if (!rst\_n)} 块。
-而\textbf{同一个文件里 \texttt{wr\_addr}/\texttt{wr\_en} 的注释明确写着“不能带异步复位”}。
-
-\textbf{修复}：移出异步复位块，改由 \texttt{start} 清零 + 每拍给默认值。
-
-\subsubsection{例 4：\texttt{y[8:3]} 在 360 行时回绕}
-
-\textbf{现象}：LCD 与 HDMI 的程序化背景不一致。
-
-\textbf{定位}：\texttt{bg\_src} 是纯组合函数，同 $(x,y)$ 必同色；但两实例
-\texttt{VDISP} 不同（272 / 360）。渐变代码 \texttt{wire [5:0] t = y[8:3];}
-——272 行时 $y[8:3]=0\ldots33$ 正确；360 行时 $y\ge256$ 使
-\textbf{$y[8:3]$ 回绕到 0}，下半屏渐变从头开始。
-
-\textbf{修复}：\texttt{YSH = (VDISP>=512) ? 4 : 3}，\texttt{t = y[YSH +: 6]}。
-
-\subsubsection{例 5：颜色不对——数清“反转层次”}
-
-\textbf{现象}：HDMI 输出图片，原图深蓝却显示成暖黄；LCD 正常。
-
-\textbf{定位链}：
-① “深蓝$\rightarrow$暖黄”是 \textbf{R/B 互换的教科书特征}；
-② 数据链只有一处可能：\texttt{disp\_top} 的 RGB565$\rightarrow$RGB888 展开，
-高字节接 \texttt{fb\_rgb[4:0]}（B）、低字节接 \texttt{fb\_rgb[15:11]}（R）；
-③ 但这行是按 LCD 实测写的，且 LCD 显示正确；
-④ 推理：\textbf{LCD 面板接线本身是 BGR}，这里反一次、面板又反一次，抵消；
-⑤ \textbf{HDMI 走标准 RGB，没有第二次反}，所以必须在这里换回来。
-
-\textbf{修复}：仅 HDMI 路径加
-\texttt{.pix\_rgb(\{r[7:0], r[15:8], r[23:16]\})}。
-
-\subsection{采纳、人工修改与核验}
+\subsubsection{自我纠错轨迹（五个典型案例）}
 
 \begin{table}[H]
 \centering
-\caption{AI 输出的采纳情况}\label{tab:adopt}
-\begin{tabular}{cp{2.2cm}p{5.0cm}p{3.4cm}}
+\caption{自我纠错轨迹}
+\label{tab:selfcorr}
+\begin{tabular}{p{1.4cm}p{3.4cm}p{4.2cm}p{4.2cm}}
+\toprule[1.5pt]
+\rowcolor{gray!25} 编号 & 现象 & 根因 & 修复 / 沉淀 \\
+\midrule[1pt]
+E-01 & 改了参数、脚本输出 OK，但上板画面仍居中/颜色错 & \texttt{str.replace()} 找不到就\textbf{静默返回原串} & 加 \texttt{assert old in s}；账本 807 \\
+E-02 & 合成报 \texttt{DRC UTLZ-1}：需 86\,452 个 \texttt{RAMD64E} & \texttt{mem} 被两个时钟读 ⟹ 退化成 LUTRAM & 改两份不同尺寸缓冲；账本 789/790/792 \\
+E-03 & 综合报 40 条 \texttt{REQP-1839} & \texttt{wr2\_*} 误放进异步复位块 & 移出复位块；账本 813 \\
+E-04 & LCD 与 HDMI 背景不一致 & \texttt{y[8:3]} 在 360 行时回绕 & \texttt{YSH = (VDISP>=512)?4:3}；账本 811 \\
+E-05 & HDMI 图片深蓝显示成暖黄 & R/B 互换（LCD 面板是 BGR，反了两次抵消）& HDMI 路径加一次交换；账本 810 \\
+\bottomrule[1.5pt]
+\end{tabular}
+\end{table}
+
+\subsubsection{智能体工作流设计}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.5cm and 1.1cm, font=\zihao{-6}]
+\node[blk] (a) {读需求/判据};
+\node[blk, below=of a] (b) {改 RTL / TB};
+\node[blk, below=of b] (c) {iverilog + Verilator\\+ Verible};
+\node[dec, below=0.6cm of c] (d) {全绿?};
+\node[blk, right=1.1cm of d] (e) {本文件内定位\\（grep 报告/读波形）};
+\node[blk, below=0.9cm of d] (f) {Vivado 综合/实现};
+\node[dec, below=0.65cm of f] (g) {资源<80\%?\\WNS>0?};
+\node[blk, right=1.1cm of g] (h) {分析 post\_route\\util / timing 报告};
+\node[blk, below=0.8cm of g] (i) {提交 + 上板};
+
+\draw[ar] (a) -- (b);
+\draw[ar] (b) -- (c);
+\draw[ar] (c) -- (d);
+\draw[ar] (d) -- node[lbl, above]{否} (e);
+\draw[ar] (e) |- node[lbl, pos=0.75, right]{回到改 RTL} (b.west);
+\draw[ar] (d) -- node[lbl, right]{是} (f);
+\draw[ar] (f) -- (g);
+\draw[ar] (g) -- node[lbl, above]{否} (h);
+\draw[ar] (h) |- (b.east);
+\draw[ar] (g) -- node[lbl, right]{是} (i);
+\end{tikzpicture}
+\caption{智能体工作流：每轮“改—验—看报告”，红则定位、绿则推进}
+\label{fig:agentflow}
+\end{figure}
+
+\textbf{关键工作流规则（从失败中总结）}：
+
+\begin{table}[H]
+\centering
+\caption{工作流规则及其来源}
+\label{tab:rules}
+\begin{tabular}{p{5.2cm}p{8.2cm}}
+\toprule[1.5pt]
+\rowcolor{gray!25} 规则 & 来源 \\
+\midrule[1pt]
+\textbf{不在红树上继续改} & 一次改坏后连改 3 次都不中 ⟹ 改成 \texttt{git checkout --} 回退重新开始 \\
+\textbf{大改动先建分支} & 在 \texttt{master} 上改到一半 TB 红只能全量回退；建 \texttt{fb320} 分支后 WIP 可安全提交 \\
+\textbf{每轮必须跑全量回归} & 曾因“只跑相关 TB”漏掉 \texttt{tp\_edges} 的 \texttt{UNDRIVEN} \\
+\textbf{加速先看 user/real 比值} & \texttt{run\_iv.sh} 20m54s$\rightarrow$1m30s：瓶颈不是并行度，是单个 \texttt{tb\_top} 吃 20 分钟 \\
+\textbf{GUI 能做的事 = 一串 Tcl} & Flash 烧写 CLI 失败 7 轮 ⟹ 照抄 GUI 的 Tcl Console ⟹ 一次成功 \\
+\textbf{连猜 3 次不中 ⟹ 停止猜测} & HDMI 撕裂猜了 4 次（复位延迟/2.6\,ms/locked/OSERDESE2）⟹ 改文档记录 + 待 ILA \\
+\bottomrule[1.5pt]
+\end{tabular}
+\end{table}
+
+\subsubsection{采纳、人工修改与核验}
+
+\begin{table}[H]
+\centering
+\caption{AI 输出的采纳情况与核验}
+\label{tab:adopt}
+\begin{tabular}{cp{1.8cm}p{5.0cm}p{4.0cm}}
 \toprule[1.5pt]
 \rowcolor{gray!25} 编号 & 采纳 & 人工修改 & 核验结果 \\
 \midrule[1pt]
-A-01 & 采纳     & 无 & \checkmark 逐位一致 \\
-A-02 & 部分采纳 & 结构从 4 段改 5 段，加 8 kHz peaking & \checkmark 频响误差 $<$0.5 dB \\
-A-03 & 采纳     & 无 & \checkmark 2048 频点逐位一致 \\
-A-04 & 部分采纳 & 格雷码 FIFO 改为“电平翻转+双打+边沿检测” & \checkmark 4/4 PASS \\
-A-05 & 部分采纳 & 加 \texttt{WITH\_UI}/\texttt{WITH\_TEXT}/\texttt{FB\_*} 参数族 & \checkmark 130\,560 像素逐点一致 \\
-B-01 & 采纳     & 多次人工纠错（见 5.4） & \checkmark 41/41 \\
-B-02 & 采纳     & 无 & \checkmark 逐位一致 \\
-B-03 & 采纳     & \texttt{gen\_spectrum\_map.py} 后参数化 & \checkmark 60/80 均验证 \\
-B-04 & 部分采纳 & Flash 烧写改成“先 \texttt{program\_hw\_devices} 建 SPI 通道” & \checkmark 43 秒成功 \\
-B-05 & 采纳     & 无 & \checkmark WNS 全为正 \\
-B-06 & 采纳     & 全部数字人工核对 & \checkmark 与报告一致 \\
+A-01 & 采纳 & 无 & \checkmark 逐位一致 \\
+A-02 & 部分 & 结构从 4 段改 5 段，加 8\,kHz peaking & \checkmark 频响误差 $<$0.5\,dB \\
+A-03 & 采纳 & 无 & \checkmark 2048 频点逐位一致 \\
+A-04 & 部分 & 格雷码 FIFO 改“电平翻转+双打+边沿检测” & \checkmark 4/4 PASS \\
+A-05 & 部分 & 加 \texttt{WITH\_UI}/\texttt{WITH\_TEXT}/\texttt{FB\_*} 参数族 & \checkmark 130\,560 像素逐点一致 \\
+B-01 & 采纳 & 多次人工纠错（见 E-01\~{}E-05） & \checkmark 39/39 \\
+B-02 & 采纳 & 无 & \checkmark 逐位一致 \\
+B-03 & 采纳 & \texttt{gen\_spectrum\_map.py} 后参数化 & \checkmark 60/80 均验证 \\
+B-04 & 部分 & Flash 烧写改“先 \texttt{program\_hw\_devices} 建 SPI 通道” & \checkmark 43 秒成功 \\
+B-05 & 采纳 & 无 & \checkmark WNS 全为正 \\
+B-06 & 采纳 & 全部数字人工核对 & \checkmark 与报告一致 \\
 \bottomrule[1.5pt]
 \end{tabular}
 \end{table}
 
 \textbf{核验方法论}：① 逐位对拍（不允许“看起来差不多”）；
-② 独立真值（\texttt{numpy.fft} / \texttt{\$atan2}）；
+② 独立真值（\texttt{numpy.fft} / \texttt{\$atan2} / \texttt{\$sqrt}）；
 ③ 穷举（512 个 bin 分组、5132 组地址、49\,920 个像素）；
 ④ 总量守恒（一帧 150\,150 拍、130\,560 个有效像素）；
 ⑤ 读回验证（帧缓冲逐点写入再读回）。
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\section{技能包的提炼过程}\label{sec:skill}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%-----------------------------------------------------------------------------
+\subsection{技能包的提炼过程}
+%-----------------------------------------------------------------------------
 
-\subsection{三级沉淀体系}
+\subsubsection{三级沉淀体系}
 
 \begin{table}[H]
 \centering
-\caption{三级知识沉淀}\label{tab:levels}
-\begin{tabular}{p{2.6cm}p{4.4cm}cp{4.6cm}}
+\caption{三级知识沉淀}
+\label{tab:levels}
+\begin{tabular}{p{2.4cm}p{4.6cm}cp{4.2cm}}
 \toprule[1.5pt]
 \rowcolor{gray!25} 层级 & 载体 & 规模 & 作用 \\
 \midrule[1pt]
@@ -584,35 +1025,32 @@ B-06 & 采纳     & 全部数字人工核对 & \checkmark 与报告一致 \\
 \end{tabular}
 \end{table}
 
-\subsection{四个技能包}
+\subsubsection{四个技能包的来源、验证与边界}
 
 \begin{table}[H]
 \centering
-\caption{技能包来源、验证与边界}\label{tab:skills}
-\begin{tabular}{p{2.4cm}p{3.6cm}p{3.4cm}p{3.6cm}}
+\caption{技能包一览}
+\label{tab:skills}
+\begin{tabular}{p{2.2cm}p{3.6cm}p{3.4cm}p{3.8cm}}
 \toprule[1.5pt]
 \rowcolor{gray!25} 技能包 & 来源失败 & 如何验证有效 & 边界 \\
 \midrule[1pt]
-\texttt{fixed-point-dsp} & EQ 频响差 3 dB（位宽不足）；\texttt{WAVE\_AMP} 改大反而变小（静默截断）；某频点发散（条件数） & 重做 EQ，频响误差 3 dB$\rightarrow$\textbf{0.5 dB}；截断问题后续 6 个参数\textbf{零复发} & 适用：定点 IIR/FIR/FFT，16\textasciitilde 32 bit。不适用：浮点、位宽 $<$12 bit \\
+\texttt{fixed-point-dsp} & EQ 频响差 3\,dB（位宽不足）；\texttt{WAVE\_AMP} 改大反而变小（静默截断）；某频点发散（条件数） & 重做 EQ，频响误差 3\,dB$\rightarrow$\textbf{0.5\,dB}；截断问题后续 6 个参数\textbf{零复发} & 适用：定点 IIR/FIR/FFT，16\textasciitilde 32\,bit。不适用：浮点、位宽$<$12\,bit \\
 \texttt{fpga-rtl-flow} & 找不到 Vivado；DRC 在 GUI 不报；时序违例方向错；\texttt{place} 失败伪装成综合错；构建 9m38s 太慢 & 构建 \textbf{9m38s$\rightarrow$2m57s}；回归 \textbf{20m54s$\rightarrow$1m30s}；后续 20+ 次构建\textbf{零次返工} & 适用：纯 RTL、无 block design。不适用：IP integrator、部分重配置 \\
-\texttt{rtl-verification} & 在信号自己更新的沿上读它；非阻塞赋值读不到新值；跨帧/帧内状态共用复位；只测一次漏掉重配路径 & 41 个 TB 中\textbf{至少 12 个第一次跑就红}；账本里\textbf{不到 10 条是纯仿真能发现}，但那 10 条都是上板必花几天的 & 适用：确定性数字逻辑。不适用：模拟/混合信号 \\
+\texttt{rtl-verification} & 在信号自己更新的沿上读它；非阻塞赋值读不到新值；跨帧/帧内状态共用复位；只测一次漏掉重配路径 & 39 个 TB 中\textbf{至少 12 个第一次跑就红}；账本里\textbf{大部分失败是仿真发现不了的}，但那 12 条都是上板必花几天的 & 适用：确定性数字逻辑。不适用：模拟/混合信号 \\
 \texttt{contributor} & 重复劳动、项目不活跃、未读 CONTRIBUTING & —— & 适用：活跃开源项目 \\
 \bottomrule[1.5pt]
 \end{tabular}
 \end{table}
 
-\subsection{从“观察”到“技能”的抽象链路}
-
-以 \texttt{rtl-verification} 为例：
+\subsubsection{从“观察”到“技能”的抽象链路}
 
 \begin{tcolorbox}[colback=gray!4, colframe=boxFrame, breakable,
-                  title=\textbf{抽象过程}]
-\textbf{原始观察（账本 412）}：TB 里 \texttt{@(negedge sd\_clk)} 采样，
-结果总差一拍。\\
+                  title=\textbf{以 \texttt{rtl-verification} 为例}]
+\textbf{原始观察（账本 412）}：TB 里 \texttt{@(negedge sd\_clk)} 采样，总差一拍。\\
 $\downarrow$ 追问“为什么”\\
 \textbf{根因}：\texttt{sd\_clk} 由 \texttt{div\_clk} 分频而来，
-\texttt{negedge sd\_clk} 恰好等于 \texttt{posedge div\_clk}，
-在“上升沿那一刻”读到的是旧值。\\
+\texttt{negedge sd\_clk} 恰好等于 \texttt{posedge div\_clk}，读到的是旧值。\\
 $\downarrow$ 再问“是个例还是通类”\\
 \textbf{聚类（账本 413/414/415）}：非阻塞赋值在同一 \texttt{always} 读不到新值；
 \texttt{acmd41\_cnt} 在 CS 沿被清零导致永远回不到第 3 次；
@@ -625,29 +1063,158 @@ $\downarrow$ 写成可执行检查\\
 和 X 的驱动沿是同一个吗？是则改成 \texttt{@(posedge clk); \#1;} 或换一个沿。
 \end{tcolorbox}
 
-\subsection{边界如何确定}
+\subsubsection{边界如何确定}
 
 \textbf{判据：每条技能都必须能回答三个问题}——
-① 它解决什么现象？② 它的前提是什么？
-③ 前提不成立时会怎样？
+① 它解决什么现象？② 它的前提是什么？③ 前提不成立时会怎样？
 
 \textbf{反面例子（避免把特例当通例）}：
+
 \begin{tcolorbox}[colback=red!3, colframe=red!40, breakable]
 $\times$ \textbf{不要写}：“BRAM 一定要加 \texttt{(* ram\_style = "block" *)}”
 ——实测该属性在“1 写 2 读跨时钟”下\textbf{无效}。\\
-$\checkmark$ \textbf{应该写}：“BRAM 推断由\textbf{访问模式}决定，属性只是建议。
+\checkmark \textbf{应该写}：“BRAM 推断由\textbf{访问模式}决定，属性只是建议。
 1W1R 可靠；1W2R 跨时钟必退化成 LUTRAM，属性也救不了。”
 \end{tcolorbox}
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\section{复现说明}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%-----------------------------------------------------------------------------
+\subsection{可扩展之处}
+%-----------------------------------------------------------------------------
+
+\begin{table}[H]
+\centering
+\caption{可扩展方向}
+\label{tab:extend}
+\begin{tabular}{p{3.0cm}p{4.6cm}p{5.8cm}}
+\toprule[1.5pt]
+\rowcolor{gray!25} 方向 & 现状 & 扩展思路 \\
+\midrule[1pt]
+HDMI 放大平滑 & 320$\times$180 直接 2$\times$ 放大，可见方块边界 & 加水平双线性：奇数列取 $(p_{sx}+p_{sx+1})/2$，只需 1 个寄存器（方案见 \texttt{docs/16}）\\
+线路输入 & 代码就绪，板上 \texttt{C4}(1\,$\mu$F) 开路 & 补焊后即可双声道线路输入 \\
+HDMI 撕裂 & 复位后偶发右半屏撕裂 & 需 ILA 抓 TMDS 或示波器测 5$\times$ 时钟相位 \\
+外部存储 & 目前图片存 BRAM（74\%） & 接 DDR3/SDRAM 可支持 1080p 满帧缓冲；需手写控制器以保持“零 IP” \\
+触摸交互 & XPT2046 已驱动，但 LCD 模组无触摸层 & 换 \texttt{TM043NBH02} 即可支持点按操作 \\
+\end{tabular}
+\end{table}
+
+%-----------------------------------------------------------------------------
+\subsection{心得体会}
+%-----------------------------------------------------------------------------
+
+\subsubsection*{一、写 RTL 最难的不是“写”，是“验证”}
+
+项目初期我以为难点在 RTL 本身。做完 60 个模块后才发现，
+\textbf{真正耗时的是“怎么知道它是对的”}。最后的做法是：每个模块配一个 Python
+定点黄金模型，逐位对拍，不允许“波形看起来差不多”。39 个 testbench 里
+\textbf{至少 12 个在第一次跑就红}——而这 12 条每条都对应上板时可能花掉一两天的 bug。
+
+印象最深的是 \texttt{sd\_img\_load}：SD 一块是 262\,144 字节，
+而一帧只需 261\,120 字节，多出的 1024 字节反复写最后一个地址，
+把画面右下角踩坏。这个 bug \textbf{仿真能抓到、上板极难定位}
+（表现为“右下角一小块花屏”）。这就是“逐位对拍”的价值。
+
+\subsubsection*{二、资源永远比想象中紧}
+
+640$\times$360$\times$16\,bit 的帧缓冲算下来要 103 块 BRAM，
+而器件只有 135 块。我以为“留 30 块给其它模块够了”，
+实测发现加上其它器件直接到 98\%，\textbf{布线拥塞导致时序崩到 $-1.09$\,ns
+（\texttt{place\_design} 直接失败）}。
+
+后来走了四步：
+① 640$\times$360$\times$8（8 位色）—— 能构建，但 256 色在渐变图上看得到明显色带，被用户否掉；
+② 320$\times$180 单份（LCD 居中）—— 省资源，但 LCD 有黑边；
+③ 最后用\textbf{两份不同尺寸的缓冲}：LCD 480$\times$272 全图 + HDMI 320$\times$180 裁剪区，
+\textbf{总 BRAM 100.5（74\%）}，时序 +1.78\,ns。
+
+\textbf{最大收获}：\textbf{存储压力 = 像素数 $\times$ 位深，是两个旋钮}。
+我一开始只拧了“位深”这一个，走了一大圈才发现“降分辨率 + 整数倍放大”更好。
+
+\subsubsection*{三、“能构建” ≠ “能交付”}
+
+时序违例\textbf{不会}阻止 Vivado 生成 \texttt{.bit}——它只会报一个负的 WNS。
+所以判断标准不能是“构建成功”，必须是“\textbf{所有时钟组的 WNS 都为正}”。
+有一次我因为只看返回码 0 就以为成功，差点把一个 WNS $=-0.82$\,ns 的比特流烧上板。
+
+\subsubsection*{四、调试的“三级跳”}
+
+\begin{enumerate}
+\item \textbf{第一级：看报错} —— 工具说得清清楚楚的问题（语法、端口不匹配）不要浪费时间猜；
+\item \textbf{第二级：看报告} —— 综合/实现的 util、timing、DRC、CDC 报告里，
+      工具其实已经把根因写出来了（如“LUT as Distributed RAM over-utilized”
+      直接说明存储器没映射到 BRAM）；
+\item \textbf{第三级：改设计} —— 修根因，不要修症状。同一根因可能在不同模块复发
+      （同步复位问题复发了 4 次），所以\textbf{修完要全量重扫}。
+\end{enumerate}
+
+\textbf{同一问题连猜 3 次不中 ⟹ 停止猜测，换成能观测内部状态的手段}。
+HDMI 撕裂我猜了 4 次（复位延迟 256 周期 / 2.6\,ms / locked AND / OSERDESE2），
+全部无效。最后还是把它写进文档、标“已试过 $\times$ 无效”，
+留给 ILA 或示波器——\textbf{知道什么时候该停，也是能力}。
+
+\subsubsection*{五、关于用大模型写 RTL}
+
+我的体会是：\textbf{大模型擅长“把已知方案写出来”，不擅长“判断方案对不对”}。
+
+\begin{itemize}
+\item 让它写一个 TMDS 编码器——写得又快又好，因为这是有标准答案的；
+\item 让它判断“该用一份缓冲双读口还是两份缓冲”——它会给出一个“看起来合理”的答案，
+      而真正正确的答案要靠\textbf{我自己去算 BRAM 数量、去读 UG473、去跑综合验证}；
+\item 最容易出问题的是\textbf{批量修改}：\texttt{str.replace()} 找不到就静默成功，
+      改完脚本报“OK”但文件根本没变。所以现在所有批量替换都强制加 \texttt{assert}。
+\end{itemize}
+
+\textbf{正确的用法是把它当“高速打字机 + 交叉验证工具”}，
+而不是“决策者”。所有关键决策（架构、位宽、时序预算）必须自己算过、
+自己验证过。
+
+\subsubsection*{六、写在最后}
+
+825 条问题账本看起来很多，但每一条背后都是一次真实的失败。
+这个项目最大的资产不是那 11\,716 个 LUT，而是这份账本——
+它让我在第二个类似项目里，\textbf{避开了 80\% 曾经踩过的坑}。
+
+%=============================================================================
+%  第五部分  参考文献
+%=============================================================================
+\newpage
+\section{第五部分\quad 参考文献}
+
+\begin{enumerate}
+\item Xilinx. \textit{7 Series FPGAs Memory Resources (UG473)}. 2019.
+\item Xilinx. \textit{7 Series FPGAs SelectIO Resources (UG471)}. 2018.
+\item Xilinx. \textit{7 Series FPGAs Clocking Resources (UG472)}. 2018.
+\item Xilinx. \textit{Vivado Design Suite User Guide: Using Constraints (UG903)}. 2020.
+\item Xilinx. \textit{UltraScale Architecture Libraries Guide (UG974)} — OSERDESE2/OBUFDS.
+\item Digital Display Working Group. \textit{Digital Visual Interface (DVI) Specification, Rev 1.0}. 1999.
+\item HDMI Licensing, LLC. \textit{HDMI Specification Version 1.4b}. 2011.
+\item Wolfson Microelectronics. \textit{WM8960 Data Sheet (Rev 4.2)}. 2013.
+\item SD Association. \textit{SD Specifications Part 1: Physical Layer Simplified Specification v6.00}. 2017.
+\item Winbond. \textit{W25Q128JV 3V 128M-bit Serial Flash Memory Datasheet}. 2018.
+\item J. W. Cooley, J. W. Tukey. An Algorithm for the Machine Calculation of Complex Fourier Series. \textit{Mathematics of Computation}, 1965, 19(90): 297--301.
+\item A. V. Oppenheim, R. W. Schafer. \textit{Discrete-Time Signal Processing}, 3rd ed. Pearson, 2010.
+\item S. W. Smith. \textit{The Scientist and Engineer's Guide to Digital Signal Processing}. California Technical Publishing, 1997.
+\item R. G. Lyons. \textit{Understanding Digital Signal Processing}, 3rd ed. Prentice Hall, 2010.
+\item C. E. Shannon. Communication in the Presence of Noise. \textit{Proceedings of the IRE}, 1949, 37(1): 10--21.
+\item M. Keating, et al. \textit{Low Power Methodology Manual}. Springer, 2007.
+\item C. E. Cummings. Clock Domain Crossing (CDC) Design \& Verification Techniques Using SystemVerilog. \textit{SNUG}, 2008.
+\item C. E. Cummings. Synthesis and Scripting Techniques for Designing Multi-Asynchronous Clock Designs. \textit{SNUG}, 2001.
+\item 田耘, 徐文波. \textit{Xilinx FPGA 开发实用教程}. 清华大学出版社, 2008.
+\item 吴厚航. \textit{深入浅出玩转 FPGA}. 北京航空航天大学出版社, 2010.
+\end{enumerate}
+
+%=============================================================================
+%  附录  复现说明
+%=============================================================================
+\newpage
+\appendix
+\section{附录：复现说明}
 
 \subsection{环境要求}
 
 \begin{table}[H]
 \centering
-\caption{软件环境}\label{tab:env}
+\caption{软件环境}
+\label{tab:env}
 \begin{tabular}{lll}
 \toprule[1.5pt]
 \rowcolor{gray!25} 工具 & 版本 & 说明 \\
@@ -659,6 +1226,24 @@ Verible    & latest & \texttt{mason} 或 GitHub release \\
 Python     & $\ge$3.10 & 系统自带 \\
 Pillow     & $\ge$10.0 & 仅 \texttt{mkimage.py} 处理 PNG/JPG 时需要 \\
 中文字体   & Noto CJK & 编译本文档需要 \\
+\bottomrule[1.5pt]
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{硬件环境}
+\label{tab:env-hw}
+\begin{tabular}{ll}
+\toprule[1.5pt]
+\rowcolor{gray!25} 项 & 规格 \\
+\midrule[1pt]
+开发板     & 璞致 PA-Starlite（XC7A100T-2FGG484I）\\
+音频模块   & WM8960（接 JM2）\\
+显示屏     & TIANMA TM043NDH02（480$\times$272，40 pin，接 JM1）\\
+HDMI 显示器 & 任意支持 640$\times$360@60 的显示器 \\
+microSD 卡 & $\ge$1\,GB，需要写卡权限（\texttt{sudo}）\\
+下载器     & 板载 Digilent JTAG（TypeC）\\
 \bottomrule[1.5pt]
 \end{tabular}
 \end{table}
@@ -684,7 +1269,7 @@ bash scripts/sim/run_iv.sh tools
 \begin{lstlisting}[language=bash, basicstyle=\ttfamily\zihao{6},
                    frame=single, rulecolor=\color{boxFrame}]
 bash scripts/sim/run_iv.sh
-# 预期：通过 41  失败 0  跳过 0     <-- 这是环境是否正确的黄金标准
+# 预期：通过 39  失败 0  跳过 0    <-- 环境是否正确的黄金标准
 # 单项：bash scripts/sim/run_iv.sh fft_core
 # 含 tb_top 的全量：FULL=1 bash scripts/sim/run_iv.sh
 \end{lstlisting}
@@ -738,111 +1323,24 @@ vivado -mode batch -source scripts/vivado/program.tcl -tclargs flash
 # 注意：JTAG 优先于 QSPI，验证 Flash 启动必须拔掉 JTAG 线再上电
 \end{lstlisting}
 
-\subsection{验收清单}
-
-\begin{table}[H]
-\centering
-\caption{上板验收清单}\label{tab:accept}
-\begin{tabular}{cp{6.4cm}p{6.0cm}}
-\toprule[1.5pt]
-\rowcolor{gray!25} \# & 检查项 & 预期 \\
-\midrule[1pt]
-1  & \texttt{run\_iv.sh} & \textbf{41/41 PASS} \\
-2  & \texttt{verible}    & 0 违规 \\
-3  & 构建               & \textbf{0 CRITICAL / 0 WARNING} \\
-4  & \texttt{led[1]} 闪烁 & FPGA 活着，时钟/复位正常 \\
-5  & \texttt{led[0]} 常亮 & WM8960 I2C 配置完成 \\
-6  & LCD 显示           & 网格 + 渐变背景 \\
-7  & 按 \texttt{BG} 键  & 在程序化背景 / SD 图片间切换 \\
-8  & 按 \texttt{SD} 键  & 3 张图片循环 \\
-9  & 对麦克风说话       & 频谱柱跳动、波形变化 \\
-10 & 按 \texttt{SPK} 键 & 喇叭静音/取消 \\
-11 & HDMI 显示器        & 640$\times$360 有画面（80 柱 + 波形 + 图片）\\
-12 & UART 115200        & 上电 50 ms 打横幅；发 \texttt{V} 切视图 \\
-\bottomrule[1.5pt]
-\end{tabular}
-\end{table}
-
 \subsection{常见问题}
 
 \begin{table}[H]
 \centering
-\caption{常见问题与解决}\label{tab:faq}
-\begin{tabular}{p{4.0cm}p{3.8cm}p{5.4cm}}
+\caption{常见问题与解决}
+\label{tab:faq}
+\begin{tabular}{p{3.8cm}p{3.6cm}p{5.8cm}}
 \toprule[1.5pt]
 \rowcolor{gray!25} 现象 & 原因 & 解决 \\
 \midrule[1pt]
-\texttt{run\_iv.sh} 全失败 & iverilog 太老 & 需 $\ge$11.0 \\
+\texttt{run\_iv.sh} 全失败 & iverilog 太老或文件清单引用了已删文件 & 需 $\ge$11.0；\texttt{grep -rn <文件名>} 扫一遍清单 \\
 综合报 \texttt{UTLZ-1}（LUTRAM 超限） & 存储器多端口访问模式不匹配推断模板 & 复制实例，不要加读口 \\
 \texttt{place\_design} 失败但无时序错 & BRAM $>$95\% 导致布线拥塞 & 看 \texttt{post\_route\_util.rpt}，降位深/降分辨率 \\
 上板 LCD 全白/全黑 & LCD 时序参数错 & 跑 \texttt{run\_iv.sh lcd\_timing} \\
 SD 图片乱码/斜切 & 卡里数据尺寸与 RTL 的 W/H 不匹配 & 重新写卡，确认每图 261\,120 字节 \\
-HDMI 颜色偏黄 & R/B 通道互换 & 见 5.4 例 5 \\
-HDMI 复位后偶发右半屏撕裂 & \textbf{已知未解决}（TMDS 层） & 重按复位可恢复；需 ILA/示波器 \\
+HDMI 颜色偏黄 & R/B 通道互换 & LCD 面板是 BGR，HDMI 路径需再换一次 \\
+HDMI 复位后偶发右半屏撕裂 & 已知未解决（TMDS 层） & 重按复位可恢复；需 ILA/示波器 \\
 线路输入无声 & 板上 \texttt{C4}(1\,$\mu$F) 开路 & 需补焊（代码已就绪）\\
-\bottomrule[1.5pt]
-\end{tabular}
-\end{table}
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\section*{附录 A\quad 关键指标汇总}
-\addcontentsline{toc}{section}{附录 A\quad 关键指标汇总}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-\begin{table}[H]
-\centering
-\caption{关键指标}\label{tab:appendix}
-\begin{tabular}{p{2.4cm}p{5.6cm}p{5.0cm}}
-\toprule[1.5pt]
-\rowcolor{gray!25} 类别 & 指标 & 值 \\
-\midrule[1pt]
-\multirow{3}{*}{规模} & RTL 文件 / 行数 & 60 / $\approx$12\,000 \\
-                      & testbench 数量  & 41 \\
-                      & 问题账本条目    & 825 \\
-\midrule[0.5pt]
-\multirow{3}{*}{资源} & Slice LUTs & 11\,716（18.48\%）\\
-                      & Block RAM  & 100.5（74.44\%）\\
-                      & DSP48      & 26（10.83\%）\\
-\midrule[0.5pt]
-\multirow{3}{*}{时序} & \texttt{clk\_sys} 48 MHz  & WNS +1.779 ns \\
-                      & \texttt{clk\_hdmi} 25 MHz & WNS +4.028 ns \\
-                      & \texttt{clk\_pix} 12.5 MHz& WNS 远大于 0 \\
-\midrule[0.5pt]
-\multirow{3}{*}{质量} & 构建警告 & 0 CRITICAL / 0 WARNING \\
-                      & 静态检查 & Verible 0 / Verilator 0 \\
-                      & 仿真回归 & 41/41 PASS \\
-\midrule[0.5pt]
-\multirow{3}{*}{性能} & 音频采样 & 48 kHz / 24 bit \\
-                      & FFT 整帧 & 0.64 ms（占帧周期 1.3\%）\\
-                      & 端到端延迟 & $\approx$82 ms（其中 80 ms 是 LCD 一帧扫描）\\
-\midrule[0.5pt]
-\multirow{4}{*}{功能} & LCD  & 480$\times$272，8 按钮 + 8 行状态栏 + 双背景 + SD 图片 \\
-                      & HDMI & 640$\times$360，80 根独立柱 + 波形 + SD 图片（裁剪 2$\times$ 放大）\\
-                      & 音频 & 话筒 / EQ 5 段 / 双声道 / 静音 / 回环 \\
-                      & 存储 & SD（CMD18 多块读）/ QSPI Flash 掉电自启动 \\
-\bottomrule[1.5pt]
-\end{tabular}
-\end{table}
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\section*{附录 B\quad 与商业方案的对比}
-\addcontentsline{toc}{section}{附录 B\quad 与商业方案的对比}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-\begin{table}[H]
-\centering
-\caption{与商业方案对比}\label{tab:cmp}
-\begin{tabular}{p{2.4cm}p{2.8cm}p{2.4cm}p{2.4cm}p{3.4cm}}
-\toprule[1.5pt]
-\rowcolor{gray!25} 维度 & PC 软件 & Zynq+PYNQ & 商用 ASIC & \textbf{本作品} \\
-\midrule[1pt]
-端到端延迟 & 10\textasciitilde 100 ms & 1\textasciitilde 10 ms & $<$1 ms & \textbf{$\approx$82 ms} \\
-处理链路延迟 & 不确定 & 依赖 OS/缓存 & 确定 & \textbf{$<$2 ms，可精确到拍} \\
-在线调参 & 灵活 & 灵活 & 不可 & \textbf{1 拍生效} \\
-启动时间 & 秒级 & 秒级 & 即时 & \textbf{微秒级} \\
-IP 依赖 & 无 & HLS+AXI & —— & \textbf{零} \\
-可审计性 & 高 & 低（HLS 不可见） & 无 & \textbf{每一行可查} \\
-成本 & 低 & 中 & 高 & \textbf{低} \\
 \bottomrule[1.5pt]
 \end{tabular}
 \end{table}
