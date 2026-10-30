@@ -127,8 +127,8 @@ HDMI 640$\times$360 作展示大屏（80 根独立柱 + 波形），
 \subsection{选题背景与实际问题}
 %-----------------------------------------------------------------------------
 
-音频可视化设备在消费市场（车载音响、直播间、演出控制台）与工业检测
-（机械振动频谱监测、电机异响诊断）中需求广泛，但现有方案存在结构性矛盾：
+音频可视化设备在消费市场需求广泛，例如车载音响、直播间、演出控制台等等。此外，在工业检测领域：
+如机械振动频谱监测、电机异响诊断等问题中也经常依赖于频谱分析方法。虽然目前音频可视化技术已经非常成熟，但现有产品存在一个普遍的结构性矛盾，如\cref{tab:bg}~所示 ：
 
 \begin{table}[H]
 \centering
@@ -141,28 +141,20 @@ HDMI 640$\times$360 作展示大屏（80 根独立柱 + 波形），
 PC + 声卡 + 上位机 & 低 & 延迟高（10\textasciitilde 100\,ms），功耗大，不适合嵌入式部署 \\
 MCU + CMSIS-DSP   & 低 & 算力不足，1024 点 FFT + 5 段 EQ + 双屏驱动无法同时满足 \\
 Zynq + PYNQ       & 中 & 依赖 HLS/Python 框架，底层时序不可控，启动秒级 \\
-商用 ASIC         & 高 & 功能固定，无法在线调参，不便于教学与研究 \\
 \bottomrule[1.5pt]
 \end{tabular}
 \end{table}
 
-\textbf{核心矛盾}：\textbf{“实时性”与“可调性”难以兼得}。专用 ASIC 实时但不灵活，
-软件方案灵活但延迟大。本作品要解决的问题是：
+核心矛盾在于“实时性”与“可调性”难以兼得。专用 ASIC 实时但不灵活，软件方案灵活但延迟大。本作品主要要解决的问题以及和目前主流方案的对比如下：
 
 \begin{tcolorbox}[colback=gray!4, colframe=boxFrame, breakable,
                   title=\textbf{本作品要解决的三个实际问题}]
 \begin{enumerate}
-\item \textbf{确定性延迟}：从 ADC 采样到屏幕像素，延迟以\textbf{时钟周期}计
-      （可精确算出 82\,ms，其中 80\,ms 是不可省的 LCD 一帧扫描），
-      不受操作系统调度、缓存命中率影响；
-\item \textbf{在线可调}：所有参数（EQ 各段增益、配色、刷新率、视图）可经按键或 UART
-      在\textbf{一个时钟周期内}生效；
-\item \textbf{零 IP 依赖}：从 I2C 主机、I2S 从机、FFT 蝶形、存储器控制器、
-      TMDS 编码器到 5:1 串行化，\textbf{全部手写}，可逐行审计。
+\item \textbf{确定性延迟}：从 ADC 采样到屏幕像素，延迟以时钟周期计，不受操作系统调度、缓存命中率影响；
+\item \textbf{在线可调}：所有参数（EQ 各段增益、配色、刷新率、视图）可经按键或 UART 进行配置，可在一个时钟周期内生效；
+\item \textbf{零 IP 依赖}：从 I2C 主机、I2S 从机、FFT 蝶形、存储器控制器、TMDS 编码器到 5:1 串行化，全部手写，可逐行审计。
 \end{enumerate}
 \end{tcolorbox}
-
-\textbf{前人工作与本作品的差异}：
 
 \begin{table}[H]
 \centering
@@ -172,58 +164,131 @@ Zynq + PYNQ       & 中 & 依赖 HLS/Python 框架，底层时序不可控，启
 \toprule[1.5pt]
 \rowcolor{gray!25} 方向 & 代表做法 & 本作品的差异 \\
 \midrule[1pt]
-FPGA 音频 EQ & 多用 Xilinx FIR/IIR Compiler IP & \textbf{手写二阶节级联}，逐段做 Q 格式与位宽预算，可解释每一位的精度来源 \\
-FPGA FFT & Xilinx FFT IP（AXI4-Stream） & \textbf{手写基 2 DIT + 单蝶形时分复用}，资源为全并行方案的 1/512 \\
-频谱可视化 & 固定柱数、PC 侧渲染 & \textbf{扫描式“算到哪显示到哪”}，无 framebuffer，柱数与分辨率全参数化 \\
-FPGA HDMI & 现成 IP 或 VHDL 开源核 & \textbf{手写 TMDS 编码器 + OSERDESE2 原语}，与 3 份独立实现逐行比对验证 \\
-开发方法 & 传统“写码—仿真—上板” & \textbf{引入大模型协作 + 825 条问题账本 + 4 个技能包}（见第四部分）\\
+FPGA 音频 EQ & Xilinx FIR/IIR Compiler IP & 手写二阶节级联，逐段做 Q 格式与位宽预算 \\
+FPGA FFT & Xilinx FFT IP（AXI4-Stream） & 手写基 2 DIT + 单蝶形时分复用，资源为全并行方案的 1/512 \\
+频谱可视化 & 固定柱数、PC 侧渲染 & 扫描式方案，无 framebuffer，关键配置全参数化 \\
+FPGA HDMI & 现成 IP 或 VHDL 开源核 & 手写 TMDS 编码器 + OSERDESE2 原语 \\
+开发方法 & 传统的 Vivado 构建方法 & 大模型协作 + skill + tcl 脚本 \\
 \bottomrule[1.5pt]
 \end{tabular}
 \end{table}
 
 %-----------------------------------------------------------------------------
 \subsection{功能与特性}
-%-----------------------------------------------------------------------------
+
+本作品是一套\textbf{从模拟前端到双路显示输出的完整闭环系统}，而非单个算法模块的演示。
+用户对着麦克风说话，声音在 20.8\,$\mu$s 内完成采样、在 82\,ms 内出现在屏幕上——
+这条链路上每一个环节都由本作品自行实现：从 I2C 配置 WM8960 使其退出模拟旁路、
+到 I2S 从模式在 3.072\,MHz 位时钟上逐位恢复 24\,bit 采样、
+到五段双二阶滤波器在 5 个时钟内完成一次全带宽均衡、
+到一个蝶形单元在 30\,720 拍内算完 1024 点 FFT、
+再到扫描式渲染器把结果直接变成 130\,560 个像素并同时喂给 LCD 与 HDMI 两条输出通道。
+全部参数——从每一段均衡的增益、到色彩的色相漂移速度、到波形显示的刷新率——
+都可以在板载按键或串口命令下\textbf{一个时钟周期内}生效，且两路显示自动保持同步。
+
+系统的功能可分为\textbf{四个层次}，如表~\ref{tab:func} 所示：
+\textbf{音频前端}负责把模拟信号变成可处理的数字样本，
+\textbf{分析引擎}把时域样本变成频域柱高与波形，
+\textbf{可视化层}把抽象数据变成可看的图像，
+\textbf{交互与存储}则负责参数与素材的进出。
 
 \begin{table}[H]
 \centering
-\caption{系统功能清单}
+\caption{系统功能清单（按四个层次组织）}
 \label{tab:func}
-\begin{tabular}{p{2.6cm}p{1.2cm}p{9.8cm}}
+\begin{tabular}{p{1.9cm}p{3.2cm}p{1.0cm}p{7.5cm}}
 \toprule[1.5pt]
-\rowcolor{gray!25} 功能 & 状态 & 说明 \\
+\rowcolor{gray!25} 层次 & 功能 & 状态 & 说明 \\
 \midrule[1pt]
-话筒拾音 + 5 段 EQ & \checkmark & 板载 MEMS 麦克风，采样率 48\,kHz / 24\,bit，均衡后实时回放 \\
-双声道输出       & \checkmark & WM8960 DAC 双声道，数字音量可调 \\
-SPK 静音         & \checkmark & 送全 0 采样，I2S 时序不受影响（避免爆音）\\
-1024 点 FFT      & \checkmark & 基 2 DIT，日志分箱为 60（LCD）/ 80（HDMI）根柱 \\
-三种可视化视图   & \checkmark & 柱状频谱 / 极坐标频谱 / 动态波形，可叠加显示 \\
-彩虹配色 + 色相漂移 & \checkmark & 128 级彩虹表，速度可调（H 键）\\
-波形触发与显示   & \checkmark & 迟滞触发 + 自适应门限 + 峰值保持，刷新率可降 \\
-DEMO 演示模式    & \checkmark & 内置柱高源，无需音频输入即可演示 \\
-双背景           & \checkmark & 程序化网格渐变 / SD 卡图片 \\
-SD 卡图片背景    & \checkmark & 3 张图循环，LCD 满屏 1:1 / HDMI 裁剪 2$\times$ 放大 \\
-8 按钮面板       & \checkmark & VIEW / SPK / HUE / GAIN / BG / DEMO / IN / SD \\
-8 行状态栏       & \checkmark & 每行 10 字符，实时显示全部配置状态 \\
-UART 命令通道    & \checkmark & 115200 8N1，ASCII 命令改任意配置并回执 \\
-QSPI Flash 固化  & \checkmark & 掉电自启动，启动时间微秒级 \\
+\multirow{5}{*}{\shortstack{音频\\前端}}
+ & 话筒拾音 & \checkmark & 板载 MEMS 麦克风（LINPUT1），48\,kHz / 24\,bit \\
+ & 5 段参量均衡 & \checkmark & 二阶节级联，各段 $-10\sim+10$\,dB 独立可调，25 条系数在线重载 \\
+ & 双声道输出 & \checkmark & WM8960 DAC 双声道，数字音量 Q1.7 \\
+ & SPK 静音 & \checkmark & 送全 0 采样，\texttt{data\_en} 不受影响，I2S 时序稳定不爆音 \\
+ & 模拟旁路关闭 & \checkmark & 修 R45/R46 的 0\,dB 旁路默认开启问题，否则 DSP 全程无效 \\
+\midrule[0.5pt]
+\multirow{4}{*}{\shortstack{分析\\引擎}}
+ & 1024 点 FFT & \checkmark & 基 2 DIT，单蝶形时分复用，2048 频点逐位可核 \\
+ & 幅度估计 & \checkmark & $\max + \tfrac{7}{16}\min$ 近似，误差 $<0.6$\,dB \\
+ & 对数频率分箱 & \checkmark & 按 Bark 尺度分箱，60 根（LCD）/ 80 根（HDMI）两套表 \\
+ & 峰值保持 + 衰减 & \checkmark & 每帧线性衰减，柱高不会"抖" \\
+\midrule[0.5pt]
+\multirow{5}{*}{\shortstack{可视\\化层}}
+ & 三种视图 & \checkmark & 柱状频谱 / 极坐标频谱 / 动态波形，可在同一屏叠加 \\
+ & 扫描式渲染 & \checkmark & $(x,y,\text{mode}) \rightarrow$\,RGB 纯组合函数，LCD 侧零 framebuffer \\
+ & 彩虹配色 & \checkmark & 128 级彩虹表，色相漂移速度 4 档可调 \\
+ & 波形触发 & \checkmark & 迟滞触发 + 自适应门限（带上下限钳位）+ 刷新率可降 \\
+ & 双路输出 & \checkmark & LCD 480$\times$272@12.5\,MHz + HDMI 640$\times$360@25\,MHz，设置自动同步 \\
+\midrule[0.5pt]
+\multirow{4}{*}{\shortstack{交互\\与存储}}
+ & 8 按钮面板 & \checkmark & VIEW / SPK / HUE / GAIN / BG / DEMO / IN / SD \\
+ & 8 行状态栏 & \checkmark & 每行 10 字符，实时显示全部配置状态 \\
+ & UART 命令通道 & \checkmark & 115200 8N1，ASCII 命令改任意配置并回执 \\
+ & SD 图片 + Flash & \checkmark & 3 张图循环（LCD 满屏 1:1 / HDMI 裁剪 2$\times$ 放大）；QSPI 掉电自启动 \\
 \bottomrule[1.5pt]
 \end{tabular}
 \end{table}
 
-\textbf{特性亮点}：
+在功能清单之上，本作品有\textbf{三个值得单独展开的设计选择}——它们不只是"实现了什么"，
+而是"为什么这样实现"：
+
+\subsubsection*{（一）扫描式双路渲染：一份核心，两块屏}
+
+常规做法是"先渲染到帧缓冲，再由扫描逻辑读出"。但 640$\times$360$\times$16\,bit 的
+帧缓冲需要 103 块 BRAM，而本器件只有 135 块——加上其它模块直接到 98\%，
+实测会导致布线拥塞、时序崩到 $-1.09$\,ns、\texttt{place\_design} 失败。
+
+本作品把渲染核心抽象为\textbf{纯组合函数} $(x, y, \text{mode}) \rightarrow$\,RGB：
+
+\begin{lstlisting}[language=Verilog, basicstyle=\ttfamily\zihao{6},
+                   frame=single, rulecolor=\color{boxFrame}]
+// 同一个模块，靠参数决定分辨率和是否画 UI
+disp_top #(.HDISP(480), .VDISP(272), .WITH_UI(1)) u_disp_lcd  (...);  // 12.5 MHz
+disp_top #(.HDISP(640), .VDISP(360), .WITH_UI(0)) u_disp_hdmi (...);  // 25 MHz
+\end{lstlisting}
+
+好处是三重的：① \textbf{LCD 侧零 framebuffer}（只有 SD 图片需要真存储）；
+② 换分辨率只改参数，不改逻辑；③ 两路的配色、柱高、波形天然一致，
+因为它们看的是同一份输入数据。
+
+\subsubsection*{（二）数据柱数与显示柱数解耦}
+
+LCD 480 像素宽，60 根柱则每柱 8 像素（整除）；HDMI 640 像素宽，
+若也用 60 根柱则每柱 10.67 像素——\textbf{不整除，必须用乘法器}，
+而乘法器会恶化时序。
+
+本作品把"有多少数据"和"显示多少根柱"拆成两个独立参数
+（\texttt{NBARS} / \texttt{NBARS\_DISP}），HDMI 侧改用 \textbf{80 根柱}：
+$640 / 80 = 8$ 像素/柱，整除，只需移位。更关键的是老路径用
+\texttt{generate} 的\textbf{恒等分支}保护：
+
+\begin{lstlisting}[language=Verilog, basicstyle=\ttfamily\zihao{6},
+                   frame=single, rulecolor=\color{boxFrame}]
+generate
+    if (NBARS_DISP == NBARS) begin : g_ident
+        assign bbar = dbar[AW-1:0];              // 综合器看不到除法
+    end else begin : g_scale
+        assign bbar = (dbar * NBARS) / NBARS_DISP;
+    end
+endgenerate
+\end{lstlisting}
+
+\textbf{这是"结构上保证零变化"，而不是"数学上恰好等价"}——
+后者一旦参数变化就可能悄悄引入乘法器。
+
+\subsubsection*{（三）细节层面的三个"不起眼但关键"的设计}
 
 \begin{itemize}
-\item \textbf{扫描式双路渲染}：一份参数化渲染核心 \texttt{disp\_top} 实例化两次，
-      分别驱动 480$\times$272@12.5\,MHz 与 640$\times$360@25\,MHz，
-      设置自动同步；LCD 侧\textbf{零 framebuffer}。
-\item \textbf{零帧缓冲的可视化}：柱谱/波形/极坐标全部是
-      $(x,y,\text{mode}) \rightarrow$\,RGB 的纯组合函数，扫描到哪个像素就算哪个像素。
-\item \textbf{数据柱数与显示柱数解耦}：60 组数据可映射到 60 根或 80 根显示柱，
-      后者每柱恰好 8 像素（640/80，整除，零乘法器）。
+\item \textbf{静音是"送 0 数据"而不是"停 I2S"}：\texttt{data\_en} 照常拉高，
+      只是把左右声道数据清零。这样 WM8960 收到的是"合法的 0 采样"，
+      链路不会以为对端掉线，避免静音/取消瞬间的爆音。
+\item \textbf{跨域握手用"电平翻转"而不是"单拍脉冲"}：
+      \texttt{start} 若是单拍脉冲，跨到更慢的时钟域时可能被整个漏掉；
+      改成翻转一个电平再双打取边沿，无论两侧时钟比多大都不会丢。
+\item \textbf{按键活动标志也用电平翻转}：面板的"空闲自动收起"计时器
+      需要知道"用户刚才动了"，同样不能用一个拍宽的脉冲跨域。
 \end{itemize}
 
-%-----------------------------------------------------------------------------
 \subsection{应用领域}
 %-----------------------------------------------------------------------------
 
