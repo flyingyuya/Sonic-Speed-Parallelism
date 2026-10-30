@@ -127,8 +127,8 @@ HDMI 640$\times$360 作展示大屏（80 根独立柱 + 波形），
 \subsection{选题背景与实际问题}
 %-----------------------------------------------------------------------------
 
-音频可视化设备在消费市场需求广泛，例如车载音响、直播间、演出控制台等等。此外，在工业检测领域：
-如机械振动频谱监测、电机异响诊断等问题中也经常依赖于频谱分析方法。虽然目前音频可视化技术已经非常成熟，但现有产品存在一个普遍的结构性矛盾，如\cref{tab:bg}~所示 ：
+音频可视化设备在消费市场需求广泛，例如车载音响频谱显示、直播/演出调音台可视化、Hi-Fi 播放器界面等等。此外，在工业检测领域：
+如机械振动频谱监测、电机异响诊断、齿轮箱故障早期预警等案例中也经常依赖于频谱分析方法。虽然目前音频可视化技术已经非常成熟，但现有产品存在一个普遍的结构性矛盾，如\cref{tab:bg}~所示 ：
 
 \begin{table}[H]
 \centering
@@ -176,17 +176,8 @@ FPGA HDMI & 现成 IP 或 VHDL 开源核 & 手写 TMDS 编码器 + OSERDESE2 原
 %-----------------------------------------------------------------------------
 \subsection{功能与特性}
 
-本作品是一套\textbf{从模拟前端到双路显示输出的完整闭环系统}，而非单个算法模块的演示。
-用户对着麦克风说话，声音在 20.8\,$\mu$s 内完成采样、在 82\,ms 内出现在屏幕上——
-这条链路上每一个环节都由本作品自行实现：从 I2C 配置 WM8960 使其退出模拟旁路、
-到 I2S 从模式在 3.072\,MHz 位时钟上逐位恢复 24\,bit 采样、
-到五段双二阶滤波器在 5 个时钟内完成一次全带宽均衡、
-到一个蝶形单元在 30\,720 拍内算完 1024 点 FFT、
-再到扫描式渲染器把结果直接变成 130\,560 个像素并同时喂给 LCD 与 HDMI 两条输出通道。
-全部参数——从每一段均衡的增益、到色彩的色相漂移速度、到波形显示的刷新率——
-都可以在板载按键或串口命令下\textbf{一个时钟周期内}生效，且两路显示自动保持同步。
-
-系统的功能可分为\textbf{四个层次}，如表~\ref{tab:func} 所示：
+本作品是一套从模拟前端到双路显示输出的完整闭环系统，而非单个算法模块的演示。
+系统的功能可分为四个层次，如表~\ref{tab:func} 所示。
 \textbf{音频前端}负责把模拟信号变成可处理的数字样本，
 \textbf{分析引擎}把时域样本变成频域柱高与波形，
 \textbf{可视化层}把抽象数据变成可看的图像，
@@ -211,7 +202,7 @@ FPGA HDMI & 现成 IP 或 VHDL 开源核 & 手写 TMDS 编码器 + OSERDESE2 原
  & 1024 点 FFT & \checkmark & 基 2 DIT，单蝶形时分复用，2048 频点逐位可核 \\
  & 幅度估计 & \checkmark & $\max + \tfrac{7}{16}\min$ 近似，误差 $<0.6$\,dB \\
  & 对数频率分箱 & \checkmark & 按 Bark 尺度分箱，60 根（LCD）/ 80 根（HDMI）两套表 \\
- & 峰值保持 + 衰减 & \checkmark & 每帧线性衰减，柱高不会"抖" \\
+ & 峰值保持 + 衰减 & \checkmark & 每帧线性衰减，柱高不会抖 \\
 \midrule[0.5pt]
 \multirow{5}{*}{\shortstack{可视\\化层}}
  & 三种视图 & \checkmark & 柱状频谱 / 极坐标频谱 / 动态波形，可在同一屏叠加 \\
@@ -224,21 +215,18 @@ FPGA HDMI & 现成 IP 或 VHDL 开源核 & 手写 TMDS 编码器 + OSERDESE2 原
  & 8 按钮面板 & \checkmark & VIEW / SPK / HUE / GAIN / BG / DEMO / IN / SD \\
  & 8 行状态栏 & \checkmark & 每行 10 字符，实时显示全部配置状态 \\
  & UART 命令通道 & \checkmark & 115200 8N1，ASCII 命令改任意配置并回执 \\
- & SD 图片 + Flash & \checkmark & 3 张图循环（LCD 满屏 1:1 / HDMI 裁剪 2$\times$ 放大）；QSPI 掉电自启动 \\
+ & SD 图片 + Flash & \checkmark & 3 张图循环（LCD 满屏 1:1 / HDMI 裁剪后 2 倍放大）；QSPI 掉电自启动 \\
 \bottomrule[1.5pt]
 \end{tabular}
 \end{table}
 
-在功能清单之上，本作品有\textbf{三个值得单独展开的设计选择}——它们不只是"实现了什么"，
-而是"为什么这样实现"：
+在功能清单之上，本作品有三个值得单独展开的设计选择，也体现了在实际工程中容易遇到的一些问题以及解决的方法：
 
 \subsubsection*{（一）扫描式双路渲染：一份核心，两块屏}
 
-常规做法是"先渲染到帧缓冲，再由扫描逻辑读出"。但 640$\times$360$\times$16\,bit 的
-帧缓冲需要 103 块 BRAM，而本器件只有 135 块——加上其它模块直接到 98\%，
-实测会导致布线拥塞、时序崩到 $-1.09$\,ns、\texttt{place\_design} 失败。
+常规做法是先渲染到帧缓冲，再由扫描逻辑读出，但 640$\times$360$\times$16\,bit 的帧缓冲需要 103 块 BRAM，加上其它模块更是直接达到了 98\% 左右，而本器件只有 135 块，实测会导致布线拥塞、时序更是崩到 $-1.09$\,ns、导致 \texttt{place\_design} 构建失败。
 
-本作品把渲染核心抽象为\textbf{纯组合函数} $(x, y, \text{mode}) \rightarrow$\,RGB：
+本作品把渲染核心抽象为纯组合函数 $(x, y, \text{mode}) \rightarrow$ \,RGB：
 
 \begin{lstlisting}[language=Verilog, basicstyle=\ttfamily\zihao{6},
                    frame=single, rulecolor=\color{boxFrame}]
@@ -247,20 +235,14 @@ disp_top #(.HDISP(480), .VDISP(272), .WITH_UI(1)) u_disp_lcd  (...);  // 12.5 MH
 disp_top #(.HDISP(640), .VDISP(360), .WITH_UI(0)) u_disp_hdmi (...);  // 25 MHz
 \end{lstlisting}
 
-好处是三重的：① \textbf{LCD 侧零 framebuffer}（只有 SD 图片需要真存储）；
-② 换分辨率只改参数，不改逻辑；③ 两路的配色、柱高、波形天然一致，
-因为它们看的是同一份输入数据。
+这样带来的好处主要有三重：1. LCD 侧零 framebuffer，只有 SD 图片需要存储；
+2. 换分辨率只改参数，不改逻辑；3. 两路的配色、柱高、波形天然一致，因为它们看的是同一份输入数据。
 
 \subsubsection*{（二）数据柱数与显示柱数解耦}
 
-LCD 480 像素宽，60 根柱则每柱 8 像素（整除）；HDMI 640 像素宽，
-若也用 60 根柱则每柱 10.67 像素——\textbf{不整除，必须用乘法器}，
-而乘法器会恶化时序。
+LCD 的像素宽为 480，使用 60 根柱则每柱 8 像素，可以整除；而 HDMI 的像素宽为 640，若也用 60 根柱则每柱 10.67 像素，无法整除，所以必须用乘法器，但是乘法器会恶化时序。
 
-本作品把"有多少数据"和"显示多少根柱"拆成两个独立参数
-（\texttt{NBARS} / \texttt{NBARS\_DISP}），HDMI 侧改用 \textbf{80 根柱}：
-$640 / 80 = 8$ 像素/柱，整除，只需移位。更关键的是老路径用
-\texttt{generate} 的\textbf{恒等分支}保护：
+本作品把数据大小和显示柱数拆成两个独立参数（\texttt{NBARS} / \texttt{NBARS\_DISP}），HDMI 侧改用 80 根柱可以整除，只需移位。更关键的是原本路径由 \texttt{generate} 的恒等分支保护：
 
 \begin{lstlisting}[language=Verilog, basicstyle=\ttfamily\zihao{6},
                    frame=single, rulecolor=\color{boxFrame}]
@@ -273,61 +255,51 @@ generate
 endgenerate
 \end{lstlisting}
 
-\textbf{这是"结构上保证零变化"，而不是"数学上恰好等价"}——
-后者一旦参数变化就可能悄悄引入乘法器。
-
-\subsubsection*{（三）细节层面的三个"不起眼但关键"的设计}
+\subsubsection*{（三）三个细节层面的设计}
 
 \begin{itemize}
-\item \textbf{静音是"送 0 数据"而不是"停 I2S"}：\texttt{data\_en} 照常拉高，
-      只是把左右声道数据清零。这样 WM8960 收到的是"合法的 0 采样"，
-      链路不会以为对端掉线，避免静音/取消瞬间的爆音。
-\item \textbf{跨域握手用"电平翻转"而不是"单拍脉冲"}：
-      \texttt{start} 若是单拍脉冲，跨到更慢的时钟域时可能被整个漏掉；
-      改成翻转一个电平再双打取边沿，无论两侧时钟比多大都不会丢。
-\item \textbf{按键活动标志也用电平翻转}：面板的"空闲自动收起"计时器
-      需要知道"用户刚才动了"，同样不能用一个拍宽的脉冲跨域。
+\item \textbf{静音改用“送 0 数据”而不是“停 I2S”}：\texttt{data\_en} 照常拉高，只是把左右声道数据清零。这样 WM8960 收到的是“合法的 0 采样数据”，链路不会以为对端掉线，避免由静音或取消静音而产生的瞬间爆音。
+\item \textbf{跨域握手用“电平翻转”而不是“单拍脉冲”}：\texttt{start} 若是单拍脉冲，跨到更慢的时钟域时可能被整个漏掉；改成翻转一个电平再双打取边沿，无论两侧时钟比多大都不会丢。
+\item \textbf{按键活动标志也用电平翻转}：面板的空闲自动收起计时器需要知道“用户刚才是否有动作”，同样不能用一个拍宽的脉冲跨域。
 \end{itemize}
 
-\subsection{应用领域}
-%-----------------------------------------------------------------------------
-
-\begin{table}[H]
-\centering
-\caption{典型应用场景}
-\label{tab:app}
-\begin{tabular}{p{2.8cm}p{10.6cm}}
-\toprule[1.5pt]
-\rowcolor{gray!25} 领域 & 具体用途 \\
-\midrule[1pt]
-消费电子 & 车载音响频谱显示、直播/演出调音台可视化、Hi-Fi 播放器界面 \\
-工业检测 & 机械振动频谱监测、电机异响诊断、齿轮箱故障早期预警 \\
-教学科研 & 定点 DSP / 跨时钟域 / 视频时序的完整教学案例，每一行代码可审计 \\
-仪器仪表 & 便携式频谱分析仪前端（48\,kHz 带宽 + 双路实时显示）\\
-\bottomrule[1.5pt]
-\end{tabular}
-\end{table}
-
-\textbf{为什么选 FPGA 而不是 MCU 或 SoC}：
-
-\begin{itemize}
-\item \textbf{MCU}：1024 点 FFT（$\sim$30k 拍）+ 5 段双二阶（每样本 5 段 $\times$ 2 声道）
-      + 双屏扫描（每秒 130k + 230k 像素）无法在 48\,kHz 采样周期（20.8\,$\mu$s）内完成；
-\item \textbf{SoC + HLS}：可以完成，但 HLS 生成的流水线对时序不可控，
-      且启动需要秒级（加载 Linux/裸机）；
-\item \textbf{FPGA + 纯 RTL}：三段流水线真正并行，延迟可精确到拍，
-      启动即工作（微秒级），且每一步都能在综合报告里核对。
-\end{itemize}
+% \subsection{应用领域}
+% %-----------------------------------------------------------------------------
+%
+% \begin{table}[H]
+% \centering
+% \caption{典型应用场景}
+% \label{tab:app}
+% \begin{tabular}{p{2.8cm}p{10.6cm}}
+% \toprule[1.5pt]
+% \rowcolor{gray!25} 领域 & 具体用途 \\
+% \midrule[1pt]
+% 消费电子 & 车载音响频谱显示、直播/演出调音台可视化、Hi-Fi 播放器界面 \\
+% 工业检测 & 机械振动频谱监测、电机异响诊断、齿轮箱故障早期预警 \\
+% 教学科研 & 定点 DSP / 跨时钟域 / 视频时序的完整教学案例，每一行代码可审计 \\
+% 仪器仪表 & 便携式频谱分析仪前端（48\,kHz 带宽 + 双路实时显示）\\
+% \bottomrule[1.5pt]
+% \end{tabular}
+% \end{table}
+%
+% \textbf{为什么选 FPGA 而不是 MCU 或 SoC}：
+%
+% \begin{itemize}
+% \item \textbf{MCU}：1024 点 FFT（$\sim$30k 拍）+ 5 段双二阶（每样本 5 段 $\times$ 2 声道）
+%       + 双屏扫描（每秒 130k + 230k 像素）无法在 48\,kHz 采样周期（20.8\,$\mu$s）内完成；
+% \item \textbf{SoC + HLS}：可以完成，但 HLS 生成的流水线对时序不可控，
+%       且启动需要秒级（加载 Linux/裸机）；
+% \item \textbf{FPGA + 纯 RTL}：三段流水线真正并行，延迟可精确到拍，
+%       启动即工作（微秒级），且每一步都能在综合报告里核对。
+% \end{itemize}
 
 %-----------------------------------------------------------------------------
 \subsection{主要技术特点}
 %-----------------------------------------------------------------------------
 
-\subsubsection*{① 单蝶形 FFT 的极低资源占用}
+\subsubsection*{1. 单蝶形 FFT 的极低资源占用}
 
-1024 点 FFT 若全并行需 512 个蝶形 $\times$ 4 乘法器 $=$ \textbf{2048 个 DSP48}，
-超出器件总量（240 个）8 倍。本作品用\textbf{一个}蝶形单元加双口 BRAM
-in-place 时分复用：
+1024 点 FFT 若全并行需 512 个蝶形 $\times$ 4 乘法器 $=$ \textbf{2048 个 DSP48}，超出器件总量（240 个）近 8 倍。而本作品用一个蝶形单元加双口 BRAM 进行时分复用：
 
 \begin{table}[H]
 \centering
@@ -344,30 +316,48 @@ in-place 时分复用：
 \end{tabular}
 \end{table}
 
-帧周期 46.9\,ms，整帧耗时 $30\,720 \times 20.83\,\text{ns} = 0.64$\,ms，
-仅占 1.3\%，\textbf{余量 75 倍}。
+WM8960 采样数据一帧周期大约为 46.9\,ms，而 FFT 计算整帧耗时 $30\,720 \times 20.83\,\text{ns} = 0.64$\,ms，仅占 1.3\%，余量为 75 倍。
 
-\subsubsection*{② 扫描式渲染，无帧缓冲}
+\subsubsection*{2. 扫描式渲染，无帧缓冲}
 
-把渲染核心抽象为纯组合函数 $(x,y,\text{mode}) \rightarrow$\,RGB，
-\textbf{扫描到哪个像素就算哪个像素}。LCD 侧无需任何 framebuffer，
-一帧 130\,560 个像素全部实时算出。
+把渲染核心抽象为纯组合函数 $(x,y,\text{mode}) \rightarrow$\,RGB，扫描到哪个像素就算哪个像素。LCD 侧无需任何 framebuffer，一帧 130\,560 个像素全部实时算出。
 
-\subsubsection*{③ 不同尺寸双帧缓冲替代“双读口”}
+\subsubsection*{3. 不同尺寸双帧缓冲替代“双读口”}
 
-两个显示器时钟不同（12.5\,MHz / 25\,MHz）。实测表明 Vivado 的 BRAM 推断
-\textbf{不支持“1 写 2 读跨时钟”}，会静默退化成分布式 RAM（LUTRAM），
-触发 \texttt{DRC UTLZ-1}（需 86\,452 个 \texttt{RAMD64E}，仅 19\,000 个可用），
-加 \texttt{(* ram\_style = "block" *)} 亦无效。本作品改为\textbf{两份不同尺寸的缓冲}：
-LCD 直读 480$\times$272 全图，HDMI 读 320$\times$180 裁剪区后 2 倍整数放大，
-BRAM 从 116 块降到 84 块。
+两个显示器时钟不同（12.5\,MHz / 25\,MHz）。实测表明 Vivado 的 BRAM 推断不支持“1 写 2 读跨时钟”，会静默退化成分布式 RAM（LUTRAM），触发 \texttt{DRC UTLZ-1} 错误（需 86\,452 个 \texttt{RAMD64E}，仅 19\,000 个可用），加 \texttt{(* ram\_style = "block" *)} 进行约束也无效。
 
-\subsubsection*{④ 零成本的裁剪与放大}
+因此本作品改为两份不同尺寸的缓冲，即 LCD 侧直接读取 480$\times$272 的全部图像数据，HDMI 读取对应的 320$\times$180 范围内的裁剪区图像数据后进行 2 倍整数放大，这样一来 BRAM 从 116 块降到 84 块，节省一定资源的同时也避开了由静默推断而导致的错误。
 
-```
-裁剪偏移：dy*320 = dy*256 + dy*64   ⟹ 两次移位相加，零 DSP
-2 倍放大：lx >> 1                    ⟹ 一个右移，零算术
-```
+\subsubsection*{4. 零成本的裁剪与放大}
+
+HDMI 侧需要从 480$\times$272 的全图中裁出中心 320$\times$180 的区域，
+再放大 2 倍铺满 640$\times$360。这两个操作听起来都需要算力，
+但实际实现里\textbf{没有用到任何乘法器}：
+
+\begin{lstlisting}[language=Verilog, basicstyle=\ttfamily\zihao{6},
+                   frame=single, rulecolor=\color{boxFrame}]
+// 裁剪地址：dy*320 = dy*256 + dy*64  ⟹ 两次移位相加，零 DSP
+wire [18:0] crop_addr = (dy << 8) + (dy << 6) + dx;
+
+// 2 倍放大：显示坐标右移 1 位  ⟹ 一个移位，零算术
+wire [XW-1:0] fb_sx = (fb_lx >> 1) + FB_CX[XW-1:0];
+wire [YW-1:0] fb_sy = (fb_ly >> 1) + FB_CY[YW-1:0];
+\end{lstlisting}
+
+\textbf{为什么能做到零成本}：
+
+\begin{itemize}
+\item \textbf{裁剪}本质是"换一个起点"，只要存储地址是按行线性排列的，
+      偏移量就是两个整数相加。$320 = 256 + 64$ 恰好是 2 的幂之和，
+      一次乘法被拆成两次移位加一次加法，综合后\textbf{零 DSP48、零 LUT 乘法器}。
+\item \textbf{放大}选了\textbf{整数 2 倍}，所以"源坐标 = 显示坐标 / 2"
+      退化成一个右移。若放大倍数不是 2 的幂（例如 4/3），就必须用乘法或累加器，
+      既占 DSP 又恶化时序。
+\end{itemize}
+
+\textbf{由此得到一条设计准则}：\textbf{分辨率设计时优先选"目标分辨率的整数分之一"}。
+$640 = 320 \times 2$、$360 = 180 \times 2$，所以这一对尺寸的缩放成本为零。
+如果当初选 480$\times$270，放大倍数 4/3 就会引入乘法器。
 
 %-----------------------------------------------------------------------------
 \subsection{主要性能指标}
