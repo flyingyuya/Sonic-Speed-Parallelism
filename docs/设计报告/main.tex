@@ -359,9 +359,9 @@ wire [YW-1:0] fb_sy = (fb_ly >> 1) + FB_CY[YW-1:0];
                       & DSP48      & 26 / 240（10.83\%）\\
                       & MMCM	   & 2 / 6（33.33\%） \\
 \midrule[0.5pt]
-\multirow{3}{*}{时序} & \texttt{clk\_sys}（48\,MHz）   & WNS \textbf{+1.779\,ns} \\
-                      & \texttt{clk\_hdmi}（25\,MHz）  & WNS \textbf{+4.028\,ns} \\
-                      & \texttt{clk\_pix}（12.5\,MHz） & WNS 远大于 0 \\
+\multirow{3}{*}{时序} & \texttt{clk\_sys}（48\,MHz）   & WNS \textbf{+1.441\,ns} \\
+                      & \texttt{clk\_hdmi}（25\,MHz）  & WNS \textbf{+5.879\,ns} \\
+                      & \texttt{clk\_pix}（12.5\,MHz） & WNS \textbf{+35.297\,ns} \\
 \midrule[0.5pt]
 \multirow{2}{*}{实时性} & FFT 整帧耗时 & 0.64\,ms（占帧周期 1.3\%）\\
                         & 端到端延迟   & $\approx$82\,ms（80\,ms 为 LCD 一帧扫描）\\
@@ -395,110 +395,69 @@ wire [YW-1:0] fb_sy = (fb_ly >> 1) + FB_CY[YW-1:0];
 
 %-----------------------------------------------------------------------------
 \subsection{设计流程}
+%-----------------------------------------------------------------------------
 
-本作品采用的不是"写完代码再补测试"的传统流程，而是\textbf{模型先行、逐位对拍、
-每轮全量回归}的闭环流程。这样做是因为 RTL 调试的最大成本不在"写"、
-而在"怎么确认它是对的"——尤其是定点算法，肉眼根本看不出 1 LSB 的偏差。
-
-整个流程分为\textbf{五条并行推进的线索}，如图~\ref{fig:flow} 所示：
-
-\begin{enumerate}
-\item \textbf{规格与判据先行}：在写任何 RTL 之前，先把"怎样算对"写成可执行的判据。
-      例如"SD 卡初始化的第一次 \texttt{Go} 必须走完 5 步、\textbf{第二次 \texttt{Go}
-      也必须能重新走完}"——这条判据后来救了大命（见第四部分 E 系列案例）。
-\item \textbf{黄金模型先行}：每个定点模块先用 Python（\texttt{numpy} / \texttt{mpmath}）
-      写出"数学上正确"的参考实现，再做定点量化与误差评估，
-      确认位宽够用后，才由脚本生成 RTL 需要的系数表 / 旋转因子表 / 字模。
-\item \textbf{RTL 与 Testbench 同步编写}：写一个模块、配一个 testbench，
-      两者一起提交。testbench 的判据直接取自第 1 步；
-      激励采用"三段式"（复位段 / 正常段 / 边界段），
-      边界段必须覆盖"第二次触发"这类容易漏的路径。
-\item \textbf{每轮全量回归}：改完任何一个文件，都跑一次 39 个 testbench 的并行回归
-      （约 1 分 30 秒），而不是"只跑相关的那几个"。
-      曾经因为只跑相关 TB，漏掉了一个跨域信号的 \texttt{UNDRIVEN}，
-      直到上板才发现。
-\item \textbf{综合报告是第二道关}：仿真全绿只是"逻辑对"，还要看
-      资源是否超限（BRAM $>$80\% 就要重新设计）、
-      时序是否全为正（\textbf{必须看时钟对表，不能只看域内 WNS}）、
-      DRC 是否为零。三者都过才允许上板。
-\end{enumerate}
+本作品采用的不是写完代码再补测试的传统流程，而是模型先行、逐位对拍、每轮全量回归的闭环流程。之所以这样做是因为 RTL 调试的最大成本不在于写，而是在于如何确认怎么写才是对的。尤其是在做定点算法时，肉眼根本看不出 1 LSB 的偏差。
 
 \begin{figure}[H]
 \centering
 \begin{tikzpicture}[
     font=\zihao{-6},
-    node distance=0.62cm and 0.72cm,
     st/.style = {draw=boxFrame, fill=white, rounded corners=2.5pt,
-                 minimum width=2.35cm, minimum height=0.68cm,
-                 align=center, inner sep=2pt},
-    ar/.style = {-{Latex[length=1.4mm,width=1.0mm]}, draw=boxFrame, semithick},
-    arFb/.style = {-{Latex[length=1.4mm,width=1.0mm]}, draw=blue!55, semithick,
-                   dashed},
-    arNo/.style = {-{Latex[length=1.4mm,width=1.0mm]}, draw=red!65, semithick,
-                   dashed},
-    lbl/.style = {font=\zihao{-6}, inner sep=1.5pt, fill=white},
+                 minimum width=2.5cm, minimum height=0.8cm,
+                 align=center, inner sep=2pt, text width=2.3cm},
+    ar/.style  = {-{Latex[length=1.4mm,width=1.0mm]}, draw=boxFrame, semithick},
+    arFb/.style= {-{Latex[length=1.4mm,width=1.0mm]}, draw=blue!60, semithick, dashed},
+    arNo/.style= {-{Latex[length=1.4mm,width=1.0mm]}, draw=red!70, semithick, dashed},
+    lbl/.style = {font=\zihao{-6}, inner sep=2pt, fill=white},
 ]
 
-%----------------------------- 第一行：从左到右 -----------------------------
-\node[st] (spec) {① 需求与判据};
-\node[st, right=of spec] (gold) {② Python\\黄金模型};
-\node[st, right=of gold] (rtl)  {③ RTL 编写};
-\node[st, right=of rtl]  (tb)   {④ Testbench};
+%====================== 第一行 1.→2.→3.→4. ======================
+\node[st] (spec) at (0,   0) {1. 需求\\与判据};
+\node[st] (gold) at (3.4, 0) {2. Python\\黄金模型};
+\node[st] (rtl)  at (6.8, 0) {3. RTL 编写};
+\node[st] (tb)   at (10.2,0) {4. Testbench};
 
-%----------------------------- 第二行：从右到左 -----------------------------
-\node[st, below=1.35cm of tb]  (sim)  {⑤ iverilog + Verilator\\+ Verible};
-\node[st, left=of sim]  (syn)  {⑥ Vivado\\综合 / 实现};
-\node[st, left=of syn]  (brd)  {⑦ 上板验证};
-\node[st, left=of brd]  (kb)   {⑧ 问题账本\\+ 技能包};
+%====================== 第二行 5.←6.←7.←8.（从右往左）======================
+\node[st] (sim)  at (10.2,-2.8) {5. iverilog\\+ Verilator\\+ Verible};
+\node[st] (syn)  at (6.8, -2.8) {6. Vivado\\综合 / 实现};
+\node[st] (brd)  at (3.4, -2.8) {7. 上板验证};
+\node[st] (kb)   at (0,   -2.8) {8. 问题账本\\+ 技能包};
 
-%----------------------------- 主流程箭头 -----------------------------
+%====================== 主流程 ======================
 \draw[ar] (spec) -- (gold);
 \draw[ar] (gold) -- (rtl);
 \draw[ar] (rtl)  -- (tb);
-\draw[ar] (tb.south) -- node[lbl, right]{写出波形/TB} (sim.north);
-
+\draw[ar] (tb.south) -- node[lbl, right]{出波形/TB} (sim.north);
 \draw[ar] (sim) -- node[lbl, above]{全绿} (syn);
 \draw[ar] (syn) -- node[lbl, above]{0 警告} (brd);
 \draw[ar] (brd) -- node[lbl, above]{实测通过} (kb);
 
-%----------------------------- 反馈 1：账本反哺规格（从下方绕回左侧）-------------
-\draw[arFb] (kb.north) -- ++(0,0.55) -| node[lbl, pos=0.25, above]{反哺：把失败沉淀成判据}
-            ([yshift=0.55cm]spec.north);
+%====================== 反馈 1. 蓝：账本 ⟹ 规格 ======================
+%   走【左侧外部通道】：kb 左边 → 左移 → 上移 → spec 左边
+\draw[arFb] (kb.west) -- ++(-1.5,0) |-
+            node[lbl, pos=0.28, right, align=left]{反哺：\\沉淀成判据} (spec.west);
 
-%----------------------------- 反馈 2：仿真红 ⟹ 回退改 RTL（走外侧）-------------
-\draw[arNo] (sim.east) -- ++(0.55,0) |-
-            node[lbl, pos=0.72, right]{红 \ding{51} 定位根因，\textbf{不在红树上继续改}} (rtl.north);
+%====================== 反馈 2. 红：仿真红 ⟹ 改 RTL ======================
+%   走【右侧 + 顶部外部通道】：sim 右边 → 右移 → 上移越过第一行 → 从上方落进 rtl
+%   ⚠️ x=12.4 在 Testbench 右侧（tb 右缘 ≈ 11.45），顶部 y=+1.15 在第一行上方
+\coordinate (rch) at (12.4, -2.8);
+\draw[arNo] (sim.east) -- (rch) -- (12.4, 1.15)
+            -- node[lbl, above, pos=0.55]{红 $\Rightarrow$ 定位根因，不在红树上继续改}
+               (6.8, 1.15) -- (rtl.north);
 
 \end{tikzpicture}
-\caption{设计流程：五条线索并行推进的闭环（蓝虚线为知识反哺，红虚线为失败回退）}
+\caption{设计流程：模型先行、逐位对拍、每轮全量回归}
 \label{fig:flow}
 \end{figure}
 
-\textbf{流程中有两个"不对称"值得特别说明}：
-
 \begin{tcolorbox}[colback=gray!4, colframe=boxFrame, breakable,
-                  title=\textbf{不对称一：仿真红与综合红，处理方式完全不同}]
+                    title=\textbf{仿真红与综合红的不同处理方式}]
 \begin{itemize}
-\item \textbf{仿真红}（第 ⑤ 步 ⟹ 回第 ③ 步）：这是\textbf{逻辑错}，
-      可以定位后继续改。但有一个硬规则——\textbf{同一问题连猜 3 次不中就必须停下来}，
-      用 \texttt{git checkout --} 回退到上一个绿状态重新分析。
-      在红树上继续打补丁，只会把问题越搅越乱（这个教训在 SD 卡初始化
-      调试时付出了一整天代价）。
-\item \textbf{综合红}（资源超限 / 时序为负 / DRC 非零）：这通常\textbf{不是 bug，
-      而是架构问题}。例如 BRAM 占用到 98\% 导致布线拥塞、进而
-      \texttt{clk\_sys} 违例 $-1.09$\,ns、\texttt{place\_design} 直接失败——
-      这时候改代码没用，必须\textbf{改架构}（换存储方案 / 降分辨率 / 拆模块）。
-\end{itemize}
-\end{tcolorbox}
+    \item \textbf{仿真红}：这是\textbf{逻辑存在错误}，可以定位后再继续修改。但有一个硬规则：同一问题连续修改 3 次都不对就必须停下来， 回退到上一个稳定分支重新分析。在一个错误的分支上继续修改，只会把问题越搅越乱。
 
-\begin{tcolorbox}[colback=gray!4, colframe=boxFrame, breakable,
-                  title=\textbf{不对称二：账本反哺的是"下一轮的规格"，不是"这一轮的代码"}]
-问题账本（825 条）和技能包（4 个）不是"事后总结"，
-而是在\textbf{下一轮设计的第 ① 步就被读取}。例如在做 SD 卡子系统之前，
-先读了 \texttt{rtl-verification} 技能包里"永远不要在信号自己更新的沿上读它"
-这一条，于是在写 \texttt{sd\_read} 的 testbench 时就\textbf{避免}了
-\texttt{@(negedge sd\_clk)} 这个坑——这是把过去的失败\textbf{前置}成设计约束，
-而不是等它再犯一次。
+    \item \textbf{综合红}：这通常并非 bug，而是架构问题。例如 BRAM 占用到 98\% 导致布线拥塞、进而产生 \texttt{clk\_sys} 的时序违例 $-1.09$\,ns、\texttt{place\_design} 直接失败。所以这时候改代码几乎没用，必须从架构上进行修改，例如换存储方案、降低分辨率。
+\end{itemize}
 \end{tcolorbox}
 
 %=============================================================================
