@@ -46,7 +46,10 @@ module tb_polar_map;
         .NBARS(NBARS), .HW(HW), .CX(CX), .CY(CY), .R_IN(R_IN), .R_MAX(R_MAX)
     ) dut (
         .x(x), .y(y), .bars(bars),
-        .in_disc(in_disc), .lit(lit), .bar_idx(bar_idx), .r_out(r_out)
+        .in_disc(in_disc), .lit(lit), .bar_idx(bar_idx), .r_out(r_out),
+        // 圆盘“存在度”：128 = 完全展开（稳态）。
+        // P1-1 加了这个口，漏接的话它是 X，整个圆盘什么都不会亮。
+        .pres(8'd128)
     );
 
     integer n_err = 0;

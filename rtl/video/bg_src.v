@@ -1,27 +1,33 @@
-//=============================================================================
-// bg_src.v - 背景像素源（扩展点 ①）
-//-----------------------------------------------------------------------------
-// 接口刻意做成【纯组合】：(x, y, mode) -> rgb
+//////////////////////////////////////////////////////////////////////////////////
+// Company:
+// Engineer:       Binyu Fei
 //
-// 这样显示混合逻辑只要"扫描到哪算到哪"，不需要渲染状态机、不需要行缓存。
-// 将来换成 SD 卡 / QSPI Flash 的背景图时，具体实现要换成流式取像素
-// （需要行缓冲，见 docs/12 §5.3），但调用方看到的接口形状不变 ——
-// 这就是为什么现在把它单独拆成一个模块。
+// Create Date:    2026-10-26
+// Design Name:    bg_src
+// Module Name:    bg_src
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
+// Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
+// Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
+// Description:    bg_src.v - 背景像素源
+// Dependencies:
 //
-// 背景模式（mode）约定：
-//   0 = 深色底 + 网格        <- 当前实现
-//   1 = 纯竖直渐变
-//   其他 = 预留给背景图
-//=============================================================================
+// Revision:
+// Revision 0.01 - File Created
+//
+//////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns/1ps
+
 
 module bg_src #(
     parameter integer HDISP = 480,
     parameter integer VDISP = 272,
-    parameter integer GRID  = 32         // 网格间距（像素）
+    parameter integer GRID  = 32,        // 网格间距（像素）
+    // 坐标位宽：默认 10/9 对应 480x272
+    parameter integer XW    = 10,
+    parameter integer YW    = 9
 ) (
-    input  wire [9:0]   x,
-    input  wire [8:0]   y,
+    input  wire [XW-1:0] x,
+    input  wire [YW-1:0] y,
     input  wire [3:0]   mode,
     output reg  [23:0]  rgb              // {R[7:0], G[7:0], B[7:0]}
 );
@@ -33,9 +39,11 @@ module bg_src #(
     wire grid_y = (y[GW-1:0] == {GW{1'b0}});
     wire grid   = grid_x | grid_y;
 
-    // 竖直渐变：顶部更暗，底部略亮（这样频谱柱从底部升起来更自然）
-    //   y[8:3] 是 0..33，直接当作亮度增量
-    wire [5:0] t  = y[8:3];
+    //=========================================================================
+    // 竖直渐变：顶部更暗，底部略亮（频谱柱从底部升起来更自然）
+    //=========================================================================
+    localparam integer YSH = (VDISP >= 512) ? 4 : 3;    // 272 行取 3，360 行取 4
+    wire [5:0] t  = y[YSH +: 6];                        // 0..33 / 0..22
     wire [7:0] gr = 8'd6  + {2'b00, t};
     wire [7:0] gg = 8'd7  + {2'b00, t};
     wire [7:0] gb = 8'd22 + {2'b00, t};

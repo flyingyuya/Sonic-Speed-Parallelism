@@ -1,19 +1,30 @@
-//=============================================================================
-// i2s_rx.v - I2S 接收（主模式，单时钟域）
-//-----------------------------------------------------------------------------
-// 在 bclk 上升沿采样 sdin，按 64 位移位寄存器拼帧，帧末（bit_idx = 2*SLOT-1）
-// 同时得到左/右声道数据并输出一个 sample_valid 脉冲。
+//////////////////////////////////////////////////////////////////////////////////
+// Company:
+// Engineer:       Binyu Fei
 //
-// 声道对齐：I2S 标准下 LRCLK 下降沿后的第一个上升沿是左声道 MSB，
-//           因此先收到的 SLOT 位是左声道，后 SLOT 位是右声道。
-// 数据对齐：24bit 音频数据位于 32bit 槽的高 24 位（低位补零）。
-//=============================================================================
+// Create Date:    2026-10-26
+// Design Name:    i2s_rx
+// Module Name:    i2s_rx
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
+// Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
+// Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
+// Description:    i2s_rx.v - I2S 接收（主模式，单时钟域）
+// Dependencies:
+//
+// Revision:
+// Revision 0.01 - File Created
+//
+//////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns/1ps
+
 
 module i2s_rx #(
     parameter integer SLOT      = 32,   // 槽位宽
     parameter integer DATA_BITS = 24,   // 有效数据位
-    parameter integer DW        = 24    // 输出样本位宽（Q1.(DW-1)）
+    parameter integer DW        = 24,   // 输出样本位宽（Q1.(DW-1)）
+
+    // 数据帧内位偏移：0: 左对齐 8: 右对齐
+    parameter integer OFF       = 0
 ) (
     input  wire clk,
     input  wire rst_n,
@@ -37,9 +48,11 @@ module i2s_rx #(
     reg [NFRAME-1:0] sr;
     wire [NFRAME-1:0] sr_nxt = {sr[NFRAME-2:0], sdin};
 
-    // 槽内高 DATA_BITS 位 -> DW 位满量程
-    wire [DATA_BITS-1:0] l_raw = sr_nxt[NFRAME-1 -: DATA_BITS];
-    wire [DATA_BITS-1:0] r_raw = sr_nxt[SLOT-1   -: DATA_BITS];
+    // 槽内取 DATA_BITS 位:
+    //   OFF = 0 -> 取槽的高 DATA_BITS 位（左对齐，I2S 标准）
+    //   OFF = SLOT-DATA_BITS = 8 -> 取槽的低 DATA_BITS 位（右对齐）
+    wire [DATA_BITS-1:0] l_raw = sr_nxt[NFRAME-1-OFF -: DATA_BITS];
+    wire [DATA_BITS-1:0] r_raw = sr_nxt[SLOT-1-OFF   -: DATA_BITS];
 
     generate
         if (UP == 0) begin : g_same

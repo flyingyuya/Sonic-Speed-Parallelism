@@ -33,6 +33,10 @@ if {$argc > 0} {
     } elseif {$a0 eq "program"} {
         set MODE "program"
         if {$argc > 1} { set BIT [lindex $argv 1] }
+    } elseif {$a0 eq "flash"} {
+        # 烧 QSPI Flash（掉电保持）。可选第二个参数指定 .bit
+        set MODE "flash"
+        if {$argc > 1} { set BIT [lindex $argv 1] }
     } else {
         set BIT $a0
     }
@@ -40,7 +44,8 @@ if {$argc > 0} {
 
 puts "============================================================="
 puts " 模式   : $MODE"
-if {$MODE eq "program"} { puts " 比特流 : $BIT" }
+if {$MODE eq "program"} { puts " 比特流 : $BIT（易失，掉电即失）" }
+if {$MODE eq "flash"}   { puts " 比特流 : $BIT（写进 QSPI Flash，掉电保持）" }
 puts "============================================================="
 
 # ---------------------------------------------------------------------------
@@ -123,7 +128,146 @@ if {$MODE eq "detect"} {
 }
 
 # ---------------------------------------------------------------------------
-# 4. 烧写
+# 3b. 烧 QSPI Flash（掉电保持）
+# ---------------------------------------------------------------------------
+# 【关键：顺序】
+#   ① write_cfgmem 生成 .bin
+#   ② create_hw_cfgmem（注意用 -mem_dev）
+#   ③ 设置 PROGRAM.* 属性（PRM_FILE 保持空 ✗ GUI 也是空的）
+#   ④ ★ 先把 .bit 烧进 SRAM ⟹ 让 FPGA 里有一个"带 SPI 核"的设计
+#        否则 program_hw_cfgmem 无法访问 Flash ⟹ "Failure to set flash parameters"
+#   ⑤ program_hw_cfgmem 擦写校验
+#   以上顺序照抄 Vivado GUI 的 Tcl Console，已实测可用。
+# ---------------------------------------------------------------------------
+if {$MODE eq "flash"} {
+    if {![file exists $BIT]} {
+        puts "❌ 比特流不存在：$BIT（先构建）"
+        close_hw_manager
+        exit 1
+    }
+
+    set BIN [file join $OUT "top.bin"]
+    set PRM [file join $OUT "top.prm"]
+
+    puts ""
+    puts "  ① 生成 .bin（QSPI x4，16 MB = 128 Mb）"
+    #    -interface SPIx4 : 板上 Flash 按 4 线 QSPI 接
+    #    -size 16         : W25Q128 = 128 Mb = 16 MB
+    #    -loadbit "up 0x0" : 比特流从地址 0 开始（7 系列 QSPI 启动的规定）
+    if {[catch {
+        write_cfgmem -force -format bin -interface SPIx4 -size 16 \
+            -loadbit "up 0x0 $BIT" $BIN
+    } err]} {
+        puts "❌ write_cfgmem 失败：$err"
+        close_hw_manager
+        exit 1
+    }
+    puts "     生成：$BIN（[expr {[file size $BIN]/1024}] KB）"
+    puts "     参数文件：$PRM"
+
+    puts "  ② 给器件挂上 cfgmem 配置存储器对象"
+    set CFGMEM_PART ""
+    # ⚠️ 顺序很重要：板载是 W25Q128JVSQ ⟹ 必须优先 w25q128 系列
+    #    第一次把 s25fl128s 放第一位 ⟹ 用错型号 ⟹ 报
+    #    "Flash Programming Unsuccessful: Failure to set flash parameters"
+    # 板载是 W25Q128JVSQ ⟹ 对应的 cfgmem part 是 w25q128bv-spi-x1_x2_x4
+    #   （用户已把它加进 xicom_cfgmem_part_table.csv ✓ 列表里能查到）
+    #   ⚠️ 之前候选写的是 w25q128fv/jv ✗ 库里没有 ⟹ 退到 mt25ql128
+    #      ⟹ 参数设不进去 ⟹ "Failure to set flash parameters"
+    # ⚠️ 顺序来自【实测】：
+    #   · w25q128bv-spi-x1_x2_x4  ⟹ 用 Vivado GUI 烧写【成功过】✓ 首选
+    #   · w25q128fv-qspi-x4-single ⟹ CLI 报 "not supported for device xc7a100t" ✗ 不能用
+    #     （qspi-x4-single 是给别的器件族的）
+    foreach cand [list \
+            "w25q128bv-spi-x1_x2_x4" \
+            "mt25ql128-spi-x1_x2_x4" \
+            "s25fl128sxxxxxx0-spi-x1_x2_x4"] {
+        if {[llength [get_cfgmem_parts -quiet $cand]] > 0} {
+            set CFGMEM_PART $cand
+            break
+        }
+    }
+    # 只打印去重后的关键候选（库里有几百条，全打印没法看）
+    set _seen {}
+    puts "     本地库里的 QSPI 128Mb 候选（去重）："
+    foreach pp [get_cfgmem_parts] {
+        if {[string match -nocase "*w25q*" $pp] || [string match -nocase "*128*qspi*" $pp]} {
+            if {[lsearch -exact $_seen $pp] < 0} {
+                lappend _seen $pp
+                puts "       - $pp"
+            }
+        }
+    }
+    if {$CFGMEM_PART eq ""} {
+        puts "  ⚠️ 没在本地器件库里找到匹配的 cfgmem part，尝试用第一个可用的"
+        set CFGMEM_PART [lindex [get_cfgmem_parts] 0]
+    }
+    puts "     使用 part：$CFGMEM_PART"
+    # 打印该 part 的接口/容量，确认和板子对得上
+    catch {
+        set _p [lindex [get_cfgmem_parts $CFGMEM_PART] 0]
+        puts [format "       size=%s  interface=%s  width=%s" \
+                  [get_property SIZE $_p] [get_property INTERFACE $_p] \
+                  [get_property WIDTH $_p]]
+    } _e
+    if {[info exists _e] && $_e ne ""} { puts "       （参数读取：$_e）" }
+
+    if {[llength [get_property PROGRAM.HW_CFGMEM $DEV -quiet]] == 0} {
+        create_hw_cfgmem -hw_device $DEV -mem_dev [lindex [get_cfgmem_parts $CFGMEM_PART] 0]
+    }
+    set CFGMEM [get_property PROGRAM.HW_CFGMEM $DEV]
+
+    set_property PROGRAM.BLANK_CHECK   0 $CFGMEM
+    set_property PROGRAM.ERASE         1 $CFGMEM
+    set_property PROGRAM.CFG_PROGRAM   1 $CFGMEM
+    set_property PROGRAM.VERIFY        1 $CFGMEM
+    set_property PROGRAM.CHECKSUM      0 $CFGMEM
+    set_property PROGRAM.ADDRESS_RANGE {use_file} $CFGMEM
+    # 注意：program_hw_cfgmem 要求给 .bin 或 .mcs
+    #   给 .prm 会报 "Invalid configuration file assigned.
+    #   Valid file type extension .mcs or .bin"
+    #   （.prm 是 write_cfgmem 顺带生成的说明文件，不是给它用的）
+    set_property PROGRAM.FILES         [list $BIN] $CFGMEM
+    # PRM_FILE 保持空 —— GUI 里也是 {} ✓
+    #   （.bin + ADDRESS_RANGE use_file 时不需要 .prm）
+    set_property PROGRAM.PRM_FILE      {} $CFGMEM
+    set_property PROGRAM.UNUSED_PIN_TERMINATION {pull-none} $CFGMEM
+
+    # ★★★ 关键一步：先把 .bit 烧进 SRAM
+    #   为什么：program_hw_cfgmem 需要 FPGA 里跑着一个【带 SPI/STARTUP 核】的设计，
+    #   才能通过 JTAG 间接访问 QSPI Flash。这一步漏了就会报
+    #   "Failure to set flash parameters"（看起来像型号问题，其实是没建立通道）。
+    puts "  ③ 先烧 SRAM（建立 Flash 访问通道）"
+    set BITS [get_property PROGRAM.HW_CFGMEM_BITFILE $DEV]
+    if {$BITS eq ""} { set BITS $BIT }
+    create_hw_bitstream -hw_device $DEV $BITS
+    if {[catch {program_hw_devices $DEV} err]} {
+        puts "❌ 先烧 SRAM 失败：$err"
+        close_hw_manager
+        exit 1
+    }
+    refresh_hw_device $DEV
+
+    puts "  ④ 擦除 + 写入 + 校验（约 1~3 分钟，别断电）"
+    if {[catch {program_hw_cfgmem -hw_cfgmem $CFGMEM} err]} {
+        puts "❌ 烧 Flash 失败：$err"
+        close_hw_manager
+        exit 1
+    }
+
+    puts ""
+    puts "============================================================="
+    puts " ✅ Flash 烧写完成"
+    puts "    断电重上电（或按复位）后，FPGA 会自己从 Flash 加载配置。"
+    puts "    ⚠️ JTAG 优先于 QSPI：如果 JTAG 上还挂着下载器"
+    puts "       （且 VCCO 在），可能仍走 JTAG。拔掉 JTAG 线再上电验证。"
+    puts "============================================================="
+    close_hw_manager
+    exit 0
+}
+
+# ---------------------------------------------------------------------------
+# 4. 烧写（易失，SRAM）
 # ---------------------------------------------------------------------------
 if {![file exists $BIT]} {
     puts "❌ 比特流不存在：$BIT"

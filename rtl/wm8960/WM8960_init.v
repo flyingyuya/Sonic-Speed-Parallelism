@@ -1,58 +1,87 @@
-//=============================================================================
-// WM8960_init.v - WM8960 上电初始化（通过 I2C 顺序写寄存器表）
-//-----------------------------------------------------------------------------
-// 来源：参考 docs/Music-Spectrum 工程的 WM8960_Init.v，针对我们的板子做了
-//       五处必要修改（见文件末尾「相对参考工程的改动」）。
+//////////////////////////////////////////////////////////////////////////////////
+// Company:
+// Engineer:       Binyu Fei
 //
-// 【为什么要留延时 DLY_MS】
-//   我们的配置启用 WM8960 内部 PLL：24 MHz 晶振 -> PLL -> SYSCLK = 12.288 MHz。
-//   PLL 从使能到锁定需要时间（典型 1~10 ms）。如果在这之前就把 CLKSEL 切到
-//   PLL，SYSCLK 会短暂没有时钟 —— BCLK/LRCLK 乱掉，而 FPGA 侧是 I2S 从机，
-//   会收到一堆垃圾。
-//   寄存器表把 `CLKSEL=1` 放在【最后一条】，并在每条之间留 DLY_MS 毫秒，
-//   这样从 PLLEN=1 到 CLKSEL=1 之间至少有几个 ms，足够锁定。
+// Create Date:    2026-10-26
+// Design Name:    WM8960_init
+// Module Name:    WM8960_init
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
+// Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
+// Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
+// Description:    WM8960_init.v - WM8960 上电初始化（通过 I2C 顺序写寄存器表）
+// Dependencies:   wm8960_nreg.vh   i2c_control.v
 //
-// 【时序预算】LUT_SIZE(20) x DLY_MS(1ms) ≈ 20 ms，只在 Go 拉高时跑一次。
-//=============================================================================
+// Revision:
+// Revision 0.01 - File Created
+//
+//////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns / 1ps
+
 
 module WM8960_init #(
     parameter integer CLK_FREQ_HZ = 48_000_000,   // 本模块工作时钟频率
-    parameter integer DLY_MS      = 1              // 每条寄存器之间插入的延时(ms)
+    parameter integer DLY_MS      = 1             // 每条寄存器之间插入的延时(ms)
 ) (
     input           Clk,
     input           Rst_n,
 
     input           Go,
     input [7:0]     device_id,     // I2C 7 位地址 + R/W 位（WM8960 = 0x34）
+
+    //--------------------- 输入源选择 ---------------------
+    //   0 = 话筒（LINPUT1）   1 = 线路输入（LINPUT3/INPUTR3）
+    //   只影响 R32/R33/R0/R1 四条，其余完全一样
+    //   话筒 0x118 = LMN1 + boost 01(+13dB) + LMIC2B
+    //   线路 0x088 = LMP3 + boost 00( 0dB) + LMIC2B
+    input           src_sel,
     output reg      Init_Done,
 
     output          i2c_sclk,
     inout           i2c_sdat
 );
 
-    //-------------------------------------------------------------------------
+    //=========================================================================
     // 寄存器表（内容由 scripts/golden/gen_wm8960_table.py 生成）
-    //-------------------------------------------------------------------------
-    localparam integer LUT_SIZE = 20;              // 本表实际条数
+    //=========================================================================
+    `include "wm8960_nreg.vh"
+
+    localparam integer LUT_SIZE = WM8960_NREG;     // 本表实际条数
     localparam integer TBL_AW   = $clog2(LUT_SIZE);// 恰好装得下 LUT_SIZE 的位宽
     localparam integer DLY_CNT  = CLK_FREQ_HZ / 1000 * DLY_MS;
     localparam        ADDR_MODE = 1'b0;
 
     wire [TBL_AW-1:0] tbl_addr;
-    wire [15:0]       lut;
+
+    wire [15:0] lut_raw;                            // ROM 原始输出
 
     WM8960_init_table #(
         .ADDR_WIDTH (TBL_AW)
     ) WM8960_init_table (
         .addr (tbl_addr),
         .clk  (Clk),
-        .q    (lut)
+        .q    (lut_raw)
     );
+
+    //-------------------------------------------------------------------------
+    // 输入源覆盖
+    //-------------------------------------------------------------------------
+    wire [6:0] lut_reg = lut_raw[15:9];
+    wire [15:0] lut = !src_sel ? lut_raw  // 话筒模式【原样输出】
+        // R32 输入信号路径 L：LINPUT3 + 0dB + LMIC2B
+        : (lut_reg == 7'h20) ? {7'h20, 9'h088}
+        // R33：线路模式下把【右路】接到 RINPUT1（bit8 = RMN1）
+        : (lut_reg == 7'h21) ? {7'h21, 9'h108}
+        : (lut_reg == 7'h00) ? {7'h00, 9'h117}   // R0  PGA 音量 L：0dB
+        : (lut_reg == 7'h01) ? {7'h01, 9'h117}   // R1  PGA 音量 R：0dB
+        // R23（0x17）：DATSEL 改成 11 = 【单声道混合 (L+R)/2 → 两路 DAC】
+        : (lut_reg == 7'h17) ? {7'h17, 9'b1_1100_0111}
+        // R45/R46：模拟旁路【只在线路模式下打开】
+        : (lut_reg == 7'h2D) ? {7'h2D, 9'b0_1000_0000}   // L bypass ON（仅线路）
+        : (lut_reg == 7'h2E) ? {7'h2E, 9'b0_1000_0000}   // R bypass ON（仅线路）
+        : lut_raw;
 
     // lut = {7 位寄存器地址, 9 位数据}
     //   I2C 按字节发 16 位字：高字节 = {reg[6:0], data[8]}，低字节 = data[7:0]
-    //   i2c_control 的 addr_mode=0 分支会跳过 cnt==2，正好只发 3 个字节
     wire [7:0] addr   = lut[15:8];
     wire [7:0] wrdata = lut[7:0];
 
@@ -93,9 +122,6 @@ module WM8960_init #(
 
     //-------------------------------------------------------------------------
     // 表项计数器
-    //   原来的写法在 cnt 到 LUT_SIZE 后会清零，于是整个表被反复重写；
-    //   只是因为参考工程给的是 Go 脉冲、且 state 停住了才没暴露。
-    //   这里改成【停在 LUT_SIZE 不动】，不再依赖 Go 是不是脉冲。
     //-------------------------------------------------------------------------
     always @(posedge Clk or negedge Rst_n) begin
         if (!Rst_n)
@@ -130,13 +156,14 @@ module WM8960_init #(
         if (!Rst_n) begin
             state     <= 2'd0;
             wrreg_req <= 1'b0;
+        // 新增 Go 分支，【直接置 state=1】绕过门控
+        end else if (Go) begin
+            state     <= 2'd1;              // 直接发起第一条写
+            wrreg_req <= 1'b0;
         end else if (cnt < LUT_SIZE) begin
             case (state)
                 2'd0: begin
-                    if (Go)
-                        state <= 2'd1;
-                    else
-                        state <= 2'd0;
+                    state <= 2'd0;          // Go 已在上面分支处理，这里只保持
                 end
 
                 2'd1: begin
@@ -162,22 +189,3 @@ module WM8960_init #(
 
 endmodule
 
-//=============================================================================
-// 相对参考工程（docs/Music-Spectrum）的改动
-//-----------------------------------------------------------------------------
-//  1. LUT_SIZE 14 -> 20
-//     新增 6 条：R8(BCLKDIV) + R52/R53/R54/R55(PLL) + R4(CLKSEL)
-//     并把 R26 拆成两次写（先不带 PLLEN，PLL 配好后再置 PLLEN=1）
-//
-//  2. R26 数据 0x060 -> 0x1E1
-//     补上 DACL=1 / DACR=1 —— 参考工程只用 ADC 做频谱，不需要 DAC；
-//     我们要做音频回放（EQ 通路），DAC 必须开。
-//
-//  3. 新增 CLK_FREQ_HZ / DLY_MS 参数，dly_cnt_max 由 0 改为 DLY_CNT
-//     PLL 需要锁定时间，且留延时还能避免 I2C 连续写得太快。
-//
-//  4. 表项计数器到 LUT_SIZE 后保持，不再清零回绕
-//
-//  5. rdreg_req 显式写 1'b0（原来是 32 位常量 0，iverilog 报位宽修剪告警）；
-//     addr 显式扩展到 16 位
-//=============================================================================

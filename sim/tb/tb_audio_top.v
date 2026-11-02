@@ -30,6 +30,7 @@ module tb_audio_top;
     always #5 clk = ~clk;                // 100 MHz（真实是 clk_sys 48MHz；本 TB 只验证逻辑）
 
     reg rst_n = 1'b0;
+    reg        mute   = 1'b0;   // 喇叭静音（TB 恒 0）
 
     //-------------------------------------------------------------------------
     // I2S 主模式行为模型（模拟 WM8960 提供 BCLK / LRCLK）
@@ -67,6 +68,7 @@ module tb_audio_top;
         .SLOT(SLOT)
     ) dut (
         .clk(clk), .rst_n(rst_n),
+        .mute(mute),
         .bclk(bclk), .lrclk(lrclk), .sdin(sdin_w), .sdout(sdout_w),
         .band_gain(band_gain), .cfg_load(cfg_load), .bypass(1'b0),
         .cfg_busy(cfg_busy), .running(running),

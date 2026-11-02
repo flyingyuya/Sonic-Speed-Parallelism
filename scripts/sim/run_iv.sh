@@ -103,29 +103,64 @@ fi
 #-----------------------------------------------------------------------------
 # 源文件清单
 #-----------------------------------------------------------------------------
-IVFLAGS="-g2005 -Wall -Wno-timescale -I rtl/common -I rtl/audio -I rtl/video"
-TBEXTRA="sim/tb/codec_model.v"
+IVFLAGS="-g2005 -Wall -Wno-timescale -I rtl/common -I rtl/wm8960 -I rtl/audio -I rtl/video"
+TBEXTRA="sim/tb/codec_model.v sim/tb/xpt2046_model.v sim/tb/sd_card_model.v"
+# 触摸屏的行为模型（只有 tb_xpt2046 用，但一起带上无害）
 RTL="rtl/fft/fft_addr_gen.v rtl/fft/fft_twiddle_rom.v rtl/fft/fft_butterfly.v rtl/fft/fft_core.v \
      rtl/common/cdc_sync.v rtl/common/rst_sync.v rtl/common/audio_fifo.v \
-     rtl/common/async_fifo.v rtl/common/key_debounce.v \
-     rtl/control/ui_ctrl.v \
+     rtl/common/async_fifo.v rtl/common/key_debounce.v rtl/common/key_gesture.v \
+     rtl/control/ui_ctrl.v rtl/control/key_ui.v \
      rtl/control/uart_rx.v rtl/control/uart_tx.v rtl/control/cmd_proc.v \
-     rtl/audio/i2s_clkgen.v rtl/audio/i2s_rx.v rtl/audio/i2s_tx.v \
-     rtl/audio/i2s_slave_clk.v \
+     rtl/audio/i2s_rx.v rtl/audio/i2s_tx.v \
+     rtl/audio/i2s_slave_clk.v rtl/audio/i2s_bclk_if.v \
      rtl/audio/eq_cascade.v rtl/audio/eq_coeff_rom.v rtl/audio/audio_top.v \
-     rtl/audio/spectrum.v rtl/audio/spectrum_map.v \
+     rtl/audio/spectrum.v rtl/audio/spectrum_map.v rtl/audio/spectrum_map80.v \
+     rtl/common/dc_block.v rtl/common/fir_sym.v rtl/common/env_track.v \
      rtl/wm8960/WM8960_init.v rtl/wm8960/WM8960_init_table.v \
      rtl/wm8960/i2c_control.v rtl/wm8960/i2c_bit_shift.v \
      rtl/video/lcd_timing.v rtl/video/spec_sync.v rtl/video/bg_src.v \
      rtl/video/disp_mix.v rtl/video/disp_top.v rtl/video/rainbow_rom.v \
-     rtl/video/polar_map.v rtl/video/wave_buf.v rtl/video/demo_src.v"
+     rtl/video/polar_map.v rtl/video/wave_buf.v rtl/video/demo_src.v \
+     rtl/video/ui_anim.v rtl/video/font_rom.v rtl/video/text_buf.v \
+     rtl/video/status_line.v rtl/video/ui_layer.v rtl/touch/xpt2046.v rtl/video/tmds_enc.v rtl/video/tmds_out.v rtl/video/hdmi_top.v \
+     rtl/sdcard/sd_init.v rtl/sdcard/sd_read.v rtl/sdcard/sd_ctrl_top.v \
+     rtl/video/frame_buf.v rtl/video/sd_img_load.v"
 
-ALL_TB="eq_cascade i2s_loopback audio_top fft_addr_gen fft_butterfly fft_core wm8960_init lcd_timing spectrum disp_top i2s_slave polar_map wave_buf ui_ctrl uart_cmd demo_src"
+ALL_TB="wave_buf sd_img_load frame_buf sd_init sd_read sd_ctrl_top hdmi_top tmds_out tmds_enc key_gesture ui_layer xpt2046 i2s_bclk_if dc_block fir_sym env_track eq_cascade audio_top fft_addr_gen fft_butterfly fft_core wm8960_init lcd_timing spectrum disp_top i2s_slave polar_map ui_ctrl uart_cmd demo_src ui_anim font_rom text_buf status_line"
 WANT="${1:-all}"
 
 pass=0
 fail=0
 skip=0
+
+#-----------------------------------------------------------------------------
+# 半路挂掉时也要说清楚【挂在哪一步】
+#-----------------------------------------------------------------------------
+# 本脚本开头是 `set -euo pipefail` —— 任何一条命令非零退出都会【立刻中止】。
+# 好处是不带病往下跑，坏处是：一旦中途挂了，末尾那段"仿真汇总"根本不执行，
+# 于是日志里只剩一堆输出，看不出是哪一步的问题（CI 上尤其难受）。
+#
+# 所以这里注册一个 EXIT trap：只在非零退出时打印"最后进入的步骤"。
+# 每进入一个阶段就更新 CUR_STEP，日志末尾就总能对上号。
+#-----------------------------------------------------------------------------
+CUR_STEP="(启动阶段：探测工具链)"
+FINISHED=0            # 全部测试跑完置 1；用来区分"跑完了"和"半路挂了"
+trap 'rc=$?; if [ "$rc" -ne 0 ]; then
+  if [ "$FINISHED" -eq 1 ]; then
+    # 正常跑完，只是有测试失败 —— 上面已经打印过失败清单，不用再喊
+    echo "（全部测试已跑完，见上方的失败清单）"
+  else
+    echo ""
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    echo " 提前中止（退出码 $rc）"
+    echo " 最后进入的步骤：$CUR_STEP"
+    echo ""
+    echo " set -euo pipefail 下【未被捕获的】命令失败会立刻中止，"
+    echo " 所以后面的测试和末尾的汇总都没跑到。"
+    echo " 详细日志在 sim/build/ 下（*.log / *.run.log）。"
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+  fi
+fi; true' EXIT
 
 #-----------------------------------------------------------------------------
 # Verilator 静态检查（比 iverilog 严，专门补它的盲区）
@@ -157,40 +192,73 @@ skip=0
 #
 # 【如果这个检查报了错，先去读提示的位置，不要先关规则】
 #-----------------------------------------------------------------------------
-VLFLAGS="--lint-only -Wall -Wno-fatal \
-         -Wno-WIDTHEXPAND -Wno-WIDTHTRUNC -Wno-UNUSEDSIGNAL -Wno-UNUSEDPARAM \
-         -Wno-PROCASSINIT -Wno-DECLFILENAME -Wno-VARHIDDEN -Wno-SYNCASYNCNET \
-         -Wno-TIMESCALEMOD -Wno-PINCONNECTEMPTY \
-         +incdir+rtl/video +incdir+rtl/common"
+# 【为什么用"白名单过滤"而不是一串 -Wno-】
+#   不同 Verilator 版本的【警告名集合不一样】。传一个该版本不认识的名字，
+#   verilator 会直接 "Unknown warning specified" **报错退出** —— 不是设计有问题，
+#   而是命令行不兼容。本地是 5.052，CI 上跑的是 Ubuntu 仓库的版本，就撞了这条。
+#
+#   所以改成：照常跑 -Wall，把输出全部收下来，再按【类别白名单】过滤。
+#   白名单里是预期内的风格类警告；白名单【之外】的任何警告都算失败。
+#   这样和版本无关，也不依赖任何 -Wno- 名字。
+#
+# ⚠️ VL_ALLOW 必须写成【单行】：下面的 case 是 " $VL_ALLOW " 里找 " $c "，
+#    带换行的话行首/行尾的类名永远匹配不上。
+VL_ALLOW="WIDTHEXPAND WIDTHTRUNC UNUSEDSIGNAL UNUSEDPARAM PROCASSINIT DECLFILENAME VARHIDDEN SYNCASYNCNET TIMESCALEMOD PINCONNECTEMPTY UNSIGNED"
+
+# 只保留【版本无关】的选项：-Wall 开全部检查，-Wno-fatal 让退出码只反映真 Error
+VLFLAGS="--lint-only -Wall -Wno-fatal +incdir+rtl/video +incdir+rtl/common +incdir+rtl/wm8960"
 
 run_verilator_lint() {
     echo ""
+    CUR_STEP="Verilator 静态检查"
     echo ">>> Verilator 静态检查（补 iverilog 的盲区：多重驱动 / 组合环 / 锁存器）"
     if ! command -v verilator >/dev/null 2>&1; then
-        echo "  [跳过] 没装 verilator"
-        echo "         Arch 上装： sudo pacman -S verilator"
+        echo "  [跳过] 没装 verilator  ->  sudo pacman -S verilator"
         echo "         装了之后这项能抓住 multi-driven net 这类"
         echo "         iverilog 不报、但综合器会直接失败的错。"
         skip=$((skip + 1))
         return
     fi
+
+    echo "  版本: $(verilator --version 2>/dev/null | head -1)"
+
     # shellcheck disable=SC2086
-    if verilator $VLFLAGS --top-module top \
-            sim/tb/xilinx_stub.v $(ls rtl/*.v rtl/*/*.v) \
-            > "$OUT/verilator.log" 2>&1; then
-        n=$(grep -cE "^%Warning|^%Error" "$OUT/verilator.log" || true)
-        if [ "$n" -eq 0 ]; then
-            pass=$((pass + 1))
-            echo "  0 警告"
-        else
-            fail=$((fail + 1))
-            echo "  [有警告] $n 条："
-            grep -E "^%Warning|^%Error" "$OUT/verilator.log" | head -20
-        fi
-    else
+    verilator $VLFLAGS --top-module top \
+        sim/tb/xilinx_stub.v $(ls rtl/*.v rtl/*/*.v) \
+        > "$OUT/verilator.log" 2>&1
+    vl_rc=$?
+
+    # --- ① 真正的 Error（命令行不兼容、语法错误…）直接失败 ---
+    n_err=$(grep -cE "^%Error" "$OUT/verilator.log" || true)
+    if [ "${n_err:-0}" -gt 0 ] || [ "$vl_rc" -ne 0 ]; then
         fail=$((fail + 1))
-        echo "  [失败] 详情见 $OUT/verilator.log"
-        grep -E "^%Error|^%Warning" "$OUT/verilator.log" | head -20
+        echo "  [失败] verilator 返回 $vl_rc，有 $n_err 条 Error："
+        grep -E "^%Error" "$OUT/verilator.log" | head -10
+        return
+    fi
+
+    # --- ② 白名单之外的警告才算真问题 ---
+    cats=$(grep -oE "^%Warning-[A-Z0-9_]+" "$OUT/verilator.log" 2>/dev/null \
+           | sed 's/^%Warning-//' | sort -u | tr '\n' ' ' || true)
+    bad=""
+    for c in $cats; do
+        case " $VL_ALLOW " in
+            *" $c "*) ;;
+            *) bad="$bad $c" ;;
+        esac
+    done
+
+    n_warn=$(grep -cE "^%Warning" "$OUT/verilator.log" || true)
+    if [ -n "$bad" ]; then
+        fail=$((fail + 1))
+        echo "  [有警告] 白名单之外：$bad"
+        echo "  （共 $n_warn 条，完整输出见 $OUT/verilator.log）"
+        for c in $bad; do
+            grep -A3 "^%Warning-$c" "$OUT/verilator.log" | head -8
+        done
+    else
+        pass=$((pass + 1))
+        echo "  0 个意外警告（共 $n_warn 条，类别全部在白名单内：$cats）"
     fi
 }
 
@@ -215,11 +283,12 @@ run_async_fifo() {
             flags="$flags -Ptb_async_fifo.${kv}"
         done
         echo ""
+        CUR_STEP="async_fifo [$name]"
         echo ">>> 仿真 async_fifo  [$name]"
         # shellcheck disable=SC2086
         if "$IVERILOG" $IVERILOG_LIBFLAGS $IVFLAGS $flags \
                 -o "$OUT/tb_async_fifo.vvp" \
-                $RTL $TBEXTRA "sim/tb/tb_async_fifo.v" 2>"$OUT/async_fifo.log"; then
+                sim/tb/xilinx_stub.v $RTL $TBEXTRA "sim/tb/tb_async_fifo.v" 2>"$OUT/async_fifo.log"; then
             :
         else
             echo "  [编译失败]"; cat "$OUT/async_fifo.log"; fail=$((fail + 1)); continue
@@ -228,8 +297,14 @@ run_async_fifo() {
         # ⚠️ 不能只看 vvp 的退出码 —— $finish 永远返回 0，
         #    必须检查输出里的 PASS/FAIL 文本。这个坑曾经让一个失败的
         #    testbench 被统计成"通过"。
-        if ( cd "$ROOT" && "$VVP" $VVP_LIBFLAGS "$OUT/tb_async_fifo.vvp" +novcd ) \
-                | tee "$OUT/async_fifo.run.log" | grep -q "\*\*\* PASS"; then
+        # ⚠️ 不能写成 `... | tee log | grep -q PASS`：
+        #   grep -q 找到匹配就【立刻退出】，关掉管道右端，tee 收到 SIGPIPE 返回非零，
+        #   在 set -o pipefail 下整条管道就被判成失败 —— 明明测试是 PASS 的。
+        #   这个坑以前没暴露，是因为输出小、能全部塞进管道缓冲，tee 先写完了；
+        #   加了 UI 之后输出变大才撞上。所以一律【先落盘，再单独 grep】。
+        ( cd "$ROOT" && "$VVP" $VVP_LIBFLAGS "$OUT/tb_async_fifo.vvp" +novcd ) \
+                > "$OUT/async_fifo.run.log" 2>&1
+        if grep -q "\*\*\* PASS" "$OUT/async_fifo.run.log"; then
             pass=$((pass + 1))
         else
             echo "  [测试失败]"; grep -E "\[ERR\]|FAIL" "$OUT/async_fifo.run.log" | head -10
@@ -245,10 +320,11 @@ run_async_fifo() {
 #-----------------------------------------------------------------------------
 run_top_smoke() {
     echo ""
+    CUR_STEP="top 整机冒烟"
     echo ">>> 仿真 top（整机冒烟，约需 1~2 分钟）"
     if "$IVERILOG" $IVERILOG_LIBFLAGS $IVFLAGS -s tb_top \
             -o "$OUT/tb_top.vvp" \
-            sim/tb/xilinx_stub.v \
+            sim/tb/xilinx_stub.v sim/tb/xpt2046_model.v \
             $(ls rtl/*.v rtl/*/*.v 2>/dev/null) \
             "sim/tb/tb_top.v" 2>"$OUT/top.log"; then
         :
@@ -256,8 +332,10 @@ run_top_smoke() {
         echo "  [编译失败]"; cat "$OUT/top.log"; fail=$((fail + 1)); return
     fi
     grep -i "warning" "$OUT/top.log" | head -20 || true
-    if ( cd "$ROOT" && "$VVP" $VVP_LIBFLAGS "$OUT/tb_top.vvp" +novcd ) \
-            | tee "$OUT/top.run.log" | grep -q "\*\*\* PASS"; then
+    # 同上：先落盘再 grep，避开 grep -q 早退引发的 SIGPIPE
+    ( cd "$ROOT" && "$VVP" $VVP_LIBFLAGS "$OUT/tb_top.vvp" +novcd ) \
+            > "$OUT/top.run.log" 2>&1
+    if grep -q "\*\*\* PASS" "$OUT/top.run.log"; then
         pass=$((pass + 1))
     else
         echo "  [测试失败]"; grep -E "\[ERR\]|FAIL" "$OUT/top.run.log" | head -10
@@ -274,41 +352,116 @@ if [ "$WANT" = "all" ] || [ "$WANT" = "async_fifo" ]; then
     run_async_fifo
 fi
 
-if [ "$WANT" = "all" ] || [ "$WANT" = "top" ]; then
+#-----------------------------------------------------------------------------
+# 整机冒烟测试：默认【跳过】
+#-----------------------------------------------------------------------------
+#   【为什么要跳过】
+#     它要跑完 WM8960 配置（几十 ms）+ 按键消抖 + 双击窗口 + 面板动画，
+#     单这一个 TB 就要 20 分钟，而 39 个模块级 TB 合起来只要一两分钟。
+#     日常改代码根本不需要每次都跑它 ⟹ 改成按需运行：
+#
+#       bash scripts/sim/run_iv.sh top      # 只跑整机冒烟
+#       FULL=1 bash scripts/sim/run_iv.sh   # 全量（含整机冒烟）
+#
+#     CI 里用 FULL=1 保证覆盖；本地迭代用默认值。
+#-----------------------------------------------------------------------------
+if [ "$WANT" = "top" ]; then
     run_top_smoke
+elif [ "$WANT" = "all" ] && [ -n "${FULL:-}" ]; then
+    run_top_smoke
+elif [ "$WANT" = "all" ]; then
+    echo ""
+    echo "  [跳过] 整机冒烟测试（约 20 分钟）。需要时："
+    echo "         bash scripts/sim/run_iv.sh top     （只跑它）"
+    echo "         FULL=1 bash scripts/sim/run_iv.sh  （全量）"
 fi
 
+#=============================================================================
+# TB 执行（可并行）
+#-----------------------------------------------------------------------------
+# 【为什么改成并行】
+#   39 个 TB 原来是 for 循环串行跑的，每个都要编译 57 个 RTL 文件 + 跑一次 vvp。
+#   机器有 16 核 ⟹ 串行等于只用 1/16 的算力。改成并行后墙钟时间大约降到 1/6~1/8。
+#
+# 【为什么每个 TB 的屏幕输出要落盘】
+#   并行时多个进程同时 echo 会互相穿插，日志完全没法看。
+#   所以每个 TB 把详细输出写进 $OUT/<tb>.console，
+#   屏幕上只在【失败】时才把对应文件打出来。
+#
+# 【JOBS 环境变量】
+#   默认 = CPU 核数。设 JOBS=1 就退回原来的串行行为（排查问题用）。
+#=============================================================================
+JOBS="${JOBS:-$(nproc)}"
+rm -f "$OUT"/*.st
+
+run_tb_one() {
+    _tb="$1"
+    _con="$OUT/${_tb}.console"
+    : > "$_con"
+
+    if ! "$IVERILOG" $IVERILOG_LIBFLAGS $IVFLAGS -o "$OUT/tb_${_tb}.vvp" \
+            sim/tb/xilinx_stub.v $RTL $TBEXTRA "sim/tb/tb_${_tb}.v" 2>"$OUT/${_tb}.log"; then
+        echo "[编译失败]"
+        echo "--- $OUT/${_tb}.log ---"
+        cat "$OUT/${_tb}.log"
+        echo "CFAIL" > "$OUT/${_tb}.st"
+        return 0
+    fi
+    grep -i "warning" "$OUT/${_tb}.log" | head -20 >> "$_con" || true
+
+    if [ -n "${WAVE:-}" ]; then VVPARG=""; else VVPARG="+novcd"; fi
+    ( cd "$ROOT" && "$VVP" $VVP_LIBFLAGS "$OUT/tb_${_tb}.vvp" $VVPARG ) > "$OUT/${_tb}.run.log" 2>&1
+
+    if grep -q "\*\*\* PASS" "$OUT/${_tb}.run.log"; then
+        echo "PASS" > "$OUT/${_tb}.st"
+    else
+        echo "FAIL" > "$OUT/${_tb}.st"
+    fi
+    return 0
+}
+export -f run_tb_one 2>/dev/null || true
+
+TB_LIST=""
 for tb in $ALL_TB; do
     if [ "$WANT" != "all" ] && [ "$WANT" != "$tb" ]; then continue; fi
     if [ ! -f "sim/tb/tb_${tb}.v" ]; then
         echo "  [跳过] sim/tb/tb_${tb}.v 不存在"
-        skip=$((skip + 1))
+        echo "SKIP" > "$OUT/${tb}.st"
         continue
     fi
+    TB_LIST="$TB_LIST $tb"
+done
 
-    echo ""
-    echo ">>> 仿真 $tb"
-    if "$IVERILOG" $IVERILOG_LIBFLAGS $IVFLAGS -o "$OUT/tb_${tb}.vvp" \
-            $RTL $TBEXTRA "sim/tb/tb_${tb}.v" 2>"$OUT/${tb}.log"; then
-        :
-    else
-        echo "  [编译失败]"; cat "$OUT/${tb}.log"; fail=$((fail + 1)); continue
-    fi
-    grep -i "warning" "$OUT/${tb}.log" | head -20 || true
+if [ "$JOBS" -le 1 ]; then
+    for tb in $TB_LIST; do
+        echo ">>> 仿真 $tb"
+        run_tb_one "$tb"
+    done
+else
+    echo ">>> 并行仿真 $JOBS 路（共 $(echo $TB_LIST | wc -w) 个 TB）"
+    for tb in $TB_LIST; do
+        run_tb_one "$tb" &
+        while [ "$(jobs -rp | wc -l)" -ge "$JOBS" ]; do wait -n 2>/dev/null || break; done
+    done
+    wait
+fi
 
-    # 默认加 +novcd 关波形；WAVE=1 时不加，波形落在 sim/build/ 下
-    if [ -n "${WAVE:-}" ]; then VVPARG=""; else VVPARG="+novcd"; fi
-    # 同上：必须检查输出文本，不能只看退出码
-    if ( cd "$ROOT" && "$VVP" $VVP_LIBFLAGS "$OUT/tb_${tb}.vvp" $VVPARG ) \
-            | tee "$OUT/${tb}.run.log" | grep -q "\*\*\* PASS"; then
-        pass=$((pass + 1))
-    else
-        echo "  [测试失败]"; grep -E "\[ERR\]|FAIL" "$OUT/${tb}.run.log" | head -10
-        fail=$((fail + 1))
-    fi
+#-----------------------------------------------------------------------------
+# 汇总（并行时屏幕上只在失败处打细节）
+#-----------------------------------------------------------------------------
+for tb in $TB_LIST; do
+    st=$(cat "$OUT/${tb}.st" 2>/dev/null || echo "SKIP")
+    case "$st" in
+        PASS) pass=$((pass + 1));;
+        FAIL) fail=$((fail + 1)); echo "  [测试失败] $tb";
+              grep -E "\[ERR\]|FAIL" "$OUT/${tb}.run.log" 2>/dev/null | head -10;;
+        CFAIL) fail=$((fail + 1));;
+        *) skip=$((skip + 1));;
+    esac
 done
 
 echo ""
+FINISHED=1
 echo "==================== 仿真汇总 ===================="
 echo " 通过 $pass  失败 $fail  跳过 $skip"
 [ "$fail" -eq 0 ]

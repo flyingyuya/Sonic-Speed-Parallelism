@@ -1,25 +1,22 @@
-//=============================================================================
-// eq_cascade.v - 多段双二阶（Biquad）均衡器，时分复用 MAC
-//-----------------------------------------------------------------------------
-// 结构：NSECT 个 Direct-Form-II-Transposed 双二阶级联，
-//       共用同一套乘法/加法运算器，每个样本消耗 NSECT+1 个时钟周期。
+//////////////////////////////////////////////////////////////////////////////////
+// Company:
+// Engineer:       Binyu Fei
 //
-//   y[n] = b0*x[n] + s1
-//   s1'  = b1*x[n] - a1*y[n] + s2
-//   s2'  = b2*x[n] - a2*y[n]
+// Create Date:    2026-10-26
+// Design Name:    eq_cascade
+// Module Name:    eq_cascade
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
+// Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
+// Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
+// Description:    eq_cascade.v - 多段双二阶（Biquad）均衡器，时分复用 MAC
+// Dependencies:
 //
-// 定点：x,y = Q1.(DW-1)，系数 = Q2.(CF)（范围 [-2,2)，覆盖 b1≈-1.95 这类系数），
-//       状态 = Q?.(DW-1+CF)
-//       乘积小数位 = (DW-1)+CF，因此统一右移 CF 位并四舍五入。
+// Revision:
+// Revision 0.01 - File Created
 //
-// **为什么系数是 Q2.16 而不是 Q1.17**：
-//   双二阶的 b1/a1 典型值达 -1.95，Q1.17（范围 [-1,1)）会把它削顶到 -1，
-//   滤波器直接失效（实测频响误差 7dB）。Q2.16 范围 [-2,2)，实测全频段
-//   最大频响误差 0.09dB，远低于人耳 0.3dB 可闻阈值。
-//
-// 系数写端口：addr = sect*5 + {0:b0, 1:b1, 2:b2, 3:a1, 4:a2}
-//=============================================================================
+//////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns/1ps
+
 
 module eq_cascade #(
     parameter integer DW    = 24,   // 数据位宽 Q1.(DW-1)
@@ -47,9 +44,9 @@ module eq_cascade #(
     output reg                     y_valid
 );
 
-    localparam integer SH = CF;                     // 乘积 -> 样本 的右移位数 = 16
+    localparam integer SH = CF;                 // 乘积 -> 样本 的右移位数 = 16
 
-    localparam [AW-1:0] RND  = {{(AW-1){1'b0}}, 1'b1} << (SH-1);        // 四舍五入偏置
+    localparam [AW-1:0] RND  = {{(AW-1){1'b0}}, 1'b1} << (SH-1);  // 四舍五入偏置
     localparam signed [DW-1:0] MAXV = {1'b0, {(DW-1){1'b1}}};
     localparam signed [DW-1:0] MINV = {1'b1, {(DW-1){1'b0}}};
 
@@ -141,8 +138,7 @@ module eq_cascade #(
                     end
                 end
 
-                // 1bit 状态已用满，default 不可达；
-                // 写上是为了 ① 满足 lint ② 非法值自恢复 ③ 明确"不会推断 latch"
+                // 1bit 状态已用满，default 不可达
                 default: state <= IDLE;
             endcase
         end

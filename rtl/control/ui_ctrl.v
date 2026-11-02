@@ -1,40 +1,30 @@
-//=============================================================================
-// ui_ctrl.v - 统一配置寄存器组（扩展点 ②）
-//-----------------------------------------------------------------------------
-// 设计意图：**按键、触摸、UART 三个输入源最终都写同一组寄存器，显示链只读它。**
+//////////////////////////////////////////////////////////////////////////////////
+// Company:
+// Engineer:       Binyu Fei
 //
-//   按键 ─┐
-//   触摸 ─┼─▶ [统一写端口] ─▶ 寄存器组 ─▶ 显示链
-//   UART ─┘
+// Create Date:    2026-10-26
+// Design Name:    ui_ctrl
+// Module Name:    ui_ctrl
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
+// Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
+// Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
+// Description:    ui_ctrl.v - 统一配置寄存器组
+// Dependencies:   disp_cfg.vh
 //
-// 这样做的好处：
-//   · 显示链完全不知道"是谁改的"，加一个新输入源不用动显示逻辑
-//   · 上电默认值、边界钳位只在一个地方处理
-//   · 用 UART 就能把全部功能测一遍，不必等按键焊好
+// Revision:
+// Revision 0.01 - File Created
 //
-// 【寄存器映射】
-//   0x0 VIEW     [2:0] 视图使能   bit0=柱状 bit1=极坐标 bit2=波形
-//   0x1 STYLE    [3:0] 柱体风格   0=实心 1=半透明
-//   0x2 HUESPD   [7:0] 色相滚动速度
-//                        H=0 停住，1..7 有效【越大越快】，>7 当 7
-//                        实际周期 = 2^(8-H) 帧 -> H=6（默认）每 4 帧滚一级
-//   0x3 WAVEG    [3:0] 波形增益   0..7，越大越敏感
-//   0x4 BGMODE   [3:0] 背景模式
-//   0x5 AUTO     [0]   自动循环视图
-//   0x6 DEMO     [1:0] 演示/自检图案（见 rtl/video/demo_src.v）
-//                        0=关（用真实音频） 1=斜坡 2=棋盘 3=移动包络
-//
-// 【视图预设】
-//   next_view 脉冲会在下面 PRESET 表里轮转，把常见组合串起来，
-//   按键只按一个就能看完所有效果。
-//=============================================================================
+//////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns/1ps
+
 
 `include "disp_cfg.vh"
 
 module ui_ctrl #(
     parameter integer NREG        = 8,
-    parameter integer AUTO_PERIOD = 48_000_000 * 4      // 自动切换间隔（4 秒）
+    parameter integer AUTO_PERIOD = 48_000_000 * 4,     // 自动切换间隔（4 秒）
+    // SD 卡里实际写了多少张图（由 scripts/sdcard/mkimage.py 决定）
+    parameter integer IMG_COUNT   = 3
 ) (
     input  wire        clk,
     input  wire        rst_n,
@@ -45,16 +35,29 @@ module ui_ctrl #(
     input  wire [7:0]  wr_data,
 
     //--------------------- 便捷操作 ---------------------
-    input  wire        next_view,       // 1 拍脉冲：切到下一个视图预设
+    input  wire        next_view,    // 1 拍脉冲：切到下一个视图预设 (VIEW 按钮)
+
+    // 步进
+    input  wire        step_en,         // 1 拍脉冲：对 step_addr 指向的字段 +1
+    input  wire [3:0]  step_addr,
 
     //--------------------- 配置输出 ---------------------
     output reg  [7:0]  cfg_view,
+    // 面板弃用，UART 保留
     output reg  [7:0]  cfg_style,
+    // 喇叭静音：1 = 静音（面板 SPK 键切换）
+    output reg         cfg_spk_mute,
     output reg  [7:0]  cfg_hue_spd,
     output reg  [7:0]  cfg_wave_gain,
     output reg  [7:0]  cfg_bg_mode,
     output reg  [7:0]  cfg_auto,
     output reg  [7:0]  cfg_demo,        // 演示/自检图案选择
+    // 音频输入源：0=话筒 1=线路输入
+    output reg  [7:0]  cfg_src,
+    // SD 卡切图：每次按下面板的 SD 按钮，这个计数器加 1
+    output reg  [7:0]  cfg_img_idx,
+    // 背景来源：0 = BG 程序化背景 1 = SD 卡图片（BG 与 SD 并列触发）
+    output reg         cfg_bg_src,
     output reg  [3:0]  view_idx         // 当前预设编号（观测用）
 );
 
@@ -66,7 +69,7 @@ module ui_ctrl #(
     reg [7:0] preset [0:NPRESET-1];
 
     initial begin
-        preset[0] = 8'b0000_0101;       // 柱状 + 波形
+        preset[0] = 8'b0000_0101;       // 柱状 + 波形  <- 上电默认
         preset[1] = 8'b0000_0110;       // 极坐标 + 波形
         preset[2] = 8'b0000_0111;       // 三个全开
         preset[3] = 8'b0000_0001;       // 只柱状
@@ -99,24 +102,33 @@ module ui_ctrl #(
     //=========================================================================
     always @(posedge clk) begin
         if (!rst_n) begin
-            cfg_view      <= 8'b0000_0111;      // 上电三个视图全开
+            cfg_view      <= 8'b0000_0101;      // 柱状 + 波形（= preset[0]）
             cfg_style     <= 8'd0;
             cfg_hue_spd   <= 8'd6;              // 每 2^(8-6) = 4 帧滚一级
-                                                // （等价于旧映射的 H=2，见 disp_top.v）
-            cfg_wave_gain <= 8'd3;
+            cfg_wave_gain <= 8'd4;              // G 是【指数】：波形增益 = 2^G
             cfg_bg_mode   <= 8'd0;
             cfg_auto      <= 8'd0;
             cfg_demo      <= 8'd0;              // 上电关（走真实音频）
-            view_idx      <= 4'd2;              // 对应 preset[2]（全开）
+            cfg_src       <= 8'd0;              // 输入源：默认话筒
+            cfg_img_idx   <= 8'd0;              // SD 背景图序号
+            cfg_bg_src    <= 1'b0;              // 默认程序化背景
+            cfg_spk_mute  <= 1'b0;              // 默认不静音
+            view_idx      <= 4'd0;              // 对应 preset[0]
         end else if (wr_en) begin
             case (wr_addr)
                 4'h0: cfg_view      <= wr_data;
-                4'h1: cfg_style     <= wr_data;
+                4'h1: cfg_spk_mute  <= wr_data[0];   // UART 写 1 = 静音
                 4'h2: cfg_hue_spd   <= wr_data;
                 4'h3: cfg_wave_gain <= wr_data;
                 4'h4: cfg_bg_mode   <= wr_data;
                 4'h5: cfg_auto      <= wr_data;
                 4'h6: cfg_demo      <= wr_data;
+                // I 命令：只保留最低位（0=话筒 1=线路）
+                4'h7: cfg_src       <= {7'd0, wr_data[0]};
+                4'h8: begin
+                    cfg_img_idx <= wr_data;         // UART 直接指定第几张图
+                    cfg_bg_src  <= 1'b1;            // 同时切到图片背景
+                end
                 default: ;                      // 未定义的地址忽略
             endcase
             // 直接写 VIEW 时让预设编号跟着对齐（否则下一次按键会跳）
@@ -128,6 +140,41 @@ module ui_ctrl #(
                 else if (wr_data[2:0] == 3'b010) view_idx <= 4'd4;
                 else if (wr_data[2:0] == 3'b100) view_idx <= 4'd5;
             end
+        end else if (step_en) begin
+            // 旋钮式步进：按字段各自的有效范围递增
+            case (step_addr)
+                // VIEW 用预设轮转（和 KEY1 同一个动作），不走这里
+
+                // SPK 喇叭静音开关
+                4'h1: cfg_spk_mute  <= ~cfg_spk_mute;
+                // HUESPD 0..7，0 = 停住
+                4'h2: cfg_hue_spd   <= (cfg_hue_spd[3:0] >= 4'd7) ? 8'd0
+                                                                 : cfg_hue_spd + 1'b1;
+                // WAVEG 0..8（指数：增益 = 2^G，×1 ~ ×256）
+                4'h3: cfg_wave_gain <= (cfg_wave_gain[3:0] >= 4'd8) ? 8'd0
+                                                                    : cfg_wave_gain + 1'b1;
+                // BGMODE 0..1
+                4'h4: begin
+                    // BG：切回【程序化背景】，并保留原有的 0/1 循环
+                    cfg_bg_src  <= 1'b0;
+                    cfg_bg_mode <= (cfg_bg_mode[3:0] >= 4'd1) ? 8'd0
+                                                              : cfg_bg_mode + 1'b1;
+                end
+                // DEMO 0..3
+                4'h6: cfg_demo      <= (cfg_demo[1:0] >= 2'd3) ? 8'd0
+                                                               : cfg_demo + 1'b1;
+                // IN 输入源 0..1（话筒 / 线路输入）
+                4'h7: cfg_src <= (cfg_src[0]) ? 8'd0 : 8'd1;
+                // SD：切到【图片背景】，同时图序号递增（按 IMG_COUNT 循环）
+                4'h8: begin
+                    cfg_bg_src  <= 1'b1;
+                    if (cfg_img_idx >= (IMG_COUNT - 1))
+                        cfg_img_idx <= 8'd0;
+                    else
+                        cfg_img_idx <= cfg_img_idx + 8'd1;
+                end
+                default: ;          // 其它地址不步进
+            endcase
         end else if (next_view || auto_tick) begin
             cfg_view <= preset[nxt_idx];
             view_idx <= nxt_idx;

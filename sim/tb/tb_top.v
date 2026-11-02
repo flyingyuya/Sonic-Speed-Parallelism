@@ -29,6 +29,8 @@
 
 module tb_top;
 
+
+    `include "wm8960_nreg.vh"
     localparam integer INI_WAIT = 1;        // ms，复位释放后等多久发 I2C
     localparam integer I2C_DLY  = 0;        // ms，I2C 每条间隔（冒烟取 0 省时间）
 
@@ -157,10 +159,31 @@ module tb_top;
     wire [23:0] lcd_rgb;
     wire        lcd_hs, lcd_vs, lcd_clk;
     wire [1:0]  led;
+    wire        tp_dclk_w, tp_cs_n_w, tp_din_w;
+    wire        tp_dout_w;
+    reg  [11:0] tp_force_x = 12'hFFF;   // 默认：贴上限 = 没触摸
+    reg  [11:0] tp_force_y = 12'hFFF;
+    wire [7:0]  tp_last_cmd;
+    wire [3:0]  tp_n_cmd;
+    wire [7:0]  tp_n_dclk;
+
+    xpt2046_model u_tpm (
+        .tp_dclk(tp_dclk_w), .tp_cs_n(tp_cs_n_w),
+        .tp_din(tp_din_w), .tp_dout(tp_dout_w),
+        .force_x(tp_force_x), .force_y(tp_force_y),
+        .last_cmd(tp_last_cmd), .n_cmd(tp_n_cmd), .n_dclk(tp_n_dclk)
+    );
 
     top #(
         .INIT_WAIT_MS (INI_WAIT),
-        .I2C_DLY_MS   (I2C_DLY)
+        .I2C_DLY_MS   (I2C_DLY),
+        .ANIM_STEP    (128),    // 面板一帧开完，否则 TB 要等 384 ms
+        // 按键手势的两个时长同样要缩小：产品是 20ms/300ms，
+        // 那样"一次单击"就要等 14.4M 拍，冒烟测试会超时（实测过）。
+        // ⚠️ 缩小的同时，下面 T_PRESS/T_GAP 也要按比例缩小，
+        //    否则两次按下的间隔会超过窗口，双击测不出来。
+        .KEY_DB_MS    (1),      // 消抖 1ms
+        .KEY_WIN_MS   (8)       // 双击窗 8ms
     ) dut (
         .clk_200m_p (clk_p),
         .clk_200m_n (clk_n),
@@ -169,6 +192,12 @@ module tb_top;
         .key2_n     (key2_n),
         .uart_rx_pin(pc_serial),
         .uart_tx_pin(pc_serial_back),
+        // 触摸屏：接一个 XPT2046 行为模型，这样 SPI 那条链也一起被测到。
+        //   force_x/force_y 由本 TB 控制，用来"把手指按到某个按钮上"。
+        .tp_dclk    (tp_dclk_w),
+        .tp_cs_n    (tp_cs_n_w),
+        .tp_din     (tp_din_w),
+        .tp_dout    (tp_dout_w),
         .aud_scl    (aud_scl),
         .aud_sda    (aud_sda),
         .aud_bclk   (aud_bclk),
@@ -298,9 +327,10 @@ module tb_top;
         //---------------------------------------------------------------------
         // ② I2C 序列
         //---------------------------------------------------------------------
-        if (i2c_n != 20) begin
+        // 条数来自生成的头文件（和 RTL、和 tb_wm8960_init 同一个数）
+        if (i2c_n != WM8960_NREG) begin
             n_err = n_err + 1;
-            $display("  [ERR] I2C 条数 = %0d（应为 20）", i2c_n);
+            $display("  [ERR] I2C 条数 = %0d（应为 %0d）", i2c_n, WM8960_NREG);
         end else
             $display("  [ok ] I2C 写入 20 条，从机地址错误 %0d 次", i2c_bad);
         if (i2c_bad != 0) n_err = n_err + 1;
@@ -398,23 +428,169 @@ module tb_top;
         // [4] 按键端到端：按一下 KEY1，视图预设应该轮换
         //---------------------------------------------------------------------
         $display("");
-        $display(" [4] 按键端到端");
+        $display(" [4] 按键手势端到端（P1-5：单击/双击四动作）");
+        //   映射：KEY1 单击=光标左移  KEY1 双击=面板开关
+        //         KEY2 单击=光标右移  KEY2 双击=确认
+        //
+        //   ⚠️ 执行顺序很重要：面板默认是【关】的，而单击/确认只在
+        //      【面板展开】时才生效（用户看得见才谈得上选），
+        //      所以必须【先双击开面板】，再测单击和确认。
+        //      而且用例收尾要把面板切回去，否则污染后面的触摸测试。
+        //
+        //   时序依据（改参数时这里要跟着改）：
+        //     key_debounce MS=1ms   ⟹ 按下要持续 >1ms 才认
+        //     两次按下之间【松开】也要 >1ms（连释放都要消抖）
+        //     key_gesture WIN_MS=8ms ⟹ 两次按下的脉冲间隔 <8ms 才算双击
+        //   本 TB 每次按下低 3ms、间隔高 3ms ⟹ 相邻按下脉冲相隔约 4ms < 8ms ✓
+        //   而【单击】要等窗口期满（8ms）才发，所以单击后等 10ms 再看结果。
         begin : key_test
-            reg [7:0] v_before;
-            reg [3:0] i_before;
-            v_before = dut.ui_view;
-            i_before = dut.ui_view_idx;
-            // 按下 KEY1 并保持足够久（消抖窗口 20 ms，这里给 30 ms）
-            key1_n = 1'b0;
-            #30_000_000;
-            key1_n = 1'b1;
-            #5_000_000;
-            if (dut.ui_view === v_before) begin
+            reg [2:0] sel_before;
+            reg [7:0] view_before;
+            reg       panel_before;
+
+            // ---- ⓪ 面板关着时，单击必须【无效】（这是新语义，专门测它）----
+            sel_before = dut.sel_idx;
+            key1_n = 1'b0; #3_000_000; key1_n = 1'b1; #3_000_000;
+            #10_000_000;
+            if (dut.sel_idx === sel_before)
+                $display("  [ok ] 面板关着时 KEY1 单击无效：光标仍是 %0d", dut.sel_idx);
+            else begin
                 n_err = n_err + 1;
-                $display("  [ERR] 按下 KEY1 后视图预设没变（一直 %08b）", v_before);
+                $display("  [ERR] 面板关着时 KEY1 单击竟然动了光标：%0d -> %0d",
+                         sel_before, dut.sel_idx);
+            end
+
+            // ---- ① KEY1 双击 -> 面板开（这是唯一的"不受面板状态约束"的动作）----
+            panel_before = dut.u_disp.ui_open;
+            key1_n = 1'b0; #3_000_000; key1_n = 1'b1; #3_000_000;
+            key1_n = 1'b0; #3_000_000; key1_n = 1'b1; #3_000_000;
+            if (dut.u_disp.ui_open === ~panel_before)
+                $display("  [ok ] KEY1 双击：面板 %0b -> %0b（已展开）", panel_before, dut.u_disp.ui_open);
+            else begin
+                n_err = n_err + 1;
+                $display("  [ERR] KEY1 双击后面板 = %0b（期望 %0b）", dut.u_disp.ui_open, ~panel_before);
+            end
+            // 让 panel_open 同步到 clk_sys（跨时钟域，要等几拍）
+            #10_000_000;
+
+            // ---- ② KEY1 单击 -> 光标左移（0 环绕到 5）----
+            sel_before = dut.sel_idx;
+            key1_n = 1'b0; #3_000_000; key1_n = 1'b1; #3_000_000;
+            #10_000_000;
+            if (dut.sel_idx === ((sel_before == 3'd0) ? 3'd6 : sel_before - 1'b1))
+                $display("  [ok ] KEY1 单击：光标 %0d -> %0d（左移）", sel_before, dut.sel_idx);
+            else begin
+                n_err = n_err + 1;
+                $display("  [ERR] KEY1 单击后光标 = %0d（期望左移，原 %0d）", dut.sel_idx, sel_before);
+            end
+
+            // ---- ③ KEY2 单击 -> 光标右移 ----
+            sel_before = dut.sel_idx;
+            key2_n = 1'b0; #3_000_000; key2_n = 1'b1; #3_000_000;
+            #10_000_000;
+            if (dut.sel_idx === ((sel_before == 3'd6) ? 3'd0 : sel_before + 1'b1))
+                $display("  [ok ] KEY2 单击：光标 %0d -> %0d（右移）", sel_before, dut.sel_idx);
+            else begin
+                n_err = n_err + 1;
+                $display("  [ERR] KEY2 单击后光标 = %0d（期望右移，原 %0d）", dut.sel_idx, sel_before);
+            end
+
+            // ---- ④ KEY2 双击 -> 确认 ----
+            //   ②左移一次（0 环绕到 6）+ ③右移一次（6 环绕到 0）= 回到 0（VIEW）
+            //   在 VIEW 上"确认"= 切视图，所以看 ui_view 变没变
+            view_before = dut.ui_view;
+            key2_n = 1'b0; #3_000_000; key2_n = 1'b1; #3_000_000;
+            key2_n = 1'b0; #3_000_000; key2_n = 1'b1; #3_000_000;
+            if (dut.sel_idx === 3'd0) begin
+                if (dut.ui_view === view_before) begin
+                    n_err = n_err + 1;
+                    $display("  [ERR] KEY2 双击确认后视图预设没变（一直 %08b）", view_before);
+                end else
+                    $display("  [ok ] KEY2 双击确认：视图预设 %08b -> %08b", view_before, dut.ui_view);
             end else begin
-                $display("  [ok ] 按一下 KEY1：视图预设 %08b -> %08b（预设编号 %0d -> %0d）",
-                         v_before, dut.ui_view, i_before, dut.ui_view_idx);
+                n_err = n_err + 1;
+                $display("  [ERR] 前提不成立：期望光标在 0(VIEW)，实际 %0d", dut.sel_idx);
+            end
+
+            // ---- ④b 覆盖【尾部两项】的确认动作 ----
+            //   ⚠️ 为什么要专门测这两项：
+            //     ui_ctrl 的动作码不是连续的光标值 ——
+            //       光标 0..4 -> 动作码 0..4
+            //       光标 5(DEMO) -> 4'h6    （跳过 5）
+            //       光标 6(IN)   -> 4'h7
+            //     而 4'h5 在 ui_ctrl 的 step 分支里【不存在】（4'h5 是 cfg_auto，只给 UART 用）。
+            //     所以只要"光标->动作码"这份映射漏了一处，就会表现为
+            //       "DEMO 按了没反应、IN 却执行了 DEMO"。
+            //     这类"差一格"的 bug，中间的项全对，只有跳号处和末尾错 ——
+            //     所以【第一项和最后两项】必须逐个测。
+            begin : tail_items
+                reg [7:0] d0, s0;
+                integer n;
+
+                // 从 VIEW(0) 右移到 DEMO(5)：5 次单击
+                for (n = 0; n < 5; n = n + 1) begin
+                    key2_n = 1'b0; #3_000_000; key2_n = 1'b1; #3_000_000;
+                    #10_000_000;
+                end
+                if (dut.sel_idx !== 3'd5) begin
+                    n_err = n_err + 1;
+                    $display("  [ERR] 右移 5 次后光标 = %0d（期望 5 = DEMO）", dut.sel_idx);
+                end else begin
+                    d0 = dut.ui_demo;
+                    // DEMO 上双击确认
+                    key2_n = 1'b0; #3_000_000; key2_n = 1'b1; #3_000_000;
+                    key2_n = 1'b0; #3_000_000; key2_n = 1'b1; #3_000_000;
+                    if (dut.ui_demo === d0) begin
+                        n_err = n_err + 1;
+                        $display("  [ERR] 光标在 DEMO 上确认后 cfg_demo 没变（还是 %0d）", d0);
+                    end else
+                        $display("  [ok ] 光标在 DEMO 上确认：cfg_demo %0d -> %0d", d0, dut.ui_demo);
+                end
+
+                // 再右移一次到 IN(6)
+                key2_n = 1'b0; #3_000_000; key2_n = 1'b1; #3_000_000;
+                #10_000_000;
+                if (dut.sel_idx !== 3'd6) begin
+                    n_err = n_err + 1;
+                    $display("  [ERR] 再右移一次后光标 = %0d（期望 6 = IN）", dut.sel_idx);
+                end else begin
+                    s0 = dut.ui_src;
+                    key2_n = 1'b0; #3_000_000; key2_n = 1'b1; #3_000_000;
+                    key2_n = 1'b0; #3_000_000; key2_n = 1'b1; #3_000_000;
+                    if (dut.ui_src === s0) begin
+                        n_err = n_err + 1;
+                        $display("  [ERR] 光标在 IN 上确认后 cfg_src 没变（还是 %0d）", s0);
+                    end else
+                        $display("  [ok ] 光标在 IN 上确认：cfg_src %0d -> %0d（输入源切换）",
+                                 s0, dut.ui_src);
+                end
+            end
+
+            // ---- ⑤ 静态检查：空闲计时器的位宽必须装得下超时值 ----
+            //   这是那个"说好 4 秒、实际 1.3 秒"bug 的回归判据。
+            //   idle_cnt 原来 24 位，装不下 12500*4000=50,000,000，被静默截断。
+            //   这里不去跑满 4 秒（太贵），而是直接检查【参数本身自洽】——
+            //   便宜，而且正好抓住"位宽不够"这一类错误。
+            if (dut.u_disp.TAB_CW < 26) begin
+                n_err = n_err + 1;
+                $display("  [ERR] 空闲计时器位宽不足：TAB_CW=%0d（需 >=26 才装得下 %0d）",
+                         dut.u_disp.TAB_CW, dut.u_disp.TAB_CNT);
+            end else
+                $display("  [ok ] 空闲计时器位宽 TAB_CW=%0d，装得下 %0d 拍（≈%0d ms）",
+                         dut.u_disp.TAB_CW, dut.u_disp.TAB_CNT,
+                         dut.u_disp.TAB_CNT / 12500);
+
+            // ---- ⑥ 收尾：把面板切回原状 ----
+            //   ⚠️ 不能省：[6] 的触摸测试假设面板初始是关的，
+            //      不还原的话它会看到 1->0，判"没打开"失败，还连锁带挂两项。
+            key1_n = 1'b0; #3_000_000; key1_n = 1'b1; #3_000_000;
+            key1_n = 1'b0; #3_000_000; key1_n = 1'b1; #3_000_000;
+            if (dut.u_disp.ui_open === panel_before)
+                $display("  [ok ] 收尾：面板已切回 %0b（不污染后续触摸测试）", panel_before);
+            else begin
+                n_err = n_err + 1;
+                $display("  [ERR] 收尾失败：面板 = %0b（期望 %0b）",
+                         dut.u_disp.ui_open, panel_before);
             end
         end
 
@@ -497,6 +673,96 @@ module tb_top;
                     $display("  [ERR] T00 后柱高没变，mux 可能没切回音频通路");
                 end else
                     $display("  [ok ] T00 后切回音频通路（柱高不再等于斜坡）");
+            end
+        end
+
+        //---------------------------------------------------------------------
+        // [6] 触摸按钮端到端：打到按钮 3（GAIN）中心，配置必须真的变
+        //---------------------------------------------------------------------
+        //   ⚠️ 这条判据是补上的 —— 之前"按钮层"和"配置"各自都测了，
+        //   但【从触摸到配置】这一整条链没有测试覆盖，
+        //   结果上板时表现为：光标一直扫、配置一动不动。
+        //
+        //   换算：disp_top 里 screen = raw >> 3（x）、raw >> 4（y）。
+        //   按钮 3 中心 = x 3*(BW+GAP)+BW/2
+        //                y 234+19   = 253 -> raw_y = 253*16 = 4048
+        //---------------------------------------------------------------------
+        // [5b] 先点把手，把操作面板打开
+        //---------------------------------------------------------------------
+        //   ⚠️ 面板默认是【收起】的 —— 按钮带整条在屏幕外，点按钮当然没反应。
+        //   这是设计如此（不占展示空间），但测试必须先"开面板"。
+        //   第一次跑忘了这一步，[6] 直接失败，现象和真坏了很像。
+        //
+        //   把手在屏幕右侧 (448..463, 124..147)，原始值换算：
+        //     x = 456 -> raw = 456*8  = 3648
+        //     y = 136 -> raw = 136*16 = 2176
+        $display("");
+        $display(" [5b] 点右侧把手，打开操作面板");
+        begin : open_panel
+            tp_force_x = 12'd3648;
+            tp_force_y = 12'd2176;
+            repeat (600000) @(posedge clk_sys);
+            tp_force_x = 12'hFFF; tp_force_y = 12'hFFF;
+            repeat (600000) @(posedge clk_sys);
+            if (!dut.u_disp.ui_open) begin
+                n_err = n_err + 1;
+                $display("  [ERR] 点了把手但面板没打开（ui_open 仍为 0）");
+            end else
+                $display("  [ok ] 点把手后 ui_open = 1（面板已展开）");
+        end
+
+        $display("");
+        $display(" [6] 触摸按钮端到端（按 GAIN 按钮，配置必须变）");
+        begin : tp_e2e
+            reg [7:0] g0;
+            g0 = dut.ui_wave_gain;
+            //   ⚠️ 这个数字会随【面板几何】变：
+            //     屏幕像素 x = BX0 + 3*(BW+GAP) + BW/2
+            //     BW=78 时 = 279 -> 原始 2232（改 7 个按钮之前的值）
+            //     BW=66 时 = 237 -> 原始 1896
+            //     改 UI_BW / DISP_UI_NB 之后这里必须跟着改，否则"点不到按钮"。
+            tp_force_x = 12'd1896;      // 按钮 3（GAIN）中心的原始 X
+            tp_force_y = 12'd4048;      // 按钮 3 中心的原始 Y
+            // 触摸是每 10 ms 轮询一次，所以至少要跑一个轮询周期 + SPI 事务
+            repeat (600000) @(posedge clk_sys);     // 12.5 ms（一个轮询周期多一点）
+            // 松开
+            tp_force_x = 12'hFFF; tp_force_y = 12'hFFF;
+            repeat (600000) @(posedge clk_sys);
+            if (dut.ui_wave_gain === g0) begin
+                n_err = n_err + 1;
+                $display("  [ERR] 按住 GAIN 按钮后 cfg_wave_gain 没变（还是 %0d）", g0);
+                $display("        说明 触摸->命中->同步->步进 这条链有一环没通");
+            end else
+                $display("  [ok ] 按 GAIN 按钮：cfg_wave_gain %0d -> %0d",
+                         g0, dut.ui_wave_gain);
+
+            //-----------------------------------------------------------------
+            // [6b] 短按也必须被采到（回归：轮询周期 vs 按下宽度）
+            //-----------------------------------------------------------------
+            //   ⚠️ 这条是专门为"轮询丢事件"那个 bug 加的。
+            //   当初轮询周期 10 ms、而演示扫描的按下只持续 6.4 ms ——
+            //   两者相位固定，于是每次都漏掉同样几个按钮（实测只有 STYLE 生效）。
+            //
+            //   这里按住【6 ms】：只要轮询周期 < 6 ms，任意 6 ms 窗口里
+            //   必然落进至少一次轮询，所以这条判据是【确定性】的，
+            //   不是碰运气。用旧的 10 ms 周期跑，它一定会失败。
+            begin : short_press
+                reg [7:0] g1;
+                g1 = dut.ui_wave_gain;
+                tp_force_x = 12'd1896;      // 还是 GAIN 按钮
+                tp_force_y = 12'd4048;
+                repeat (288000) @(posedge clk_sys);     // 6 ms
+                tp_force_x = 12'hFFF; tp_force_y = 12'hFFF;
+                repeat (600000) @(posedge clk_sys);     // 松手后再等一会儿
+                if (dut.ui_wave_gain === g1) begin
+                    n_err = n_err + 1;
+                    $display("  [ERR] 只按 6 ms 的那次没被采到（cfg_wave_gain 还是 %0d）",
+                             g1);
+                    $display("        说明轮询周期 >= 6 ms，短按会被整个跳过");
+                    $display("        —— 这正是'某些按钮好用、某些不好用'的根因");
+                end else
+                    $display("  [ok ] 只按 6 ms 也被采到：cfg_wave_gain %0d -> %0d",
+                             g1, dut.ui_wave_gain);
             end
         end
 

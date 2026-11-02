@@ -74,7 +74,7 @@ module tb_uart_cmd;
     reg [7:0] cfg_view      = 8'h07;
     reg [7:0] cfg_style     = 8'h00;
     reg [7:0] cfg_hue_spd   = 8'h06;
-    reg [7:0] cfg_wave_gain = 8'h03;
+    reg [7:0] cfg_wave_gain = 8'h08;
     reg [7:0] cfg_bg_mode   = 8'h00;
     reg [7:0] cfg_auto      = 8'h00;
 
@@ -315,21 +315,21 @@ module tb_uart_cmd;
             n_err = n_err + 1;
             $display("  [ERR] 查询只回了 %0d 字节（应 >= 20）", n_rep);
         end else begin
-            // 逐字节核对："V07 S00 H06 G03 B0\r\n"（18 字符 + CRLF = 20）
+            // 逐字节核对："V07 S00 H06 G08 B0\r\n"（18 字符 + CRLF = 20）
             // 注意这里 cfg_* 的值在测试中没被改（cmd_proc 只输出写请求，
             // 由 ui_ctrl 去改），所以回执应该是初始值。
             if (rep[0] !== "V" || rep[1] !== "0" || rep[2] !== "7" ||
                 rep[3] !== " " || rep[4] !== "S" ||
                 rep[8] !== "H" || rep[9] !== "0" || rep[10] !== "6" ||
-                rep[12] !== "G" || rep[13] !== "0" || rep[14] !== "3" ||
+                rep[12] !== "G" || rep[13] !== "0" || rep[14] !== "8" ||
                 rep[18] !== 8'h0D || rep[19] !== 8'h0A) begin
                 n_err = n_err + 1;
                 $display("  [ERR] 回执内容不符");
                 $write("        收到: ");
                 for (j = 0; j < 20; j = j + 1) $write("%c", rep[j]);
-                $write("\n        期望: V07 S00 H06 G03 B0\\r\\n\n");
+                $write("\n        期望: V07 S00 H06 G08 B0\\r\\n\n");
             end else
-                $display("  [ok ] ⑥ 查询回执 20 字节内容正确（V07 S00 H06 G03 B0）");
+                $display("  [ok ] ⑥ 查询回执 20 字节内容正确（V07 S00 H06 G08 B0）");
         end
 
         $display("");

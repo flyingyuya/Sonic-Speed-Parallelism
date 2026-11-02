@@ -40,6 +40,16 @@ docs/璞致FPGA核心开发版/
 docs/WM8960模块/
 docs/Music-Spectrum/
 
+# 设计报告本体要跟踪，只忽略 LaTeX 中间产物
+docs/设计报告/*.aux
+docs/设计报告/*.log
+docs/设计报告/*.out
+docs/设计报告/*.toc
+docs/设计报告/main.blg
+docs/设计报告/*.fdb_latexmk
+docs/设计报告/*.fls
+docs/设计报告/*.xdv
+
 # ---------------------------------------------------------------------------
 # Vivado 工程模式产物
 # 如果要用 GUI 建工程，请把工程放在 build/vivado_prj/ 下（已被 build/ 忽略），
@@ -64,4 +74,7 @@ docs/Music-Spectrum/
 *.prm
 *.rpt
 *.pb
+
+# 测试图片
+*.bmp
 

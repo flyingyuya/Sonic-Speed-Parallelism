@@ -7,7 +7,7 @@
 // Module Name   : i2c_control
 // Description   : I2C控制器顶层文件
 //
-// Dependencies  :
+// Dependencies  : i2c_bit_shift.v
 //
 // Revision:
 // Revision 0.01 - File Created
@@ -15,6 +15,7 @@
 //
 /////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns / 1ps
+
 
 module i2c_control #(
     //系统时钟采用50MHz

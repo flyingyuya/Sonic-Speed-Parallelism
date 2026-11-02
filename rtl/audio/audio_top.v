@@ -1,30 +1,23 @@
-//=============================================================================
-// audio_top.v - 音频链路顶层（I2S → 低延迟均衡 → I2S）
-//-----------------------------------------------------------------------------
-// 【从模式】WM8960 是本工程的 I2S 主（手册 P56：数字音频接口也从 SYSCLK 派生，
-// MCLK 必须与 BCLK/LRCLK 同源），所以 bclk / lrclk 在这里是**输入**。
-// 时序恢复由 i2s_slave_clk 完成，输出契约与原来的 i2s_clkgen 完全一致，
-// 所以 i2s_rx / i2s_tx / eq_cascade / audio_fifo 一个字都没改。
+//////////////////////////////////////////////////////////////////////////////////
+// Company:
+// Engineer:       Binyu Fei
 //
-//                           ┌──────────────┐
-//   sdin ─▶ i2s_rx ─▶ fifo ─▶ eq_cascade L ─┐
-//                           └▶ eq_cascade R ─┴─▶ fifo ─▶ i2s_tx ─▶ sdout
-//                ▲                                              │
-//                └──── i2s_slave_clk（从 bclk/lrclk 恢复时序）────┘
+// Create Date:    2026-10-26
+// Design Name:    audio_top
+// Module Name:    audio_top
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
+// Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
+// Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
+// Description:    audio_top.v - 音频链路顶层（I2S → 低延迟均衡 → I2S）
+// Dependencies:   i2s_slave_clk.v   i2s_bclk_if.v   eq_coeff_rom.v
+//                 eq_cascade.v   audio_fifo.v i2s_tx.v
 //
-// 单一时钟域：clk = clk_sys = 48 MHz。在从模式下本模块不再需要
-// "BCLK = clk/4" 这种整数关系 —— i2s_slave_clk 靠过采样恢复边沿，
-// 只要 clk 明显快于 BCLK 即可（48 MHz / 3.072 MHz = 15.6 倍）。
+// Revision:
+// Revision 0.01 - File Created
 //
-// 系数由 eq_coeff_rom 提供：5 个频段 x 21 个增益档，每个频段独立选档。
-// 换挡时本地 FSM 把 25 个系数重新灌进两个声道的 eq_cascade。
-//
-// 为什么收发两侧都要加 FIFO：
-//   RX 在帧尾（bit_idx=2*SLOT-1）才吐出样本，而 TX 必须在下一帧起点装载。
-//   EQ 又要 6 个 clk。FIFO 把"帧节拍"和"处理节拍"解耦，
-//   同时吸收系数装载期间的样本堆积。
-//=============================================================================
+//////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns/1ps
+
 
 module audio_top #(
     parameter integer DW      = 24,
@@ -38,6 +31,10 @@ module audio_top #(
 ) (
     input  wire clk,            // clk_sys = 48 MHz
     input  wire rst_n,
+
+    // 喇叭静音（1 = 静音）
+    //   实现方式：把送进 i2s_tx 的数据清零 -> WM8960 收到全 0 采样 -> 无声
+    input  wire        mute,
 
     // ---- I2S 物理接口（从模式：bclk/lrclk 由 WM8960 提供）----
     input  wire bclk,
@@ -69,7 +66,7 @@ module audio_top #(
     localparam integer NCOE = NSECT * 5;
 
     //-------------------------------------------------------------------------
-    // 声明区（全部前置，避免"先用后声明"）
+    // 信号声明
     //-------------------------------------------------------------------------
     wire        bclk_rise, bclk_fall, frame_start, half_start, sample_stb;
     wire [5:0]  bit_idx;
@@ -109,13 +106,23 @@ module audio_top #(
     );
 
     //-------------------------------------------------------------------------
-    // I2S 接收
+    // I2S 接收（以 BCLK 为采样时钟）
     //-------------------------------------------------------------------------
-    i2s_rx #(.SLOT(SLOT), .DATA_BITS(DW), .DW(DW)) u_rx (
-        .clk(clk), .rst_n(rst_n),
-        .bclk_rise(bclk_rise), .bclk_fall(bclk_fall), .bit_idx(bit_idx),
-        .sdin(sdin),
-        .l_data(rx_l), .r_data(rx_r), .sample_valid(rx_valid)
+    i2s_bclk_if #(.SLOT(SLOT), .DATA_BITS(DW), .DW(DW)) u_i2s_rxnew (
+        .bclk       (bclk),
+        .lrclk      (lrclk),
+        .adcdat     (sdin),
+        .dacdat     (),                 // 发送侧仍由下面的 i2s_tx 负责
+        .clk        (clk),
+        .rst_n      (rst_n),
+        .rx_l       (rx_l),
+        .rx_r       (rx_r),
+        .rx_valid   (rx_valid),
+        .tx_l       ({DW{1'b0}}),
+        .tx_r       ({DW{1'b0}}),
+        .tx_en      (1'b0),             // 不让它发送
+        .dbg_rx_seen(),
+        .dbg_tx_lr  ()
     );
 
     //-------------------------------------------------------------------------
@@ -150,10 +157,7 @@ module audio_top #(
         end else begin
             coe_we <= 1'b0;
 
-            // 配置请求：只置 dirty，不直接改 gain_reg。
-            // 若在装载过程中又收到请求，dirty 置位，当前装载结束后自动重载。
-            // （早期版本在这里直接写 gain_reg，导致装载中途换档，
-            //   前几个系数用旧档位、后几个用新档位 —— band0 系数错的根源）
+            // 配置请求：只置 dirty，不直接改 gain_reg
             if (cfg_load && (band_gain != gain_reg) && !dirty)
                 dirty <= 1'b1;
 
@@ -188,8 +192,7 @@ module audio_top #(
                     end
                 end
 
-                // 4 个状态已用满 2bit，default 不可达；
-                // 写上是为了：① 满足 lint ② 万一 st 被翻转成非法值能自恢复
+                // 4 个状态已用满 2bit，default 不可达
                 default: st <= ST_IDLE;
             endcase
         end
@@ -246,7 +249,9 @@ module audio_top #(
     i2s_tx #(.SLOT(SLOT), .DATA_BITS(DW), .DW(DW)) u_tx (
         .clk(clk), .rst_n(rst_n),
         .bclk_fall(bclk_fall), .frame_start(frame_start), .bit_idx(bit_idx),
-        .l_data(out_dout[2*DW-1:DW]), .r_data(out_dout[DW-1:0]),
+        // 静音时送全 0（保持 data_en，让 I2S 时序不受影响）
+        .l_data(mute ? {DW{1'b0}} : out_dout[2*DW-1:DW]),
+        .r_data(mute ? {DW{1'b0}} : out_dout[DW-1:0]),
         .data_en(~out_empty),
         .sdout(sdout)
     );

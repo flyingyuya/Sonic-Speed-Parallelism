@@ -1,28 +1,22 @@
-//=============================================================================
-// cmd_proc.v - UART 命令解析（ASCII，给人在终端里敲）
-//-----------------------------------------------------------------------------
-// 【命令格式】一句话：一个字母 + 两位十六进制，回车生效。
+//////////////////////////////////////////////////////////////////////////////////
+// Company:
+// Engineer:       Binyu Fei
 //
-//     V07<回车>     设置 VIEW   = 0x07（三视图全开）
-//     V01<回车>     只开柱状
-//     H02<回车>     色相每 4 帧滚一级（0 = 不滚）
-//     G05<回车>     波形增益
-//     B01<回车>     背景模式
-//     A01<回车>     打开自动循环视图
-//     ?<回车>       回传当前全部配置
+// Create Date:    2026-10-26
+// Design Name:    cmd_proc
+// Module Name:    cmd_proc
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
+// Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
+// Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
+// Description:    cmd_proc.v - UART 命令解析（ASCII）
+// Dependencies:
 //
-//   字母映射： V=VIEW  S=STYLE  H=HUESPD  G=WAVEG  B=BGMODE  A=AUTO
-//   容错：只写一位十六进制也接受（例 `V7`）；分隔符只认 \r 和 \n，其它字符忽略。
+// Revision:
+// Revision 0.01 - File Created
 //
-// 【为什么做成 ASCII 而不是二进制】
-//   二进制协议（地址字节 + 数据字节）实现更简单，但必须在电脑上写脚本才能用。
-//   ASCII 可以直接用 minicom / screen / 串口助手敲，调试体验天差地别。
-//
-// 【回执】
-//   上电时主动发一行横幅 + 当前配置；收到 `?` 也回一行。
-//   这样"板子活着吗""参数改对了吗"一眼就能看出来。
-//=============================================================================
+//////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns/1ps
+
 
 module cmd_proc #(
     parameter integer NREG = 6
@@ -54,7 +48,7 @@ module cmd_proc #(
 );
 
     //=========================================================================
-    // 1. 解析状态机
+    // 解析状态机
     //=========================================================================
     localparam [2:0] S_CMD = 3'd0,   // 等字母
                      S_HI  = 3'd1,   // 等高位 hex
@@ -88,9 +82,11 @@ module cmd_proc #(
                 "B", "b": cmdidx = 4'h4;
                 "A", "a": cmdidx = 4'h5;
                 // T = 演示/自检图案（rtl/video/demo_src.v）
-                //   之所以要这个命令：没有音频模块时，柱状/极坐标/波形
-                //   全是空的，S/H/G 你看不出有没有生效。开个内置图案就能看了。
                 "T", "t": cmdidx = 4'h6;
+                // I = 音频输入源
+                //   I00 = 话筒（板载 MIC，接 LINPUT1）
+                //   I01 = 线路输入（3.5mm 座，接 LINPUT3 / INPUTR3）
+                "I", "i": cmdidx = 4'h7;
                 default : cmdidx = 4'hF;
             endcase
         end
@@ -100,23 +96,16 @@ module cmd_proc #(
     wire is_hex  = (hexval(rx_data) != 4'hF);
 
     //=========================================================================
-    // 2. 回执缓冲（20 字节）
+    // 回执缓冲（20 字节）
     //    "V07 S00 H02 G03 B0\r\n"        —— 共 18 字符 + CRLF = 20
     //
-    //    字段布局（这是【协议的唯一真相源】，上位机脚本按这个解析）：
+    //    字段布局（上位机脚本按这个解析）：
     //        [0] 'V'  [1:2] view 2位hex
     //        [3] ' '  [4] 'S'  [5:6] style 2位hex
     //        [7] ' '  [8] 'H'  [9:10] hue_spd 2位hex
     //        [11] ' ' [12] 'G' [13:14] wave_gain 2位hex
     //        [15] ' ' [16] 'B' [17]    bg_mode 【1 位】hex
     //        [18] CR  [19] LF
-    //
-    //    ⚠️ 注意两个容易写错的地方：
-    //      ①  B 只有【1 位】hex（直接取 cfg_bg_mode[3:0]），不是 2 位；
-    //      ②  回执里【没有】A（cfg_auto）字段，虽然 A 是合法命令。
-    //    这个注释以前写成 "V07 S00 H02 G03 B00 A00\r\n"（24 字符），
-    //    和代码实际产生的 18 字符对不上 —— 属于账本第 34 条
-    //    「文档数字凭印象写」的同类问题。
     //=========================================================================
     reg [7:0] tbuf [0:19];
     integer   ti;
@@ -130,7 +119,8 @@ module cmd_proc #(
 
     task fill_tbuf;
         begin
-            tbuf[0] = "V"; tbuf[1] = hexchar(cfg_view[7:4]);     tbuf[2] = hexchar(cfg_view[3:0]);
+            tbuf[0] = "V"; tbuf[1] = hexchar(cfg_view[7:4]);
+            tbuf[2] = hexchar(cfg_view[3:0]);
             tbuf[3] = " "; tbuf[4] = "S"; tbuf[5] = hexchar(cfg_style[7:4]);
             tbuf[6] = hexchar(cfg_style[3:0]);
             tbuf[7] = " "; tbuf[8] = "H"; tbuf[9]  = hexchar(cfg_hue_spd[7:4]);
@@ -138,13 +128,12 @@ module cmd_proc #(
             tbuf[11] = " "; tbuf[12] = "G"; tbuf[13] = hexchar(cfg_wave_gain[7:4]);
             tbuf[14] = hexchar(cfg_wave_gain[3:0]);
             tbuf[15] = " "; tbuf[16] = "B"; tbuf[17] = hexchar(cfg_bg_mode[3:0]);
-            tbuf[18] = 8'h0D;
-            tbuf[19] = 8'h0A;
+            tbuf[18] = 8'h0D; tbuf[19] = 8'h0A;
         end
     endtask
 
     //=========================================================================
-    // 3. 发送调度：上电发一次横幅，收到 '?' 再发一次
+    // 发送调度：上电发一次横幅，收到 '?' 再发一次
     //=========================================================================
     reg        tx_go;       // 请求发送整个缓冲区
     reg [4:0]  txc;         // 已发到第几个
@@ -154,7 +143,7 @@ module cmd_proc #(
     localparam integer BANNER_DLY = 48_000_000 / 1000 * 50;     // 上电 50 ms 后发
 
     //=========================================================================
-    // 4. 主逻辑
+    // 主逻辑
     //=========================================================================
     always @(posedge clk) begin
         if (!rst_n) begin
@@ -168,7 +157,7 @@ module cmd_proc #(
             tx_send    <= 1'b0;
             tx_go      <= 1'b0;
             txc        <= 5'd0;
-            power_cnt  <= 32'd0;        // 和声明一致（账本第 42 条：16 位装不下 2.4M）
+            power_cnt  <= 32'd0;        // 和声明一致
             did_banner <= 1'b0;
             for (ti = 0; ti < 20; ti = ti + 1) tbuf[ti] <= 8'h20;
         end else begin
@@ -205,11 +194,7 @@ module cmd_proc #(
 
                     S_HI: begin
                         if (rx_data == "?") begin
-                            // '?' 是【全局】命令：命令写了一半也能回读。
-                            // 上板踩过：S_HI/S_LO 里不认 '?'，它就掉进“非法字符”
-                            // 分支被吃掉，用户要按两次 '?' 才看得到回执；
-                            // 更糟的是下一次命令的字母也被吃、
-                            // 第一个 hex 位会和残留的 hi_r 拼成错值。
+                            // '?' 是【全局】命令：命令写了一半也能回读
                             fill_tbuf();
                             tx_go <= 1'b1;
                             st    <= S_CMD;
@@ -217,8 +202,7 @@ module cmd_proc #(
                             hi_r <= {4'd0, hexval(rx_data)};
                             st   <= S_LO;
                         end else begin
-                            // 其余非法字符（含 \r/\n）：放弃当前命令，回主态。
-                            // 没有这个 else 就会永久卡住，之后所有命令全死。
+                            // 其余非法字符（含 \r/\n）：放弃当前命令，回主态
                             st <= S_CMD;
                         end
                     end
@@ -241,7 +225,7 @@ module cmd_proc #(
                             wr_data <= {hi_r[3:0], 4'd0};
                             st      <= S_CMD;
                         end else begin
-                            st <= S_CMD;                // 同上：非法字符要能脱困
+                            st <= S_CMD;    // 同上：非法字符要能脱困
                         end
                     end
 

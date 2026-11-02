@@ -16,6 +16,7 @@
 /////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns / 1ps
 
+
 module bit8_trans_bit16(
     input             clk,
     input             reset_p,

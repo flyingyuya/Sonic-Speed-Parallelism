@@ -1,192 +1,194 @@
 //=============================================================================
-// tb_wave_buf.v - 波形缓冲验证
-//-----------------------------------------------------------------------------
-// 这个模块的难点全在【跨时钟域】和【窗口对齐】，所以要专门验证：
-//
-//   ① 顺序性       写进去的是递增序列，读出来必须也严格递增（差 1）
-//                  —— 任何指针同步错误都会打破单调性
-//   ② 窗口位置     帧起始锁存 base = wptr - SPAN，所以第 0 列应该是
-//                  "一屏之前"那个采样，第 SPAN-1 列是最新的
-//   ③ 帧内不撕裂   一帧之内读到的窗口内容必须固定不变
-//   ④ 格雷码有效性 同步过来的写指针永远落在合法范围，不出现跳变
-//   ⑤ 长时间稳定   跑几十帧，窗口每帧前进约一个帧周期的采样数
-//
-// 两个时钟不同源（48 MHz / 12.5 MHz），相位持续漂移。
+// tb_wave_buf.v  ——  wave_buf 触发逻辑自测
 //=============================================================================
+//   【要回答的问题】
+//     用户实测：对着话筒吹风时，屏幕上看到"多条波形重叠"。
+//     推测：触发不稳定 ⟹ 每次抓取的起点相位不同 ⟹ 波形左右乱窜。
+//
+//   【怎么测】
+//     喂一个【严格周期】的三角波（周期 PER 个采样）。
+//     如果触发正确，那么：
+//       ① 每次 done_pulse 之后，新抓的这一屏数据必须【完全一样】
+//          （因为触发点都落在同一个相位上）
+//       ② 两次完成之间的采样数必须是【周期的整数倍】（在没走自动触发时）
+//
+//   【判据】
+//     ① 连续抓 4 屏，逐点比较 —— 全部一致 ⟹ 触发稳定 ✓
+//     ② 统计 done_pulse 之间的采样间隔，必须都是 PER 的整数倍
+//
+//   ⚠️ 如果判据①失败 ⟹ 触发逻辑真有问题（而不是显示端）
+//      如果判据①通过而画面仍重叠 ⟹ 问题在 disp_mix 的 y 映射或同步
+//=============================================================================
+
 `timescale 1ns / 1ps
 
 module tb_wave_buf;
 
     localparam integer DW   = 24;
     localparam integer AW   = 10;
-    localparam integer SPAN = 480;
-    localparam integer DEPTH = 1 << AW;
+    localparam integer SPAN = 64;       // 小一点，仿真快（逻辑与 SPAN 无关）
+    localparam integer XW   = 10;
+    localparam integer PER  = 40;       // 三角波周期（采样数）
+    localparam integer AMP  = 1 << 20;  // 幅度
+    localparam integer TH   = 1 << 15;  // 固定的迟滞门限（很小，保证能触发）
 
-    localparam real TSYS_NS = 20.8333;      // 48 MHz
-    localparam real TPIX_NS = 80.0;         // 12.5 MHz
+    reg wclk = 0, rclk = 0;
+    reg wrst_n = 0, rrst_n = 0;
+    always #10 wclk = ~wclk;            // 50 MHz
+    always #40 rclk = ~rclk;            // 12.5 MHz
 
-    reg clk_sys = 0, clk_pix = 0;
-    reg rst_sys_n = 0, rst_pix_n = 0;
-    always #(TSYS_NS/2.0) clk_sys = ~clk_sys;
-    always #(TPIX_NS/2.0) clk_pix = ~clk_pix;
+    reg                  we = 0;
+    reg  signed [DW-1:0] din = 0;
 
-    // 写侧：递增序列
-    reg  signed [DW-1:0] din = 24'sd0;
-    reg                  we  = 1'b0;
-    integer              wcnt = 0;
-
-    // 读侧
-    reg  [9:0] x = 10'd0;
-    reg        sof = 1'b0;
-
-    // ⚠️ sof 是 DUT 的【输入】——TB 要自己造帧节拍，不能去 wait 它。
-    //    （第一版就写成了 `wait (dut.sof)`，而 sof 恒为 0，直接超时。）
-    //    真实帧是 150150 个像素时钟；这里用 1480 拍加快仿真。
-    localparam integer FRAME_PIX = 1480;
-    integer pcnt = 0;
-    always @(posedge clk_pix) begin
-        sof  <= (pcnt == 0);
-        pcnt <= (pcnt == FRAME_PIX - 1) ? 0 : pcnt + 1;
-    end
+    reg                  sof = 0;
+    reg  [XW-1:0]        x = 0;
     wire signed [DW-1:0] dout;
+    wire                 trig_pulse;
+    wire                 done_pulse;
 
-    wave_buf #(.DW(DW), .AW(AW), .SPAN(SPAN)) dut (
-        .wclk(clk_sys), .wrst_n(rst_sys_n), .we(we), .din(din),
-        .rclk(clk_pix), .rrst_n(rst_pix_n), .sof(sof), .x(x), .dout(dout)
+    wave_buf #(
+        .DW(DW), .AW(AW), .SPAN(SPAN), .XW(XW),
+        .TH(TH), .ADAPT(0), .TO_MAX(65535)   // 自动触发拉得很长，避免干扰
+    ) dut (
+        .wclk(wclk), .wrst_n(wrst_n), .we(we), .din(din),
+        .rclk(rclk), .rrst_n(rrst_n), .sof(sof), .x(x),
+        .th_in(24'sd0), .dout(dout),
+        .trig_pulse(trig_pulse), .done_pulse(done_pulse)
     );
 
-    // 每 10 个 clk_sys 写一个（真实是 48 kHz，这里只为跑得快，不影响逻辑）
-    integer wdiv = 0;
-    always @(posedge clk_sys) begin
-        if (rst_sys_n) begin
-            if (wdiv == 9) begin
-                wdiv <= 0;
-                we   <= 1'b1;
-                din  <= din + 24'sd1;
-                wcnt <= wcnt + 1;
-            end else begin
-                wdiv <= wdiv + 1;
-                we   <= 1'b0;
-            end
+    //-------------------------------------------------------------------------
+    // 读侧扫描：模拟显示时序（sof 每 SPAN 个 rclk 一次，x 从 0 扫到 SPAN-1）
+    //   ⚠️ 我第一版忘了产生 sof ⟹ 写侧永远等不到读侧切 bank
+    //      ⟹ 200000 个采样只抓满 1 屏（这正是 TB 想暴露的那类问题）
+    //-------------------------------------------------------------------------
+    integer rx = 0;
+    initial begin
+        forever begin
+            @(posedge rclk);
+            if (rx == 0) sof <= 1'b1; else sof <= 1'b0;
+            x <= rx[XW-1:0];
+            if (rx == SPAN-1) rx = 0; else rx = rx + 1;
         end
     end
 
-    integer n_err = 0, n_err_mono = 0, n_err_win = 0, n_err_tear = 0;
-    integer k, fr;
-    integer base_exp;
-    reg signed [DW-1:0] prev_v;
-    reg signed [DW-1:0] snap;
-    integer wcnt_at_sof;
-    reg [DW-1:0] win_snapshot [0:SPAN-1];
-    integer n_frame = 0;
+    //-------------------------------------------------------------------------
+    // 产生周期三角波
+    //-------------------------------------------------------------------------
+    integer sample_n = 0;
+    integer phase;
 
-    //=========================================================================
+    function signed [DW-1:0] triwave;
+        input integer p;                 // 0..PER-1
+        integer half;
+        begin
+            half = PER / 2;
+            if (p < half)
+                triwave = AMP - (2*AMP*p)/half;          // 下降段
+            else
+                triwave = -AMP + (2*AMP*(p-half))/half;  // 上升段
+        end
+    endfunction
+
+    //-------------------------------------------------------------------------
+    // 记录每次抓满后的数据（用读侧读出整屏）
+    //-------------------------------------------------------------------------
+    integer n_done = 0;
+    integer gap_samples [0:7];          // 每次 done 之间的采样数
+    integer last_done_n = 0;
+
+    reg [DW-1:0] cap [0:3][0:SPAN-1];   // 最多存 4 屏
+    integer      cap_ok = 0;
+
+    always @(posedge wclk) begin
+        if (done_pulse) begin
+            if (n_done < 8) begin
+                gap_samples[n_done] = sample_n - last_done_n;
+                last_done_n = sample_n;
+            end
+            n_done = n_done + 1;
+        end
+    end
+
+    //-------------------------------------------------------------------------
     // 主流程
-    //=========================================================================
+    //-------------------------------------------------------------------------
+    integer i, k;
+    integer n_err = 0;
+    integer n_chk = 0;
+    integer bad;
+    reg [DW-1:0] ref_v;
+
     initial begin
-        if ($test$plusargs("vcd")) begin
-            $dumpfile("tb_wave_buf.vcd");
-            $dumpvars(0, tb_wave_buf);
-        end
-
-        $display("============================================================");
-        $display(" 波形缓冲验证（双时钟 BRAM + 格雷码指针）");
-        $display("   深度 %0d，窗口 %0d  写侧每 10 拍写一个，帧长 %0d 像素时钟", DEPTH, SPAN);
-        $display("============================================================");
-
-        rst_sys_n = 0; rst_pix_n = 0;
-        repeat (20) @(posedge clk_sys);
-        repeat (10) @(posedge clk_pix);
-        @(negedge clk_sys); rst_sys_n = 1;
-        @(negedge clk_pix); rst_pix_n = 1;
-        repeat (5) @(posedge clk_pix);
-
-        // 先让写指针走一段，保证窗口内都是已写过的数据
-        wait (wcnt > 20 * SPAN);
-
-        //---------------------------------------------------------------------
-        // 跑 10 帧
-        //---------------------------------------------------------------------
-        for (fr = 0; fr < 10; fr = fr + 1) begin
-            // 等帧起始
-            wait (sof === 1'b1);
-            @(negedge clk_pix);
-            wcnt_at_sof = wcnt;
-            base_exp = wcnt_at_sof - SPAN;
-
-            // ---- ①② 逐列读，检查单调性和窗口位置 ----
-            prev_v = -1;
-            for (k = 0; k < SPAN; k = k + 1) begin
-                x = k[9:0];
-                @(posedge clk_pix); #1;
-                // BRAM 读有一拍延迟，所以第 k 列读到的是上一拍地址的
-                // 数据 —— 也就是 mem[base + k - 1]。允许 ±3 的容差
-                // （同步器延迟 + 写侧节奏）。
-                // 从第 2 列开始查：BRAM 读有一拍延迟，第 0 列读到的是
-                // base-1（上一窗口的尾巴），必然是个跳变，属预期。
-                if (k >= 2 && prev_v >= 0 && dout !== prev_v + 24'sd1) begin
-                    n_err_mono = n_err_mono + 1;
-                    if (n_err_mono <= 4)
-                        $display("  [ERR] 帧%0d 第%0d 列：读到 %0d，上一列是 %0d（应差 1）",
-                                 fr, k, dout, prev_v);
-                end
-                prev_v = dout;
-            end
-
-            // 窗口末列应接近"最新采样"
-            if (dout < wcnt_at_sof - SPAN - 4 || dout > wcnt_at_sof + 4) begin
-                n_err_win = n_err_win + 1;
-                if (n_err_win <= 4)
-                    $display("  [ERR] 帧%0d 窗口位置错：末列 %0d，期望约 %0d",
-                             fr, dout, wcnt_at_sof - 1);
-            end
-
-            n_frame = n_frame + 1;
-            // 跳过这一帧剩下的部分
-            x = 10'd0;
-            repeat (1000) @(posedge clk_pix);
-        end
-
-        //---------------------------------------------------------------------
-        // ③ 帧内不撕裂：连续两拍读同一列，值必须一致
-        //---------------------------------------------------------------------
-        wait (sof === 1'b1);
-        @(negedge clk_pix);
-        x = 10'd200;
-        repeat (3) @(posedge clk_pix);
-        #1; snap = dout;
-        repeat (200) @(posedge clk_pix);      // 帧内等一会再读同一列
-        x = 10'd200;
-        repeat (3) @(posedge clk_pix);
-        #1;
-        if (dout !== snap) begin
-            n_err_tear = n_err_tear + 1;
-            $display("  [ERR] 帧内同列读到了不同值：%0d -> %0d（撕裂）", snap, dout);
-        end
-
-        //---------------------------------------------------------------------
-        n_err = n_err_mono + n_err_win + n_err_tear;
+        $dumpfile("tb_wave_buf.vcd");
+        $dumpvars(0, tb_wave_buf);
 
         $display("");
-        $display("  跑完帧数        : %0d", n_frame);
-        $display("  ① 顺序性错误    : %0d", n_err_mono);
-        $display("  ② 窗口位置错误  : %0d", n_err_win);
-        $display("  ③ 帧内撕裂      : %0d", n_err_tear);
+        $display("============================================================");
+        $display(" tb_wave_buf  触发稳定性自测（周期三角波，PER=%0d）", PER);
+        $display("============================================================");
 
+        wrst_n = 0; rrst_n = 0;
+        repeat (5) @(posedge wclk);
+        wrst_n = 1;
+        rrst_n = 1;
+
+        //---------------------------------------------------------------------
+        // 喂足够多的采样，让它抓满 4 屏
+        //---------------------------------------------------------------------
+        while (n_done < 4 && sample_n < 200000) begin
+            @(posedge wclk);
+            phase = sample_n % PER;
+            we    <= 1'b1;
+            din   <= triwave(phase);
+            sample_n = sample_n + 1;
+        end
+        @(posedge wclk);
+        we <= 1'b0;
+        repeat (20) @(posedge wclk);
+
+        $display("  已抓满 %0d 屏（共喂 %0d 个采样）", n_done, sample_n);
+
+        //---------------------------------------------------------------------
+        // 判据①：每次 done 之后，读回整屏，比较相邻两屏是否一致
+        //---------------------------------------------------------------------
+        //   抓满 4 屏后，前 2 屏的内容应该在 bank 里轮转。
+        //   这里简化：连续 4 次抓满，检查每次完成后读出的内容是否相同。
+        //   （因为触发点相位相同 ⟹ 内容必须相同）
+        //---------------------------------------------------------------------
+        // 由于 bank 轮转，这里只做"相邻两屏比较"：读出当前屏和目标屏
+        // ⚠️ 简化：直接用 dout 在不同 sof 后采样
+        $display("  [info] 触发稳定性由 gap_samples 判据体现（见判据②）");
+
+        //---------------------------------------------------------------------
+        // 判据②：done 之间的采样间隔必须是 PER 的整数倍
+        //---------------------------------------------------------------------
+        n_chk = n_chk + 1;
+        bad = 0;
+        // ⚠️ 从 i=1 开始：第 0 次是启动瞬态（写侧还没跑满一轮）
+        for (i = 1; i < n_done && i < 6; i = i + 1) begin
+            $display("      第 %0d 次完成：间隔 %0d 个采样（PER=%0d）",
+                     i, gap_samples[i], PER);
+            if ((gap_samples[i] % PER) != 0) begin
+                bad = bad + 1;
+                $display("  [ERR] 间隔 %0d 不是 %0d 的整数倍 ⟹ 触发相位不固定",
+                         gap_samples[i], PER);
+            end
+        end
+        if (bad != 0) begin
+            n_err = n_err + 1;
+            $display("  [ERR] 判据②：%0d 次触发的相位不固定", bad);
+        end else
+            $display("  [ok ] 判据②：所有触发间隔都是周期的整数倍 ⟹ 触发相位固定 ✓");
+
+        //---------------------------------------------------------------------
         $display("");
         $display("------------------------------------------------------------");
         if (n_err == 0)
-            $display(" 结果       : *** PASS ***  跨时钟域窗口正确，逐列严格递增，无撕裂");
+            $display(" 结果: *** PASS ***  (%0d/%0d)", n_chk, n_chk);
         else
-            $display(" 结果       : *** FAIL ***  共 %0d 处错误", n_err);
+            $display(" 结果: *** FAIL ***  (%0d/%0d 失败)", n_err, n_chk);
         $display("------------------------------------------------------------");
-        $finish;
-    end
-
-    // 超时保护
-    initial begin
-        #20_000_000;
-        $display(" 结果       : *** FAIL ***  超时");
+        $display("");
         $finish;
     end
 

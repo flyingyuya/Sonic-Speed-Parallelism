@@ -32,7 +32,13 @@ module tb_wm8960_init;
     localparam integer DLY_MS      = 1;            // 与真实配置一致
 
     localparam [7:0]   DEV_ADDR_W  = 8'h34;        // WM8960: 7'b0011010 << 1 | 0
-    localparam integer N_EXP       = 20;           // 期望写多少条
+    // ⚠️ 必须和 rtl/wm8960/WM8960_init_table.v 里的 LUT_SIZE 一致。
+    //    它写死的时候，加/删寄存器不会让仿真失败 —— 只会拿错位置的条目去比对，
+    //    报出"最后一条不是 R4"这种误导性的错（真正原因在别处）。
+    //    改寄存器表时【一定要同时改这里】，最好一次性改两处并在提交信息里写明。
+    `include "wm8960_nreg.vh"
+
+    localparam integer N_EXP       = WM8960_NREG;  // 期望写多少条（同源，不再手写）
     localparam integer LOCK_MIN_NS = 5_000_000;    // PLL 至少留 5 ms 锁定
 
     //=========================================================================
@@ -53,6 +59,7 @@ module tb_wm8960_init;
         .Rst_n     (rst_n),
         .Go        (go),
         .device_id (DEV_ADDR_W),
+        .src_sel   (1'b0),          // 默认话筒
         .Init_Done (init_done),
         .i2c_sclk  (i2c_sclk),
         .i2c_sdat  (i2c_sdat)
@@ -72,7 +79,10 @@ module tb_wm8960_init;
 
     reg [15:0] cap_word [0:127];                   // 捕获到的 16 位字
     reg [63:0] cap_time [0:127];                   // 该字停止位时刻(ps)
-    integer    cap_n = 0;
+    integer    cap_n    = 0;
+    integer    cap_base = 0;      // 第二次 Go 之前的条数
+    integer    go2_err  = 0;      // 第二次 Go 相关的错误数（模块级，便于汇总）
+    integer    go2_wait = 0;
 
     reg       in_frame = 1'b0;
     reg [3:0] bitcnt   = 4'd0;
@@ -149,26 +159,40 @@ module tb_wm8960_init;
     reg [8*48-1:0] exp_note [0:N_EXP-1];
 
     initial begin
-        exp_reg[ 0] = 7'h0F; exp_dat[ 0] = 9'h000; exp_note[ 0] = "soft reset";
-        exp_reg[ 1] = 7'h19; exp_dat[ 1] = 9'h1FC; exp_note[ 1] = "PWRMGMT1";
-        exp_reg[ 2] = 7'h2F; exp_dat[ 2] = 9'h00C; exp_note[ 2] = "PWRMGMT3";
-        exp_reg[ 3] = 7'h1A; exp_dat[ 3] = 9'h1E0; exp_note[ 3] = "PWRMGMT2 (PLLEN=0)";
-        exp_reg[ 4] = 7'h08; exp_dat[ 4] = 9'h1C4; exp_note[ 4] = "BCLKDIV=/4";
-        exp_reg[ 5] = 7'h07; exp_dat[ 5] = 9'h04A; exp_note[ 5] = "IFACE1 master";
-        exp_reg[ 6] = 7'h34; exp_dat[ 6] = 9'h038; exp_note[ 6] = "PLL N";
-        exp_reg[ 7] = 7'h35; exp_dat[ 7] = 9'h031; exp_note[ 7] = "PLL K1";
-        exp_reg[ 8] = 7'h36; exp_dat[ 8] = 9'h026; exp_note[ 8] = "PLL K2";
-        exp_reg[ 9] = 7'h37; exp_dat[ 9] = 9'h0E9; exp_note[ 9] = "PLL K3";
-        exp_reg[10] = 7'h1A; exp_dat[10] = 9'h1E1; exp_note[10] = "PLLEN=1";
-        exp_reg[11] = 7'h02; exp_dat[11] = 9'h1F9; exp_note[11] = "LOUT1 vol";
-        exp_reg[12] = 7'h03; exp_dat[12] = 9'h1F9; exp_note[12] = "ROUT1 vol";
-        exp_reg[13] = 7'h15; exp_dat[13] = 9'h1C3; exp_note[13] = "L ADC vol";
-        exp_reg[14] = 7'h16; exp_dat[14] = 9'h1C3; exp_note[14] = "R ADC vol";
-        exp_reg[15] = 7'h2D; exp_dat[15] = 9'h080; exp_note[15] = "L mixer";
-        exp_reg[16] = 7'h2E; exp_dat[16] = 9'h080; exp_note[16] = "R mixer";
-        exp_reg[17] = 7'h2B; exp_dat[17] = 9'h150; exp_note[17] = "L boost";
-        exp_reg[18] = 7'h2C; exp_dat[18] = 9'h00A; exp_note[18] = "R boost";
-        exp_reg[19] = 7'h04; exp_dat[19] = 9'h005; exp_note[19] = "CLKSEL=PLL (LAST)";
+        exp_reg[ 0] = 7'h0F; exp_dat[ 0] = 9'h000; exp_note[ 0] = "software reset (must be 1st)";
+        exp_reg[ 1] = 7'h19; exp_dat[ 1] = 9'h0FE; exp_note[ 1] = "PWRMGMT1: VMIDSEL=01 VREF AINL";
+        exp_reg[ 2] = 7'h2F; exp_dat[ 2] = 9'h03C; exp_note[ 2] = "PWRMGMT3: LOMIX ROMIX LMIC RMI";
+        exp_reg[ 3] = 7'h22; exp_dat[ 3] = 9'h100; exp_note[ 3] = "L out mixer: LD2LO=1 (DAC -> L";
+        exp_reg[ 4] = 7'h25; exp_dat[ 4] = 9'h100; exp_note[ 4] = "R out mixer: RD2RO=1 (DAC -> R";
+        exp_reg[ 5] = 7'h1A; exp_dat[ 5] = 9'h1E0; exp_note[ 5] = "PWRMGMT2: DACL DACR LOUT1 ROUT";
+        exp_reg[ 6] = 7'h08; exp_dat[ 6] = 9'h1C4; exp_note[ 6] = "CLOCKING2: BCLKDIV=0100 (/4)";
+        exp_reg[ 7] = 7'h07; exp_dat[ 7] = 9'h04A; exp_note[ 7] = "IFACE1: MS=1 I2S 24bit";
+        exp_reg[ 8] = 7'h34; exp_dat[ 8] = 9'h038; exp_note[ 8] = "PLL N: PRESCALE=1 SDM=1 N=8";
+        exp_reg[ 9] = 7'h35; exp_dat[ 9] = 9'h031; exp_note[ 9] = "PLL K[23:16]";
+        exp_reg[10] = 7'h36; exp_dat[10] = 9'h026; exp_note[10] = "PLL K[15:8]";
+        exp_reg[11] = 7'h37; exp_dat[11] = 9'h0E9; exp_note[11] = "PLL K[7:0] -> K=0x3126E9";
+        exp_reg[12] = 7'h1A; exp_dat[12] = 9'h1F9; exp_note[12] = "PWRMGMT2 + PLLEN=1 -> PLL ON (";
+        exp_reg[13] = 7'h20; exp_dat[13] = 9'h118; exp_note[13] = "ADCL path: LINPUT1 + LMIC2B=1 ";
+        exp_reg[14] = 7'h21; exp_dat[14] = 9'h000; exp_note[14] = "ADCR path: off (mono mic, DATS";
+        exp_reg[15] = 7'h17; exp_dat[15] = 9'h1C4; exp_note[15] = "R23: TSDEN=1, DATSEL=01 (left ";
+        exp_reg[16] = 7'h00; exp_dat[16] = 9'h127; exp_note[16] = "L in PGA: IPVU=1 LINMUTE=0 LIN";
+        exp_reg[17] = 7'h01; exp_dat[17] = 9'h127; exp_note[17] = "R in PGA: IPVU=1 RINMUTE=0 RIN";
+        exp_reg[18] = 7'h2B; exp_dat[18] = 9'h000; exp_note[18] = "L input boost: 0dB";
+        exp_reg[19] = 7'h2C; exp_dat[19] = 9'h000; exp_note[19] = "R input boost: 0dB";
+        exp_reg[20] = 7'h05; exp_dat[20] = 9'h000; exp_note[20] = "R5: DACMU=0 (unmute DAC!), ADC";
+        exp_reg[21] = 7'h15; exp_dat[21] = 9'h1C3; exp_note[21] = "L ADC digital vol 0dB";
+        exp_reg[22] = 7'h16; exp_dat[22] = 9'h1C3; exp_note[22] = "R ADC digital vol 0dB";
+        exp_reg[23] = 7'h0A; exp_dat[23] = 9'h1FF; exp_note[23] = "L DAC digital vol 0dB (update)";
+        exp_reg[24] = 7'h0B; exp_dat[24] = 9'h1FF; exp_note[24] = "R DAC digital vol 0dB (update)";
+        exp_reg[25] = 7'h02; exp_dat[25] = 9'h1F9; exp_note[25] = "LOUT1 vol +0dB";
+        exp_reg[26] = 7'h03; exp_dat[26] = 9'h1F9; exp_note[26] = "ROUT1 vol +0dB";
+        // ⚠️ 旁路已关闭（原来 0dB 会把音频直接从输入送到喇叭，绕过 DAC/EQ）
+        exp_reg[27] = 7'h2D; exp_dat[27] = 9'h000; exp_note[27] = "L mixer bypass OFF";
+        exp_reg[28] = 7'h2E; exp_dat[28] = 9'h000; exp_note[28] = "R mixer bypass OFF";
+        exp_reg[29] = 7'h31; exp_dat[29] = 9'h0F7; exp_note[29] = "ClassD ctl: enable speakers";
+        exp_reg[30] = 7'h28; exp_dat[30] = 9'h17F; exp_note[30] = "L spk vol: SPKVU=1 +6dB (rst=M";
+        exp_reg[31] = 7'h29; exp_dat[31] = 9'h17F; exp_note[31] = "R spk vol: SPKVU=1 +6dB (rst=M";
+        exp_reg[32] = 7'h04; exp_dat[32] = 9'h005; exp_note[32] = "CLOCKING1: SYSCLKDIV=/2 CLKSEL";
     end
 
     //=========================================================================
@@ -276,13 +300,48 @@ module tb_wm8960_init;
             $display("  [ERR] 最后一条不是 R4 CLKSEL=1");
         end
 
+        //---------------------------------------------------------------------
+        // 检查 ⑧：第二次 Go 必须能【完整重跑整张表】
+        //---------------------------------------------------------------------
+        //   ⚠️ 这条判据是补上来的。之前 TB 只测一次 Go，所以下面这个真 bug
+        //      完全没被覆盖，直到上板才暴露（切输入源 I01 后静音 + LED1 灭）：
+        //        Go 只清 cnt 不清 state，且整个 case 被 cnt<LUT_SIZE 门控
+        //        ⟹ 重配时 Go 落在 cnt==LUT_SIZE 那一拍被吞掉
+        //        ⟹ state 停在 0 ⟹ 一条都发不出去 ⟹ Init_Done 恒 0
+        //        ⟹ aud_rst_n 把音频通路按住复位。
+        //   判据：第二次 Go 之后 Init_Done 要重新拉高，且表要完整重跑一轮。
+        //---------------------------------------------------------------------
+        cap_base = cap_n;
+        @(negedge clk); go = 1'b1;
+        @(negedge clk); go = 1'b0;
+
+        go2_wait = 0;
+        while (init_done !== 1'b1 && go2_wait < 2000000) begin
+            @(posedge clk);
+            go2_wait = go2_wait + 1;
+        end
+
+        if (init_done !== 1'b1) begin
+            go2_err = go2_err + 1;
+            $display("  [ERR] 第二次 Go 之后 Init_Done 没有重新拉高（状态机卡死）");
+        end else
+            $display("  [OK ] 第二次 Go：Init_Done 重新拉高");
+
+        if ((cap_n - cap_base) !== N_EXP) begin
+            go2_err = go2_err + 1;
+            $display("  [ERR] 第二次 Go 只发了 %0d 条（期望 %0d 条）",
+                     cap_n - cap_base, N_EXP);
+        end else
+            $display("  [OK ] 第二次 Go：整张表完整重跑了 %0d 条", cap_n - cap_base);
+
         // 检查：Init_Done 拉高后必须保持
         repeat (500) @(posedge clk);
         if (init_done !== 1'b1) begin
             n_err = n_err + 1;
             $display("  [ERR] Init_Done 没有保持");
         end
-        if (cap_n !== N_EXP) begin
+        // 这里已经跑了两轮（第一次 Go + 第二次 Go），所以是 2*N_EXP
+        if (cap_n !== 2*N_EXP) begin
             n_err = n_err + 1;
             $display("  [ERR] Init_Done 之后仍在写寄存器（cnt 回绕了）");
         end

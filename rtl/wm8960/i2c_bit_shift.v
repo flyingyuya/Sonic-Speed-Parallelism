@@ -1,4 +1,21 @@
+/////////////////////////////////////////////////////////////////////////////////
+// Company       : 武汉芯路恒科技有限公司
+//                 http://xiaomeige.taobao.com
+// Web           : http://www.corecourse.cn
+//
+// Create Date   : 2019/05/01 00:00:00
+// Module Name   : i2c_control
+// Description   : I2C 单字节传输
+//
+// Dependencies  :
+//
+// Revision:
+// Revision 0.01 - File Created
+// Additional Comments:
+//
+/////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns / 1ps
+
 
 module i2c_bit_shift (
     Clk,

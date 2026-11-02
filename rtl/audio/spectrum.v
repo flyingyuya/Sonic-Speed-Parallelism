@@ -1,50 +1,33 @@
-//=============================================================================
-// spectrum.v - 频谱柱高生成（clk_sys 域，FFT 的直接下游）
-//-----------------------------------------------------------------------------
-// 输入：fft_core 顺序输出的 512 个频点 (index, magnitude)
-// 输出：60 根柱的高度（9 位，0..511），带峰值保持与线性衰减
+//////////////////////////////////////////////////////////////////////////////////
+// Company:
+// Engineer:       Binyu Fei
 //
-// 【处理链】
+// Create Date:    2026-10-26
+// Design Name:    spectrum
+// Module Name:    spectrum
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
+// Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
+// Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
+// Description:    spectrum.v - 频谱柱高生成
+// Dependencies:
 //
-//   bin 流 ──▶ ①对数频率分组 ──▶ ②组内取最大 ──▶ ③幅度->高度 ──▶ ④峰值保持+衰减
-//               spectrum_map        逐柱累积            dB 压缩         每帧一次
+// Revision:
+// Revision 0.01 - File Created
 //
-// 【① 分组】低频 16 根线性 + 高频 44 根对数
-//   为什么不能纯对数：512 个 bin 分 60 根柱，平均每柱 8.5 个 bin。
-//   纯对数时低频前几根柱只覆盖 1 个甚至 0 个 bin，会看到一根根空柱子。
-//   分组表由 scripts/golden/gen_spectrum_map.py 生成，可自由调。
-//
-// 【③ dB 压缩】用 log2 近似，而不是开方或线性
-//   线性：只有最强的几根柱子看得见，音乐一停全塌
-//   开方：压缩不足，动态范围还是太大
-//   dB  ：标准频谱分析仪的做法，视觉上最接近"听觉响度"
-//
-//   实现：先找最高位位置 mp，再把尾数归一化后取高 3 位，拼成 Q5.3 的 log2
-//
-//       ilog2 = { mp[4:0], 尾数高 3 位 }      单位 = 1/8 个八度
-//       相当于每个 ilog2 单位 = 0.7525 dB
-//
-//   然后  高度 = (ilog2 - DB_OFFS) << SCALE_SH，钳位到 0..511
-//   默认 DB_OFFS=64（log2=8，即 mag<256 显示为 0），SCALE_SH=2
-//   -> 每像素约 0.188 dB，满量程约 96 dB 动态范围
-//
-// 【④ 峰值保持】跟涨不跟跌，跌的时候每帧线性降 DECAY
-//       新值 >= 旧值            -> 立即跟上
-//       旧值 - 新值 >= DECAY     -> 旧值 -= DECAY
-//       否则                     -> 保持不动（这一段是"峰值保持"的手感来源）
-//
-// 【接口约定】VERILOG-2001 不支持数组端口，所以柱高拉平成一个向量：
-//       bar_flat[(i+1)*HW-1 : i*HW] = 第 i 根柱的高度
-//=============================================================================
+//////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns/1ps
+
 
 module spectrum #(
     parameter integer NBARS   = 60,     // 柱数（480px/60 = 每根 8px，下标零运算）
     parameter integer DW      = 25,     // fft_core 的 y_mag 位宽
     parameter integer HW      = 9,      // 柱高位宽
     parameter integer DECAY   = 6,      // 每帧衰减量（0 = 不衰减，只保持峰值）
-    parameter integer DB_OFFS = 64,     // log2 偏移（Q5.3）；mag < 2^(OFFS/8) 显示为 0
-    parameter integer SCALE_SH= 2       // 高度缩放（左移位数）
+    // DB_OFFS：64 = 2^8、80 = 2^10、96 = 2^12
+    parameter integer DB_OFFS = 80,     // log2 偏移（Q5.3）；mag < 2^(OFFS/8) 显示为 0
+    parameter integer SCALE_SH= 2,
+    // 【sqrt 显示】把 dB 刻度拉长一倍
+    parameter integer SQRT_SCALE_SH = 2       // 高度缩放（左移位数）
 ) (
     input  wire                    clk,          // clk_sys
     input  wire                    rst_n,
@@ -59,27 +42,39 @@ module spectrum #(
     output reg                     frame_done    // 最后一根柱完成，1 拍脉冲
 );
 
-    localparam integer AW   = $clog2(NBARS);            // 柱编号位宽
-    localparam integer MAXH = (1 << HW) - 1;            // 高度上限
+    localparam integer AW   = $clog2(NBARS);     // 柱编号位宽
+    localparam integer MAXH = (1 << HW) - 1;     // 高度上限
 
-    // 状态寄存器（声明必须在使用之前 —— Verilog 不允许先用后声明）
-    reg  [AW-1:0]       bar_cur;                        // 当前正在累积的柱编号
-    reg  [HW-1:0]       cur_max;                        // 本柱已见到的最大高度
-    reg  [NBARS*HW-1:0] peak;                           // 峰值保持值（拉平存储，方便变址）
+    // 状态寄存器
+    reg  [AW-1:0]       bar_cur;                 // 当前正在累积的柱编号
+    reg  [HW-1:0]       cur_max;                 // 本柱已见到的最大高度
+    reg  [NBARS*HW-1:0] peak;                    // 峰值保持值（拉平存储，方便变址）
 
     //=========================================================================
     // 分组表：当前柱的最后一个 bin 编号
-    //   bcur 在帧首强制为 0，所以 last_bin 也要跟着用 bcur 去查 ——
-    //   否则帧首那一拍会拿上一帧残留的 bar_cur 去查表。
     //=========================================================================
     wire              fstart = in_valid && (in_index == 9'd0);
     wire [AW-1:0]     bcur   = fstart ? {AW{1'b0}} : bar_cur;
     wire [8:0]        last_bin;
 
-    spectrum_map #(.NBARS(NBARS), .AW(AW)) u_map (
-        .bar      (bcur),
-        .last_bin (last_bin)
-    );
+    //-------------------------------------------------------------------------
+    // bin 分组表：按 NBARS 选表
+    //   NBARS=60 -> spectrum_map   （LCD ✗ 480/60 = 8 px/柱）
+    //   NBARS=80 -> spectrum_map80 （HDMI ✗ 640/80 = 8 px/柱）
+    //-------------------------------------------------------------------------
+    generate
+        if (NBARS == 80) begin : g_map80
+            spectrum_map80 #(.NBARS(80), .AW(AW)) u_map (
+                .bar      (bcur),
+                .last_bin (last_bin)
+            );
+        end else begin : g_map60
+            spectrum_map #(.NBARS(60), .AW(AW)) u_map (
+                .bar      (bcur),
+                .last_bin (last_bin)
+            );
+        end
+    endgenerate
 
     //=========================================================================
     // 幅度 -> 高度（log2 Q5.3 压缩）
@@ -103,7 +98,7 @@ module spectrum #(
     wire [7:0]  ilog2 = {mp, nrm[DW-2 -: 3]};
 
     wire [8:0]  lv  = ({1'b0, ilog2} > DB_OFFS) ? ({1'b0, ilog2} - DB_OFFS) : 9'd0;
-    wire [9:0]  hsc = lv << SCALE_SH;
+    wire [9:0]  hsc = lv << SQRT_SCALE_SH;
     wire [HW-1:0] lvl = (hsc > MAXH) ? MAXH[HW-1:0] : hsc[HW-1:0];
 
     //=========================================================================
@@ -114,8 +109,6 @@ module spectrum #(
     wire [HW-1:0]     old      = peak[bcur*HW +: HW];
 
     // 峰值保持 + 线性衰减
-    //   注意这里是 >= 而不是 > —— 用 > 的话柱子在降到刚好等于 DECAY 时会永远停住，
-    //   再也回不到 0（6/511 虽然看不见，但语义是错的）。
     wire [HW-1:0]     upd      = (raw >= old)                             ? raw
                                : ((old >= DECAY) && ((old - raw) >= DECAY)) ? (old - DECAY)
                                :                                               old;

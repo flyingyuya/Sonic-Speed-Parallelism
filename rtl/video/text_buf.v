@@ -1,0 +1,109 @@
+//////////////////////////////////////////////////////////////////////////////////
+// Company:
+// Engineer:       Binyu Fei
+//
+// Create Date:    2026-10-26
+// Design Name:    text_buf
+// Module Name:    text_buf
+// Project Name:   音速并行（Sonic-Speed-Parallelism）
+// Target Devices: Xilinx Artix-7 XC7A100T-2FGG484I
+// Tool versions:  Vivado 2020.2 / iverilog 12 / Verilator 5.052 / Verible
+// Description:    text_buf.v - 字符缓冲 + 点阵渲染
+// Dependencies:   font_rom.v
+//
+// Revision:
+// Revision 0.01 - File Created
+//
+//////////////////////////////////////////////////////////////////////////////////
+`timescale 1ns/1ps
+
+
+module text_buf #(
+    parameter integer NC   = 60,        // 每行字符数
+    parameter integer NL   = 4,         // 行数
+    parameter integer XW   = 10,        // 坐标位宽（与时序发生器一致）
+    parameter integer YW   = 9,
+    parameter integer TX0  = 2,         // 文本框左上角（像素）
+    parameter integer TY0  = 2,
+    parameter integer GW   = 5,         // 字形宽（与 font_rom 一致）
+    parameter integer CELL = 8          // 每字符占的格子边长（像素）
+) (
+    input  wire                clk,
+
+    //--------------------- 字符缓冲写端口 ---------------------
+    input  wire                we,
+    input  wire [15:0]         waddr,       // 0 .. NC*NL-1
+    input  wire [7:0]          wdata,       // ASCII 码
+
+    //--------------------- 扫描位置 ---------------------
+    input  wire [XW-1:0]       x,
+    input  wire [YW-1:0]       y,
+
+    //--------------------- 输出 ---------------------
+    output wire                hit,     // 该像素落在文本框内
+    output wire                lit      // 该像素要点亮
+);
+
+    localparam integer NADDR = NC * NL;
+    localparam integer CW    = $clog2(NC) + 1;   // 列号位宽（够用即可）
+    localparam integer RW    = $clog2(NL) + 1;   // 行号位宽
+    localparam integer AW    = $clog2(NADDR);    // 缓冲地址位宽
+
+    //=========================================================================
+    // 字符缓冲
+    //=========================================================================
+    reg [7:0] cb [0:NADDR-1];
+    integer i;
+
+    initial begin
+        // 上电清成空格，免得未初始化时闪出随机字符
+        for (i = 0; i < NADDR; i = i + 1) cb[i] = 8'h20;
+    end
+
+    always @(posedge clk) begin
+        if (we) cb[waddr[AW-1:0]] <= wdata;
+    end
+
+    //=========================================================================
+    // 位置换算（全部组合）
+    //=========================================================================
+    // 先判断落在不在文本框内
+    wire in_x = (x >= TX0[XW-1:0]) && (x < (TX0 + NC*CELL));
+    wire in_y = (y >= TY0[YW-1:0]) && (y < (TY0 + NL*CELL));
+
+    wire [XW-1:0] cx = in_x ? (x - TX0[XW-1:0]) : {XW{1'b0}};
+    wire [YW-1:0] cy = in_y ? (y - TY0[YW-1:0]) : {YW{1'b0}};
+
+    wire [CW-1:0] col = cx[CW+2:3];      // /8
+    wire [RW-1:0] row = cy[RW+2:3];
+
+    // 行列拼接成缓冲地址
+    wire [AW-1:0] ca = row[RW-1:0] * NC[AW-1:0] + col[CW-1:0];
+
+    // 组合读取：取当前字符的 ASCII 码
+    wire [7:0] ch = (row < NL) && (col < NC) ? cb[ca] : 8'h20;
+
+    //=========================================================================
+    // 查字库
+    //=========================================================================
+    wire [2:0] grow = cy[2:0];           // 格内行 0..7
+    wire [2:0] gcol = cx[2:0];           // 格内列 0..7
+
+    wire [7:0] bits;
+
+    font_rom #(.GW(GW)) u_font (
+        .ch   (ch),
+        .row  (grow),
+        .bits (bits)
+    );
+
+    //=========================================================================
+    // 取位
+    //=========================================================================
+    // 字库的 bit4 = 最左像素
+    wire [7:0] shifted = bits >> (4 - gcol);
+
+    assign hit = in_x && in_y;
+    assign lit = hit && (gcol < GW) && shifted[0];
+
+endmodule

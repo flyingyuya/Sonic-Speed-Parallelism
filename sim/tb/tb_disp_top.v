@@ -22,7 +22,7 @@
 // 检查项：
 //   ① 跨时钟域快照   30 根柱高跨域后逐根一致
 //   ② 颜色           【全部 130560 个有效像素】逐一比对
-//   ③ 柱状区像素数   每根柱点亮数 = (bh*3/16) * (8-BAR_GAP)
+//   ③ 柱状区像素数   每根柱点亮数 = (bh/2) * (8-BAR_GAP)
 //   ④ 极坐标覆盖     30 根辐条都要有像素
 //   ⑤ 帧内不撕裂     非 sof 拍 bars 不允许变化
 //   ⑥ 色相滚动       跨帧 hue_off 递增（波形也用 rb_pol 上色）
@@ -71,15 +71,33 @@ module tb_disp_top;
     reg  [DW-1:0] spec_din = {DW{1'b0}};
     reg           spec_wr  = 1'b0;
 
-    // 波形输入：喂一段三角波，方便看出"中心线固定、上下对称"
-    //   phase 0..63，幅度 0..31，再左移 18 位放进 Q1.23 的高位
+    // 波形输入：喂一段【双极性】三角波，周期 64 个采样。
+    //   ⚠️ 必须是双极性的（要走到 -TH 以下）—— wave_buf 用的是"向上过零"触发，
+    //      只会在正半周晃的信号永远碰不到迟滞闸门，只能靠自动触发兜底，
+    //      画面会一直跳。第一版就喂了个全正值的三角波，正好踩在这个坑里。
+    //   phase 0..63，幅度 -31..+31，再左移 18 位放进 Q1.23 的高位。
     reg signed [23:0] wave_din = 24'sd0;
+    // 自适应门限：TB 里给个固定值即可（DUT 的 wave_buf 用 ADAPT=1 读它，
+    // 参照那边用 ADAPT=0 走参数 TH，两边门限相同 -> 行为一致）
+    reg signed [23:0] wave_th_v = 24'sd131072;
+    // 诊断口：TB 给个固定值即可（两边必须用同一个值）
+    reg [23:0] dbg_adc_v = 24'h00ABCD;
+    integer wave_tri = 0;
     reg               wave_we  = 1'b0;
 
     // 视图使能：[0]柱状 [1]极坐标 [2]波形。主测量用全开，
     //           之后会临时关掉几个做"开关真的生效"的抽查。
     reg [2:0] view_en  = 3'b111;
     reg [7:0] hue_spd  = 8'd6;      // 与 ui_ctrl 的默认值一致
+    // G 命令：指数，2 = x4 是【上电默认】。
+    //   ⚠️ 但这个 TB 的像素比对里，参照模型【不施加增益】（它拿 e_wave 直接算），
+    //      所以这里必须用 0（x1）才等价。增益单独由 [3b] 那段穷举验证。
+    reg [7:0] wave_gain = 8'd0;
+    reg [7:0] ui_demo_v = 8'd0;     // T 命令：演示图案（默认关）
+    reg [11:0] tp_x_v = 12'd4095, tp_y_v = 12'd4095;  // 未触摸（上下限都贴住）
+    // 触摸原始读数固定成"完全没触摸"（>4000 判为未按下），
+    // 这样 UI 层只画按钮条、没有"按下"高亮，参照模型好写。
+    // 真正测"按下"的交互留给 tb_xpt2046 和 tb_ui_layer。
                                     //   H 越大越快：H=6 -> 每 2^(8-6)=4 帧滚一级
     integer           wdiv = 0, wph = 0;
 
@@ -89,7 +107,9 @@ module tb_disp_top;
         end else if (wdiv == 39) begin
             wdiv     <= 0;
             wave_we  <= 1'b1;
-            wave_din <= (wph < 32) ? (wph << 18) : ((63 - wph) << 18);
+            // 上半段 -31 -> +31，下半段 +31 -> -31；上升过零在 wph=16
+            wave_tri = (wph < 32) ? (2*wph - 31) : (95 - 2*wph);
+            wave_din <= wave_tri <<< 18;
             wph      <= (wph == 63) ? 0 : wph + 1;
         end else begin
             wdiv    <= wdiv + 1;
@@ -104,7 +124,19 @@ module tb_disp_top;
     wire [23:0] lcd_rgb;
     wire        lcd_hs, lcd_vs, lcd_clk;
 
-    disp_top dut (
+    // 导帧用：让面板【开着】并把光标停在第 3 个按钮上（=GAIN）。
+    //   panel_tog 是【翻转标志】不是脉冲：0->1 会让 disp_top 翻一次 ui_open。
+    //   这样导出来的图能一次看清 7 个按钮的排布和标签渲染。
+    reg         panel_tog_tb;
+    reg  [3:0]  ui_sel_tb;
+
+    disp_top #(
+        // 让插值器一帧到位。
+        // 参照模型算的是【稳态】（pres = view_en ? 128 : 0），
+        // 而默认 STEP=4 要 32 帧（32 x 150150 拍 ≈ 480 万拍）才收敛，
+        // 那样 TB 根本跑不动，中间帧也必然对不上。
+        .ANIM_STEP(128)
+    ) dut (
         .clk_sys   (clk_sys),
         .rst_sys_n (rst_sys_n),
         .spec_wr   (spec_wr),
@@ -115,7 +147,24 @@ module tb_disp_top;
         .ui_style  (4'd0),
         .ui_view   (view_en),
         .ui_hue_spd(hue_spd),
+        .ui_wave_gain(wave_gain),
+        .ui_demo   (ui_demo_v),
+        .tp_x      (tp_x_v),
+        .tp_y      (tp_y_v),
+        .tp_edges  (12'd7),
+        .tp_low    (1'b1),
         .wave_din  (wave_din),
+        .wave_th   (wave_th_v),
+        .dbg_adc   (dbg_adc_v),
+        .dbg_sd_bytes (64'd0),
+        .cfg_bg_src   (1'b0),
+        .ui_spk_mute  (1'b0), .ui_src(1'b0), .ui_img_idx(8'd0),
+        .fb_rgb       (16'h0000),
+        .fb_addr      (),
+        // 新增端口：本用例不测按键，全部给"无活动/无光标"的静默值
+        .panel_tog  (panel_tog_tb),
+        .key_act    (1'b0),
+        .ui_sel     (ui_sel_tb),
         .wave_we   (wave_we),
         .lcd_rgb   (lcd_rgb),
         .lcd_hs    (lcd_hs),
@@ -147,8 +196,9 @@ module tb_disp_top;
     // ---- 柱状 ----
     wire [5:0]    e_bbar = {1'b0, x_d[8:3]};
     wire [HW-1:0] e_bbh  = bars_d[e_bbar*HW +: HW];
-    wire [10:0]   e_bmul = (e_bbh << 1) + e_bbh;
-    wire [6:0]    e_bhpx = e_bmul[10:4];
+    // 系数必须和 disp_mix 里一致：BARS_H=192 -> bh*3/8
+    //   （柱子从 96px 抬到 192px，系数从 3/16 变成 3/8）
+    wire [7:0]    e_bhpx = e_bbh[8:1];               // /2 -> 0..255
     wire [8:0]    e_bfb  = VDISP[8:0] - 9'd1 - y_d;
     wire e_b_hit = (y_d >= BARS_Y0[8:0]) && (e_bfb < {2'b00, e_bhpx})
                    && (x_d[2:0] >= BAR_GAP[2:0]);
@@ -164,7 +214,12 @@ module tb_disp_top;
         .CX(POL_CX), .CY(POL_CY), .R_IN(POL_RIN), .R_MAX(POL_RMAX)
     ) u_pol_ref (
         .x(x_d), .y(y_d), .bars(bars_d),
-        .in_disc(e_p_in), .lit(e_p_lit), .bar_idx(e_p_bar), .r_out(e_p_r)
+        .in_disc(e_p_in), .lit(e_p_lit), .bar_idx(e_p_bar), .r_out(e_p_r),
+        // ⚠️ 必须和 DUT 一致：ANIM_STEP=FULL 时 pres 是稳态值，
+        //   view_en[1]=1 -> 128、=0 -> 0。
+        //   写死 8'd128 的话，视图关掉的那几段 DUT 算出空圆盘、
+        //   参照还在画圆盘，整整报 36010 处不符。
+        .pres(view_en[1] ? 8'd128 : 8'd0)
     );
     wire e_p_core = view_en[1] && e_p_in && (e_p_r >= POL_RIN - 3) && (e_p_r < POL_RIN);
     wire e_p_litg = view_en[1] && e_p_lit;
@@ -176,10 +231,13 @@ module tb_disp_top;
 
     // ---- 波形（TB 里镜像一份 wave_buf，才能验证 disp_top 的连线与映射）----
     wire signed [23:0] e_wave;
-    wave_buf #(.DW(24), .AW(10), .SPAN(HDISP)) u_wave_ref (
+    // ⚠️ 参照的 ADAPT/th_in 必须和 DUT 里那个实例【完全一致】
+    //    （DUT 的 disp_top 用 .ADAPT(1) 读 wave_th）——
+    //    配置不一样的话，两边状态机分手，报几千处不符还很难查。
+    wave_buf #(.DW(24), .AW(10), .SPAN(HDISP), .ADAPT(1)) u_wave_ref (
         .wclk(clk_sys), .wrst_n(rst_sys_n), .we(wave_we), .din(wave_din),
         .rclk(clk_pix), .rrst_n(rst_pix_n), .sof(dut.sof), .x(dut.x),
-        .dout(e_wave)
+        .dout(e_wave), .th_in(wave_th_v), .trig_pulse(), .done_pulse()
     );
 
     // ⚠️ 采集波形也要延迟一拍：DUT 里 wave_buf.dout 是一级寄存器、
@@ -190,22 +248,87 @@ module tb_disp_top;
 
     wire [24:0] e_wabs = e_wave_d[23] ? ({1'b0, ~e_wave_d} + 1'b1)
                                       : {1'b0, e_wave_d};
-    wire [5:0]  e_wraw = e_wabs[23:18];
-    wire [5:0]  e_wamp = (e_wraw > WAVE_AMP[5:0]) ? WAVE_AMP[5:0] : e_wraw;
-    wire [8:0]  e_wy   = e_wave_d[23] ? (WAVE_CY[8:0] - {3'b000, e_wamp})
-                                      : (WAVE_CY[8:0] + {3'b000, e_wamp});
+    // ⚠️ 位宽和 DUT 保持一致：SH=17 时 wabs[23:17] 是 7 位（0..127）
+    //    （DUT 原来写成 6 位 ⟹ 幅度被截半 ⟹ 已修 ✓ 这里同步）
+    wire [6:0]  e_wraw = e_wabs[23:`DISP_WAVE_SH];
+    wire [6:0]  e_wamp0 = (e_wraw > WAVE_AMP[6:0]) ? WAVE_AMP[6:0] : e_wraw;
+    // 和 DUT 一致：显示前 ×1.5（×3/2）后再钳位
+    wire [7:0]  e_wamp3 = {e_wamp0, 1'b0} + e_wamp0;
+    wire [6:0]  e_wamp  = (e_wamp3[7:1] > WAVE_AMP[6:0])
+                        ? WAVE_AMP[6:0] : e_wamp3[7:1];
+    // 正值朝上（和 DUT 一致）：负值 -> y 变大（往下）
+    wire [8:0]  e_wy   = e_wave_d[23] ? (WAVE_CY[8:0] + {2'b00, e_wamp})
+                                      : (WAVE_CY[8:0] - {2'b00, e_wamp});
     wire [8:0]  e_wdy  = (y_d > e_wy) ? (y_d - e_wy) : (e_wy - y_d);
     wire        e_wline = view_en[2] && (e_wdy <= WAVE_TH[8:0]);
     wire        e_waxis = !view_en[2] && (y_d == WAVE_CY[8:0]);
 
     // ---- 合成（优先级必须和 disp_mix 完全一致）----
     // 优先级必须和 disp_mix 完全一致：背景 < 柱状 < 波形 < 极坐标
-    wire [23:0] exp_rgb = e_p_litg ? e_rb_pol
+    // ---- 文字层（参照模型也用【同一个模块】，不是另写一遍）----
+    //   text_buf / status_line 是纯组合 + 一个小寄存器，直接例化同一个模块
+    //   最可靠 —— 自己再写一遍排版逻辑反而容易和 RTL 错开。
+    wire        e_t_we, e_t_hit, e_t_lit;
+    wire [15:0] e_t_addr;
+    wire [7:0]  e_t_data;
+
+    status_line #(.NLEN(`DISP_TXT_NLEN), .NC(`DISP_TXT_NLEN)) u_status_ref (
+        .clk(clk_pix), .rst_n(rst_pix_n),
+        .cfg_view({5'b0, view_en}), .cfg_style(8'd0), .cfg_spk_mute(1'b0), .cfg_src(1'b0), .cfg_img_idx(8'd0),
+        .cfg_hue_spd(hue_spd), .cfg_wave_gain(wave_gain),
+        .cfg_bg_mode(8'd0), .cfg_demo(ui_demo_v),
+        .tp_x(tp_x_v), .tp_y(tp_y_v), .tp_edges(12'd7), .dbg_adc(dbg_adc_v),
+        .dbg_sd_bytes(64'd0),
+ .tp_low(1'b1),
+        .we(e_t_we), .waddr(e_t_addr), .wdata(e_t_data)
+    );
+
+    // ⚠️ 参考模型的文本框位置必须和 DUT 一致（DUT 里现在放到右侧了）
+    text_buf #(.NC(`DISP_TXT_NLEN), .NL(`DISP_TXT_NL), .XW(10), .YW(9),
+               .TX0(480-80-4), .TY0(2)) u_text_ref (
+        .clk(clk_pix), .we(e_t_we), .waddr(e_t_addr), .wdata(e_t_data),
+        .x(x_d), .y(y_d), .hit(e_t_hit), .lit(e_t_lit)
+    );
+
+    // ---- UI 按钮层（参照也用【同一个模块】）----
+    wire        e_u_draw;
+    wire [23:0] e_u_rgb;
+    wire [2:0]  e_u_k;
+    wire        e_u_hit;
+    wire [3:0]  e_u_act;
+
+    ui_layer #(
+        .NB(`DISP_UI_NB), .XW(10), .YW(9),
+        .BX0(0), .BY0(`DISP_UI_BY0), .BW(`DISP_UI_BW), .BH(`DISP_UI_BH),
+        .GAP(`DISP_UI_GAP)
+    ) u_ui_ref (
+        // 参照用【同一个 ui_layer 模块】；输入要和 DUT 内部算出来的一致。
+        // DUT 里：未触摸 -> tch_down=0，且高亮锁存 ui_active 会在上电时
+        // 被初始化成 0xF（无高亮）。所以这里也用 4'hF。
+        // 参照要和 DUT 的【稳态】一致：
+        //   DUT 里 ANIM_STEP=FULL 一帧到位，面板默认收起 -> by0 = VDISP（屏幕外）
+        .x(x_d), .y(y_d), .tx(10'd0), .ty(9'd0),
+        .pressed(1'b0), .ui_by0(9'd272), .ui_open(1'b0), .active(4'hF),
+        .draw(e_u_draw), .rgb(e_u_rgb),
+        .hit_k(e_u_k), .hit(e_u_hit), .hit_act(e_u_act),
+        .tab_hit()
+    );
+
+    localparam [23:0] TEXT_RGB = 24'hF0_F0_F0;
+    wire [23:0] TEXT_BG = {2'b00, e_bg[23:18], 2'b00, e_bg[15:10], 2'b00, e_bg[7:2]};
+
+    wire [23:0] exp_mix = e_p_litg ? e_rb_pol
                         : e_p_core ? CORE_RGB
                         : e_wline  ? e_rb_pol
                         : e_waxis  ? AXIS_RGB
                         : e_b_lit  ? e_rb_bar
                         :            e_bg;
+
+    // 叠加顺序必须和 disp_mix 完全一致：mix -> UI -> 文字
+    wire [23:0] exp_ui  = e_u_draw ? e_u_rgb : exp_mix;
+    wire [23:0] exp_rgb = e_t_lit ? TEXT_RGB
+                        : e_t_hit ? TEXT_BG
+                        :           exp_ui;
 
     //=========================================================================
     // 测量窗口
@@ -283,6 +406,10 @@ module tb_disp_top;
     always @(posedge clk_pix) begin
         if (cap_en && dut.de && fd != 0)
             $fwrite(fd, "%c%c%c", lcd_rgb[23:16], lcd_rgb[15:8], lcd_rgb[7:0]);
+
+            // [DIAG] 标签行的几何诊断：每 8 像素（一个字符格）打一次。
+            //   目的是回答"bx 到底是多少、lx/l_col 从哪个值开始"——
+            //   光看图只能知道"串了"，不知道串在哪一步。
     end
 
     //=========================================================================
@@ -315,12 +442,21 @@ module tb_disp_top;
             got_bars[k] = 0;
         end
 
+        panel_tog_tb = 1'b0;  ui_sel_tb = 4'hF;
         rst_sys_n = 1'b0;  rst_pix_n = 1'b0;
         repeat (20) @(posedge clk_sys);
         repeat (10) @(posedge clk_pix);
         @(negedge clk_sys); rst_sys_n = 1'b1;
         @(negedge clk_pix); rst_pix_n = 1'b1;
         repeat (4) @(posedge clk_pix);
+
+        // ⚠️ 这里【不要】把面板打开：
+        //   本 TB 同时还在和参考模型(u_ui_ref)逐像素比对，而参考模型并不知道
+        //   面板开了 —— 一打开就整片失配（实测报了 (453,132) 这类错，看着像极坐标坏了）。
+        //   需要看面板排布时，临时把下面这行改成 panel_tog_tb = 1'b1，
+        //   跑完【只看导出的 PPM】、不看逐像素比对结果，然后改回来。
+        //   （7 按钮那次就是这么做才看到"标签偏 4 像素"的。）
+        @(negedge clk_pix); panel_tog_tb = 1'b0; ui_sel_tb = 4'hF;
 
         fd = $fopen("sim/build/disp_frame.ppm", "wb");
         if (fd == 0)
@@ -390,7 +526,8 @@ module tb_disp_top;
         $display(" [2] 柱状区像素数");
         n_err_bar = 0;
         for (k = 0; k < NBARS; k = k + 1) begin
-            exp_px = (got_bars[k] * 3) / 16 * NBAR_W;
+            // 系数必须和 disp_mix 一致：BARS_H=58 时是 bh*29/256（原来是 bh*3/16）
+            exp_px = (got_bars[k] * 1) / 2 * NBAR_W;
             if (bar_cnt[k] != exp_px) begin
                 n_err_bar = n_err_bar + 1;
                 if (n_err_bar <= 6)
@@ -445,6 +582,118 @@ module tb_disp_top;
         end
 
         //---------------------------------------------------------------------
+        //---------------------------------------------------------------------
+        //---------------------------------------------------------------------
+        // [3b] 波形增益（G 命令）—— 它以前是个【死控件】，这里专门守住
+        //---------------------------------------------------------------------
+        // 【G 的语义在 2026-10 改过】原来是线性 G/8（×0.125 ~ ×1.875），
+        //   现在是【指数】增益 = 2^G（×1 ~ ×256）。
+        //   改的原因见 disp_top.v 5b 节的注释（模拟增益不能拉满，要在数字域补）。
+        //   ⚠️ 改语义时【必须同时改这里】—— 否则测的是已经不存在的旧行为。
+        //
+        // ⚠️ 层次引用 dut.wave_adj / dut.wave_sample 【不带 signed 属性】，
+        //   iverilog 会按无符号解释。所以下面一律【只看位】：用 bit[23] 判符号，
+        //   自己算绝对值。（这条以前栽过，见账本。）
+        //---------------------------------------------------------------------
+        $display("");
+        $display(" [3b] 波形增益（G 命令，指数：增益 = 2^G）");
+        begin : gain_test
+            integer g, j;
+            integer n_err1, n_err2, n_sat, n_sgn;
+            reg [23:0] ma, ms;
+            reg [31:0] exp_ma;      // 期望幅度（32 位，够放 2^23 * 256）
+
+            // ---- 判据①：G=0 必须【精确】×1（幅度和符号都逐拍相同）----
+            wave_gain = 8'd0;
+            repeat (3) @(posedge clk_pix);
+            n_err1 = 0; n_sgn = 0;
+            for (j = 0; j < 8000; j = j + 1) begin
+                @(posedge clk_pix);
+                if (dut.wave_adj !== dut.wave_sample) n_err1 = n_err1 + 1;
+            end
+            if (n_err1 != 0) begin
+                n_err = n_err + 1;
+                $display("  [ERR] G=0 不是精确 ×1（%0d 拍不符）", n_err1);
+            end else
+                $display("  [ok ] G=0 逐拍精确等于原始采样（8000 次比对）");
+
+            // ---- 判据②：G=1/G=3 的幅度 = 饱和( |sample| << G ) ----
+            n_err2 = 0; n_sat = 0;
+            for (g = 1; g <= 3; g = g + 1) begin
+                wave_gain = g[7:0];
+                repeat (3) @(posedge clk_pix);
+                for (j = 0; j < 8000; j = j + 1) begin
+                    @(posedge clk_pix);
+                    ma = dut.wave_adj[23]    ? (~dut.wave_adj[23:0] + 1'b1)
+                                             : dut.wave_adj[23:0];
+                    ms = dut.wave_sample[23] ? (~dut.wave_sample[23:0] + 1'b1)
+                                             : dut.wave_sample[23:0];
+                    // 期望：|sample| << G，超过 2^23 就饱和
+                    // ⚠️ 饱和上限是【不对称】的：正侧是 2^23-1，负侧是 2^23。
+                    //    统写成 8388608 的话，正侧会差 1 —— 报 8290 拍不符，
+                    //    看上去像放大器坏了，其实只是参照的常数差一。
+                    exp_ma = ms << g;
+                    if (dut.wave_sample[23]) begin          // 负采样
+                        if (exp_ma > 32'd8388608) begin
+                            exp_ma = 32'd8388608; n_sat = n_sat + 1;
+                        end
+                    end else begin                          // 正采样
+                        if (exp_ma > 32'd8388607) begin
+                            exp_ma = 32'd8388607; n_sat = n_sat + 1;
+                        end
+                    end
+                    if (ma !== exp_ma[23:0]) n_err2 = n_err2 + 1;
+                    // 符号必须和原采样一致（除非原采样正好是 0）
+                    if ((ms !== 24'd0) && (dut.wave_adj[23] !== dut.wave_sample[23]))
+                        n_sgn = n_sgn + 1;
+                end
+            end
+            if (n_err2 != 0) begin
+                n_err = n_err + 1;
+                $display("  [ERR] G=1..3 的幅度不等于饱和( |sample| << G )（%0d 拍）", n_err2);
+            end else
+                $display("  [ok ] G=1/2/3 幅度 == 饱和(|sample| << G)（其中 %0d 拍触到饱和）",
+                         n_sat);
+
+            // ---- 判据③：G=8 必须【饱和而不是符号翻转】 ----
+            wave_gain = 8'd8;
+            repeat (3) @(posedge clk_pix);
+            n_err1 = 0;
+            for (j = 0; j < 8000; j = j + 1) begin
+                @(posedge clk_pix);
+                if ((dut.wave_sample[23] !== dut.wave_adj[23]) &&
+                    (dut.wave_sample[23:0] !== 24'd0))
+                    n_err1 = n_err1 + 1;
+            end
+            if (n_err1 != 0) begin
+                n_err = n_err + 1;
+                $display("  [ERR] G=8 出现符号翻转 %0d 拍（饱和逻辑有问题）", n_err1);
+            end else
+                $display("  [ok ] G=8（×256）只饱和、不符号翻转");
+            if (n_sgn != 0) begin
+                n_err = n_err + 1;
+                $display("  [ERR] 增益过程中符号翻转了 %0d 拍", n_sgn);
+            end else
+                $display("  [ok ] 各档位符号均与原采样一致");
+
+            wave_gain = 8'd0;      // 还原到新默认
+        end
+
+        //---------------------------------------------------------------------
+        // 关于"插值器接线"的覆盖说明（这里【故意不测】）
+        //---------------------------------------------------------------------
+        // 曾经想加一段 [3c]：改 view_en 后读 dut.ui_level，确认三路通道各自
+        // 接到了对应视图。但它每改一次都要等一个完整帧（150150 拍 = 12 ms），
+        // 三次就把 TB 顶过了 80 ms 超时线，而且【是冗余的】：
+        //
+        //   · 插值逻辑本身由 tb_ui_anim 单独穷举（单调/上下限/帧门控/反向）；
+        //   · 接线是否生效，上面的逐像素比对已经证明了 —— ANIM_STEP 设成 FULL 时
+        //     pres 是稳态值（view_en[1] ? 128 : 0），两种取值都参与比对；
+        //     当初参考模型写死 pres=128 时报了 36010 处不符，那恰恰说明
+        //     pres 真的接到了 polar_map 上。
+        //
+        // 宁可少一段测试，也不要让 TB 为了重复覆盖而变慢到没人愿意跑。
+
         // [4] 视图开关抽查：切到"只柱状"，验证极坐标/波形真的被关掉
         //---------------------------------------------------------------------
         $display("");
