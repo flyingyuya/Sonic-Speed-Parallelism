@@ -305,23 +305,27 @@ lsblk -o NAME,SIZE,TYPE,TRAN | grep -E "sd|mmc"
 
 # ② 先 dry-run（强烈建议）
 python3 scripts/sdcard/mkimage.py --dry-run /dev/sda \
-    img1.png img2.png img3.png
+    docs/images/sd_card/wallhaven-1peepw_480x272.png \
+    docs/images/sd_card/wallhaven-57d9y5_480x272.png \
+    docs/images/sd_card/wallhaven-y8k95x_480x272.png
 ```
 
-**说明**：任意 3 张 PNG/JPG/BMP 都可以（脚本会自动缩放到 480×272），
-文件名替换成你自己的即可。
+**说明**：仓库自带的 3 张示例图在 `docs/images/sd_card/` 下，
+也可以换成任意 PNG/JPG/BMP（脚本会自动缩放到 480×272）。
 
 **预期输出**（**每张图必须是 `261120` 字节 = 480×272×2**）：
 ```
-  图 0: img1.png  -> 扇区 2048  261120 字节
-  图 1: img2.png  -> 扇区 2560  261120 字节
-  图 2: img3.png  -> 扇区 3072  261120 字节
+  图 0: wallhaven-1peepw_480x272.png  -> 扇区 2048  261120 字节
+  图 1: wallhaven-57d9y5_480x272.png  -> 扇区 2560  261120 字节
+  图 2: wallhaven-y8k95x_480x272.png  -> 扇区 3072  261120 字节
 ```
 
 ```bash
 # ③ 正式写入
 echo YES | sudo python3 scripts/sdcard/mkimage.py /dev/sda \
-    img1.png img2.png img3.png
+    docs/images/sd_card/wallhaven-1peepw_480x272.png \
+    docs/images/sd_card/wallhaven-57d9y5_480x272.png \
+    docs/images/sd_card/wallhaven-y8k95x_480x272.png
 ```
 
 **⚠️ 脚本内建系统盘保护**：会用 `findmnt` + `lsblk -no PKNAME` 反查整盘，

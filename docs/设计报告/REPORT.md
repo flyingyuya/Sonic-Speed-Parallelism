@@ -1039,14 +1039,16 @@ lsblk -o NAME,SIZE,TYPE,TRAN | grep -E "sd|mmc"
 **⚠️ 强烈建议先 dry-run**：
 ```bash
 python3 scripts/sdcard/mkimage.py --dry-run /dev/sda \
-    img1.png img2.png img3.png
+    docs/images/sd_card/wallhaven-1peepw_480x272.png \
+    docs/images/sd_card/wallhaven-57d9y5_480x272.png \
+    docs/images/sd_card/wallhaven-y8k95x_480x272.png
 ```
 
 **预期**：
 ```
-  图 0: img1.png  -> 扇区 2048  261120 字节
-  图 1: img2.png  -> 扇区 2560  261120 字节
-  图 2: img3.png  -> 扇区 3072  261120 字节
+  图 0: wallhaven-1peepw_480x272.png  -> 扇区 2048  261120 字节
+  图 1: wallhaven-57d9y5_480x272.png  -> 扇区 2560  261120 字节
+  图 2: wallhaven-y8k95x_480x272.png  -> 扇区 3072  261120 字节
 ```
 
 **⭐ 每张图必须是 `261120` 字节 = 480×272×2 ⟹ 这个数字对了就说明格式正确。**
