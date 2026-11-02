@@ -21,7 +21,6 @@
 Sonic-Speed-Parallelism/
 ├── README.md                     项目说明
 ├── LICENSE
-├── 技术设计报告.pdf
 ├── rtl/                          RTL 源文件
 ├── constrs/                      管脚与时序约束
 ├── scripts/                      构建与生成脚本
@@ -38,6 +37,7 @@ Sonic-Speed-Parallelism/
 │
 ├── sim/tb/                        40 个 testbench + 3 个行为模型
 ├── docs/                          设计文档、数据手册
+├── report/                        设计报告 + 大模型协作记录
 └── .pi/skills/                    3 个技能包
     ├── fixed-point-dsp/            定点 DSP 精度预算
     ├── fpga-rtl-flow/              基于 TCL 脚本的 FPGA 设计流程
