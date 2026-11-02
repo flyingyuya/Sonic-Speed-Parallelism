@@ -383,5 +383,3 @@ vivado -mode batch -source scripts/vivado/program.tcl -tclargs flash
 | HDMI 颜色偏黄 | R/B 通道互换 | LCD 面板是 BGR，HDMI 路径需再换一次 |
 | HDMI 复位后偶发右半屏撕裂 | 已知未解决（TMDS 层）| 重按复位可恢复；需 ILA 或示波器 |
 
-**更详细的复现说明**（含环境要求、每一步的原理说明）
-见 [设计报告](docs/设计报告/main.pdf) 的附录。
