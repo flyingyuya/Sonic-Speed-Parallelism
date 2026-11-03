@@ -55,7 +55,7 @@
 
 set DRC_WAIVER_REASON "本设计的 DSP 通路均有定点黄金模型逐位对拍，插入流水级会改变数值行为，\
 需全量重验且无功能收益；EQ 双二阶的反馈环按定义不可流水化。post-route 实测 \
-clk_sys WNS=+1.548ns / clk_pix WNS=+41.573ns，时序已收敛。详见 docs/08-skills-index.md 第 46 条。"
+clk_sys WNS=+1.779ns / clk_hdmi WNS=+4.028ns，所有时钟对失败端点均为 0。详见 docs/08-skills-index.md 第 46 条。"
 
 foreach rule {DPIP-1 DPOP-1 DPOP-2} {
     if {[llength [get_drc_checks -quiet $rule]] == 0} {
